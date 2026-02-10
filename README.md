@@ -50,7 +50,7 @@ Key principles:
 
 This repository is a **development monorepo** containing multiple independently deployable packages.
 
-'''
+```
 plexa/
 ├── pyproject.toml
 ├── conftest.py
@@ -59,7 +59,7 @@ plexa/
 ├── plexa_server/ # Lesson runtime & policy engine
 ├── plexa_client/ # Student-facing UI (web / desktop)
 ├── plexa_author/ # Instructor lesson authoring tool
-'''
+```
 
 
 Each package is designed to be built and distributed independently in production.
