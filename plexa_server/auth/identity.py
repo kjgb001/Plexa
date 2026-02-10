@@ -1,0 +1,1 @@
+# Define UserIdentity, contains ID, role, and optional claims

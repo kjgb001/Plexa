@@ -1,0 +1,1 @@
+# Append student info to active session and expose session state

@@ -1,0 +1,1 @@
+# Store lessons, course/unit definitions, and encrypted logs
