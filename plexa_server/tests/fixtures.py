@@ -32,7 +32,7 @@ def make_valid_lesson_payload() -> Lesson:
         },
         "constraints": {
             "input_mode": "text",
-            "turn_limit": 8,
+            "turn_limit": 2,
         },
         "reflection": {
             "reflection_prompts": [
