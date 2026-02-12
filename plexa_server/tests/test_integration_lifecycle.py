@@ -1,6 +1,7 @@
 import pytest
+import os
 
-from plexa_server.storage.memory import InMemoryStorage
+from plexa_server.storage.filesystem import FileSystemSessionStorage
 from plexa_server.core.sessions import SessionManager, SessionClosedError
 from plexa_server.utils.lock_manager import LockManager
 from plexa_server.models.lesson import Lesson
@@ -9,8 +10,8 @@ from plexa_server.inference.stub import StubInference
 from plexa_server.tests.fixtures import make_valid_lesson_payload
 
 
-def test_full_lesson_lifecycle_with_stub():
-    storage = InMemoryStorage()
+def test_full_lesson_lifecycle_with_stub(tmp_path):
+    storage = FileSystemSessionStorage(tmp_path)
     inference = StubInference()
 
     manager = SessionManager(
@@ -71,8 +72,8 @@ def test_full_lesson_lifecycle_with_stub():
     ]
 
 
-def test_manual_close_and_auto_deactivation_behavior():
-    storage = InMemoryStorage()
+def test_manual_close_and_reload_persists_state(tmp_path):
+    storage = FileSystemSessionStorage(tmp_path)
     inference = StubInference()
 
     manager = SessionManager(
@@ -82,7 +83,6 @@ def test_manual_close_and_auto_deactivation_behavior():
 
     lesson = Lesson.model_validate(make_valid_lesson_payload())
 
-    # Ensure lesson turn_limit is 2 for this test
     assert lesson.constraints.turn_limit == 2
 
     # Create session
@@ -96,7 +96,6 @@ def test_manual_close_and_auto_deactivation_behavior():
     manager.submit_user_message("s2", "m1", "First message")
 
     session = storage.get_session("s2")
-
     assert session.turn_count == 1
     assert session.is_active is True
 
@@ -104,14 +103,28 @@ def test_manual_close_and_auto_deactivation_behavior():
     manager.close_session("s2")
 
     session = storage.get_session("s2")
-
     assert session.is_active is False
+    assert session.turn_count == 1
 
-    # Attempt to send another message after manual close
+    # Simulate process restart
+    manager = SessionManager(
+        storage=storage,
+        inference_backend=inference,
+    )
+
+    # Reload session from disk
+    session = storage.get_session("s2")
+
+    assert session is not None
+    assert session.is_active is False
+    assert session.turn_count == 1
+
+    # Attempt to send another message after reload
     with pytest.raises(SessionClosedError):
-        manager.submit_user_message("s2", "m2", "Should fail")
+        manager.submit_user_message("s2", "m2", "Should still fail")
 
-    # Now verify automatic deactivation on turn limit in a fresh session
+    # Now test automatic deactivation on the SAME session lifecycle
+    # Create a new session to reach turn limit
     manager.create_session(
         session_id="s3",
         lesson=lesson,
@@ -126,7 +139,18 @@ def test_manual_close_and_auto_deactivation_behavior():
     assert session.turn_count == lesson.constraints.turn_limit
     assert session.is_active is False
 
-    # Confirm further submission fails due to automatic closure
+    # Simulate restart again
+    manager = SessionManager(
+        storage=storage,
+        inference_backend=inference,
+    )
+
+    session = storage.get_session("s3")
+
+    assert session.turn_count == lesson.constraints.turn_limit
+    assert session.is_active is False
+
     with pytest.raises(SessionClosedError):
         manager.submit_user_message("s3", "m3", "Exceeds limit")
+
 

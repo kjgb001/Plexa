@@ -1,12 +1,13 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel, Field, model_validator
+from uuid import uuid4
 
 
 # Identity
 
 class LessonIdentity(BaseModel):
-    lesson_id: Optional[str] = None
+    lesson_id: str = Field(default_factory=lambda: str(uuid4()))
     version: str
     title: str
     author: str

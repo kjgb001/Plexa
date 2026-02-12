@@ -2,9 +2,10 @@ from typing import Dict, Optional
 
 from plexa_server.models.session import Session
 from plexa_server.inference.base import InferenceConfig
+from plexa_server.storage.session_protocol import SessionStorage
 
 
-class InMemoryStorage:
+class InMemoryStorage(SessionStorage):
     """
     Ephemeral storage for development and testing.
 

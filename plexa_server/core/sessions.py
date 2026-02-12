@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 from typing import Dict, List
 from datetime import datetime, UTC
+from uuid import uuid4
 
 from plexa_server.models.session import Session
 from plexa_server.models.message import Message
@@ -49,9 +50,9 @@ class SessionManager:
 
     def create_session(
         self,
-        session_id: str,
         lesson: Lesson,
         user_id: str,
+        session_id: str = str(uuid4()),
     ) -> Session:
 
         validate_lesson_runtime(lesson)
