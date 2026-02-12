@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, UTC
 
 from plexa_server.models.message import Message
 
@@ -14,7 +14,7 @@ class Session(BaseModel):
 
     messages: List[Message] = Field(default_factory=list)
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     closed_at: Optional[datetime] = None
 
     turn_count: int = 0

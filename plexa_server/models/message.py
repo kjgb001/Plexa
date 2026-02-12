@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, UTC
 
 
 class Message(BaseModel):
@@ -8,6 +8,6 @@ class Message(BaseModel):
     role: Literal["system", "assistant", "user", "instructor"] # Can map instructor to system if not in use
     content: str
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     metadata: Optional[Dict[str, Any]] = None
