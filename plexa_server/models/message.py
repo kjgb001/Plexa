@@ -5,6 +5,7 @@ from datetime import datetime, UTC
 
 class Message(BaseModel):
     message_id: str
+    session_id: str
     role: Literal["system", "assistant", "user", "instructor"] # Can map instructor to system if not in use
     content: str
 

@@ -39,6 +39,7 @@ def test_session_can_append_message():
 
     msg = Message(
         message_id="m1",
+        session_id=session.session_id,
         role="user",
         content="Test"
     )
