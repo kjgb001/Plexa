@@ -3,13 +3,13 @@ from plexa_server.models.lesson import Lesson
 def make_valid_lesson_payload() -> Lesson:
     return {
         "identity": {
+            "lesson_id": "test",
             "version": "0.1.0",
             "title": "Calibration Under Uncertainty",
             "author": "Kellan",
             "course": "Test",
             "unit": "1",
             "license": "MIT",
-            "lesson_id": "83432ad8-454d-4d7b-9114-07ac37926ca0"
         },
         "intent": {
             "learning_objective": "Practice evaluating uncertainty and confidence.",
