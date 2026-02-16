@@ -62,8 +62,8 @@ def session_factory(client, lesson_factory):
             json={
                 "lesson_id": lesson_id,
                 "lesson_version": version,
-                "user_id": user_id,
             },
+            headers={"X-User-Id": user_id}
         )
 
         assert response.status_code == 201

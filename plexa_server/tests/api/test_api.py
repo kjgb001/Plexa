@@ -1,7 +1,6 @@
 from pathlib import Path
 from fastapi.testclient import TestClient
 
-from plexa_server.api.app import build_app
 from plexa_server.storage.filesystem import FileSystemArtifactStorage
 from plexa_server.models.lesson import Lesson, LessonIdentity
 
@@ -19,8 +18,8 @@ def test_create_session_success(client, lesson_factory):
         json={
             "lesson_id": "test",
             "lesson_version": "0.1.0",
-            "user_id": "tester",
         },
+        headers={"X-User-Id": "tester"},
     )
 
     assert response.status_code == 201
@@ -38,6 +37,7 @@ def test_send_message_success(client, session_factory):
     response = client.post(
         f"/sessions/{session_id}/messages",
         json={"content": "Hello world"},
+        headers={"X-User-Id": "tester"},
     )
 
     assert response.status_code == 200
@@ -51,7 +51,10 @@ def test_send_message_success(client, session_factory):
 def test_get_session(client, session_factory):
     session_id = session_factory()
 
-    response = client.get(f"/sessions/{session_id}")
+    response = client.get(
+        f"/sessions/{session_id}",
+        headers={"X-User-Id": "tester"},
+    )
 
     assert response.status_code == 200
     assert response.json()["session"]["session_id"] == session_id
@@ -60,7 +63,10 @@ def test_get_session(client, session_factory):
 def test_close_session(client, session_factory):
     session_id = session_factory()
 
-    response = client.post(f"/sessions/{session_id}/close")
+    response = client.post(
+        f"/sessions/{session_id}/close",
+        headers={"X-User-Id": "tester"},
+    )
 
     assert response.status_code == 200
     assert response.json()["is_active"] is False
@@ -72,14 +78,38 @@ def test_create_session_lesson_not_found(client):
         json={
             "lesson_id": "does_not_exist",
             "lesson_version": "0.1.0",
-            "user_id": "tester",
         },
+        headers={"X-User-Id": "tester"},
     )
 
     assert response.status_code == 404
 
 
 def test_get_session_not_found(client):
-    response = client.get("/sessions/fake-id")
+    response = client.get(
+        "/sessions/fake-id",
+        headers={"X-User-Id": "tester"},
+    )
     assert response.status_code == 404
 
+
+def test_missing_user_header_returns_401(client, lesson_factory):
+    lesson_factory()
+
+    response = client.post(
+        "/sessions",
+        json={"lesson_id": "test", "lesson_version": "1.0"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_user_cannot_access_other_users_session(client, session_factory):
+    session_id = session_factory(user_id="alice")
+
+    response = client.get(
+        f"/sessions/{session_id}",
+        headers={"X-User-Id": "bob"},
+    )
+
+    assert response.status_code == 404
