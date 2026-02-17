@@ -5,20 +5,24 @@ from fastapi import FastAPI
 from plexa_server.core.sessions import SessionManager
 from plexa_server.storage.filesystem import FileSystemSessionStorage
 from plexa_server.storage.filesystem import FileSystemArtifactStorage
-from plexa_server.inference.stub import StubInference
 
 from plexa_server.api.routes.sessions import get_sessions_router
+from plexa_server.api.routes.health import get_health_router
+from plexa_server.api.routes.admin import get_admin_router
 
 
 DATA_PATH = Path(os.path.join(os.path.dirname(__file__), "../data"))
 
-def build_app(data_dir: Path | str = DATA_PATH) -> FastAPI:
+def build_app(
+    inference_backend,
+    data_dir: Path | str = DATA_PATH,
+) -> FastAPI:
     data_path = Path(data_dir)
 
     # Infrastructure wiring (composition root)
     artifact_storage = FileSystemArtifactStorage(data_path)
     session_storage = FileSystemSessionStorage(data_path)
-    inference_backend = StubInference()
+    inference_backend = inference_backend
 
     session_manager = SessionManager(
         storage=session_storage,
@@ -31,6 +35,18 @@ def build_app(data_dir: Path | str = DATA_PATH) -> FastAPI:
     app.include_router(
         get_sessions_router(
             session_manager=session_manager,
+            artifact_storage=artifact_storage,
+        )
+    )
+    app.include_router(
+        get_health_router(
+            session_storage=session_storage,
+            artifact_storage=artifact_storage,
+            inference_backend=inference_backend,
+        )
+    )
+    app.include_router(
+        get_admin_router(
             artifact_storage=artifact_storage,
         )
     )

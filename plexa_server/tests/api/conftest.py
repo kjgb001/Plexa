@@ -7,6 +7,7 @@ from plexa_server.api.app import build_app
 from plexa_server.storage.filesystem import FileSystemArtifactStorage
 from plexa_server.models.lesson import Lesson
 from plexa_server.tests.fixtures import make_valid_lesson_payload
+from plexa_server.inference.stub import StubInference
 
 
 # Base data directory fixture
@@ -20,7 +21,10 @@ def tmp_data_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def app(tmp_data_dir: Path):
-    return build_app(data_dir=tmp_data_dir)
+    return build_app(
+        inference_backend=StubInference(), 
+        data_dir=tmp_data_dir
+    )
 
 
 # Test client fixture
@@ -70,3 +74,43 @@ def session_factory(client, lesson_factory):
         return response.json()["session"]["session_id"]
 
     return _create
+
+
+# Admin token environment var
+
+@pytest.fixture
+def admin_headers(monkeypatch):
+    monkeypatch.setenv("PLEXA_ADMIN_TOKEN", "test-token")
+    return {"X-Admin-Token": "test-token"}
+
+
+@pytest.fixture
+def valid_lesson_payload():
+    return {
+        "identity": {
+            "lesson_id": "intro",
+            "version": "1.0",
+            "title": "Introduction to LLM Behavior",
+            "author": "Test Author",
+            "license": "MIT",
+        },
+        "intent": {
+            "learning_objective": "Understand model response patterns.",
+            "behavioral_focus": "Critical reasoning",
+        },
+        "execution": {
+            "system_prompt": "You are a helpful assistant.",
+            "model_profile": "default",
+        },
+        "constraints": {
+            "input_mode": "freeform",
+            "turn_limit": 5,
+        },
+        "reflection": {
+            "reflection_prompts": [
+                "What did you learn?",
+                "What surprised you?"
+            ]
+        },
+        "schema_version": "1.0"
+    }

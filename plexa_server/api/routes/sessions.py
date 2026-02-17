@@ -30,6 +30,7 @@ def require_user_id(
 
 
 def get_owned_session(session_manager, session_id: str, user_id: str):
+    '''Temporary simple header id check. Should fully implement proper auth flow later.'''
     try:
         session = session_manager.get_session(session_id)
     except SessionNotFoundError:

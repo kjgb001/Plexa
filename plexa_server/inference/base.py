@@ -154,7 +154,7 @@ class InferenceBackend(ABC):
             InferenceError: Any backend failure must be normalized to this family.
         """
 
-    def healthcheck(self) -> bool:
+    def health_check(self) -> bool:
         """Best-effort backend readiness check.
 
         Default is optimistic (True). Real backends should override with a ping.

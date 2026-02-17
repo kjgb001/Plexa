@@ -1,4 +1,3 @@
-from pathlib import Path
 from fastapi.testclient import TestClient
 
 from plexa_server.storage.filesystem import FileSystemArtifactStorage
@@ -6,7 +5,7 @@ from plexa_server.models.lesson import Lesson, LessonIdentity
 
 
 def test_app_builds(client):
-    response = client.get("/docs")
+    response = client.get("/health")
     assert response.status_code == 200
 
 
@@ -113,3 +112,16 @@ def test_user_cannot_access_other_users_session(client, session_factory):
     )
 
     assert response.status_code == 404
+
+
+def test_health_alive(client):
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert r.json()["status"] == "alive"
+
+
+def test_ready_success(client):
+    r = client.get("/ready")
+    assert r.status_code == 200
+    assert r.json()["status"] == "ready"
+
