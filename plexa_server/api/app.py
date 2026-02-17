@@ -3,8 +3,11 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from plexa_server.core.sessions import SessionManager
-from plexa_server.storage.filesystem import FileSystemSessionStorage
-from plexa_server.storage.filesystem import FileSystemArtifactStorage
+from plexa_server.storage.filesystem import (
+    FileSystemSessionStorage,
+    FileSystemArtifactStorage,
+    FileSystemCourseStorage
+)
 
 from plexa_server.api.routes.sessions import get_sessions_router
 from plexa_server.api.routes.health import get_health_router
@@ -22,6 +25,7 @@ def build_app(
     # Infrastructure wiring (composition root)
     artifact_storage = FileSystemArtifactStorage(data_path)
     session_storage = FileSystemSessionStorage(data_path)
+    course_storage = FileSystemCourseStorage(data_path)
     inference_backend = inference_backend
 
     session_manager = SessionManager(
@@ -48,6 +52,7 @@ def build_app(
     app.include_router(
         get_admin_router(
             artifact_storage=artifact_storage,
+            course_storage=course_storage
         )
     )
 

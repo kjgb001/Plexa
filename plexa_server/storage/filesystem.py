@@ -1,16 +1,25 @@
 import json
 from pathlib import Path
 from typing import Optional
+from typing import List
 
 from plexa_server.models.lesson import Lesson
 from plexa_server.models.session import Session
+from plexa_server.models.course import Course
 from plexa_server.inference.base import InferenceConfig
 from plexa_server.storage.session_protocol import SessionStorage
 
 
+def _atomic_write(path: Path, data: str) -> None:
+    temp_path = path.with_suffix(".tmp")
+    with temp_path.open("w", encoding="utf-8") as f:
+        f.write(data)
+    temp_path.replace(path)
+
+
 class FileSystemArtifactStorage:
     """
-    Persistent storage for lesson/session artifacts and encrypted logs.
+    Persistent storage for lesson artifacts and encrypted logs.
 
     This class does not decrypt logs and does not modify lesson/session contents.
     """
@@ -67,7 +76,6 @@ class FileSystemArtifactStorage:
             return f.read()
 
 
-
 class FileSystemSessionStorage(SessionStorage):
     """
     Persistent filesystem-backed session storage.
@@ -84,16 +92,10 @@ class FileSystemSessionStorage(SessionStorage):
         self.sessions_path.mkdir(parents=True, exist_ok=True)
         self.configs_path.mkdir(parents=True, exist_ok=True)
 
-    def _atomic_write(self, path: Path, data: str) -> None:
-        temp_path = path.with_suffix(".tmp")
-        with temp_path.open("w", encoding="utf-8") as f:
-            f.write(data)
-        temp_path.replace(path)
-
     def save_session(self, session: Session) -> None:
         path = self.sessions_path / f"{session.session_id}.json"
         serialized = session.model_dump_json(indent=2)
-        self._atomic_write(path, serialized)
+        _atomic_write(path, serialized)
 
     def get_session(self, session_id: str) -> Optional[Session]:
         path = self.sessions_path / f"{session_id}.json"
@@ -119,7 +121,7 @@ class FileSystemSessionStorage(SessionStorage):
     ) -> None:
         path = self.configs_path / f"{session_id}.json"
         serialized = config.model_dump_json(indent=2)
-        self._atomic_write(path, serialized)
+        _atomic_write(path, serialized)
 
     def get_inference_config(
         self,
@@ -133,3 +135,50 @@ class FileSystemSessionStorage(SessionStorage):
             data = json.load(f)
 
         return InferenceConfig.model_validate(data)
+
+
+class FileSystemCourseStorage:
+    """
+    Persistent filesystem-backed storage for Course metadata.
+
+    Responsible only for atomic IO of Course documents.
+    No business logic.
+    """
+
+    def __init__(self, base_path: Path):
+        self.base_path = Path(base_path)
+        self.courses_path = self.base_path / "configs" / "courses"
+
+        self.courses_path.mkdir(parents=True, exist_ok=True)
+
+    def _course_path(self, course_id: str) -> Path:
+        return self.courses_path / f"{course_id}.json"
+
+    def save_course(self, course: Course) -> None:
+        path = self._course_path(course.course_id)
+        serialized = course.model_dump_json(indent=2)
+        _atomic_write(path, serialized)
+
+    def get_course(self, course_id: str) -> Optional[Course]:
+        path = self._course_path(course_id)
+        if not path.exists():
+            return None
+
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        return Course.model_validate(data)
+
+    def delete_course(self, course_id: str) -> None:
+        path = self._course_path(course_id)
+        path.unlink(missing_ok=True)
+
+    def list_courses(self) -> List[Course]:
+        results: List[Course] = []
+
+        for file in self.courses_path.glob("*.json"):
+            with file.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+                results.append(Course.model_validate(data))
+
+        return results

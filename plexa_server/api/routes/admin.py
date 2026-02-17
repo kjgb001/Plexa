@@ -6,7 +6,8 @@ import os
 import json
 
 from plexa_server.models.lesson import Lesson
-from plexa_server.storage.filesystem import FileSystemArtifactStorage
+from plexa_server.models.course import Course
+from plexa_server.storage.filesystem import FileSystemArtifactStorage, FileSystemCourseStorage
 
 
 # Admin Auth Dependency
@@ -34,6 +35,7 @@ def require_admin_token(
 
 def get_admin_router(
     artifact_storage: FileSystemArtifactStorage,
+    course_storage: FileSystemCourseStorage
 ) -> APIRouter:
 
     router = APIRouter(prefix="/admin", tags=["admin"])
@@ -91,6 +93,99 @@ def get_admin_router(
             )
 
         return lesson
+
+
+    # Create Course
+
+    @router.post("/courses")
+    def create_course(
+        payload: Course,
+        _: str = Depends(require_admin_token),
+    ):
+        existing = course_storage.get_course(payload.course_id)
+
+        if existing is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Course already exists",
+            )
+
+        course_storage.save_course(payload)
+        return payload
+
+
+    # Get Course
+
+    @router.get("/courses/{course_id}")
+    def get_course(
+        course_id: str,
+        _: str = Depends(require_admin_token),
+    ):
+        course = course_storage.get_course(course_id)
+
+        if course is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Course not found",
+            )
+
+        return course
+
+
+    # List Courses
+
+    @router.get("/courses")
+    def list_courses(
+        _: str = Depends(require_admin_token),
+    ):
+        courses = course_storage.list_courses()
+        return {"courses": courses}
+
+
+    # Update Course (metadata only)
+
+    @router.put("/courses/{course_id}")
+    def update_course(
+        course_id: str,
+        payload: Course,
+        _: str = Depends(require_admin_token),
+    ):
+        existing = course_storage.get_course(course_id)
+
+        if existing is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Course not found",
+            )
+
+        # Preserve lesson bindings
+        payload.lessons = existing.lessons
+
+        course_storage.save_course(payload)
+        return payload
+
+
+    # Delete Course
+
+    @router.delete("/courses/{course_id}")
+    def delete_course(
+        course_id: str,
+        _: str = Depends(require_admin_token),
+    ):
+        existing = course_storage.get_course(course_id)
+
+        if existing is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Course not found",
+            )
+
+        course_storage.delete_course(course_id)
+
+        return {
+            "status": "deleted",
+            "course_id": course_id,
+        }
 
 
     # Bind Lesson to Course

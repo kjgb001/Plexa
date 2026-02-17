@@ -85,11 +85,11 @@ def admin_headers(monkeypatch):
 
 
 @pytest.fixture
-def valid_lesson_payload():
+def valid_lesson_payload() -> Lesson:
     return {
         "identity": {
-            "lesson_id": "intro",
-            "version": "1.0",
+            "lesson_id": "test",
+            "version": "0.1.0",
             "title": "Introduction to LLM Behavior",
             "author": "Test Author",
             "license": "MIT",
@@ -113,4 +113,16 @@ def valid_lesson_payload():
             ]
         },
         "schema_version": "1.0"
+    }
+
+
+@pytest.fixture
+def valid_course_payload():
+    return {
+        "course_id": "CS101",
+        "title": "Intro to AI",
+        "description": "Foundations of language models",
+        "instructor": "Dr. Test",
+        "term": "Fall 2026",
+        "lessons": {},
     }
