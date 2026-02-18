@@ -59,10 +59,9 @@ def test_upload_lesson_validation_failure(client, admin_headers):
 
 # Admin Auth Enforcement
 
-def test_admin_requires_token(client):
-    response = client.post(
-        "/admin/lessons",
-        json={},
+def test_admin_requires_token(client, course_factory):
+    response = client.get(
+        "/admin/courses"
     )
 
     assert response.status_code == 403
@@ -204,6 +203,7 @@ def test_update_course_preserves_lessons(client, admin_headers, valid_course_pay
         "description": "Updated desc",
         "instructor": "Dr. Test",
         "term": "Fall 2026",
+        "owner_id": "Dr. Test",
         "lessons": {},  # should be ignored
     }
 

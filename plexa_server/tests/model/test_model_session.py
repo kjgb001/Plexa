@@ -10,6 +10,7 @@ def test_session_creation_valid():
         session_id="s1",
         lesson_id="lesson123",
         lesson_version="0.1.0",
+        course_id="CS101",
         user_id="user42"
     )
 
@@ -24,7 +25,8 @@ def test_session_requires_user_id():
         Session(
             session_id="s2",
             lesson_id="lesson123",
-            lesson_version="0.1.0"
+            lesson_version="0.1.0",
+            course_id="CS101",
             # missing user_id
         )
 
@@ -34,6 +36,7 @@ def test_session_can_append_message():
         session_id="s3",
         lesson_id="lesson123",
         lesson_version="0.1.0",
+        course_id="CS101",
         user_id="user42"
     )
 
@@ -56,6 +59,7 @@ def test_session_close_transition():
         session_id="s4",
         lesson_id="lesson123",
         lesson_version="0.1.0",
+        course_id="CS101",
         user_id="user42"
     )
 
@@ -71,6 +75,7 @@ def test_session_max_turns_optional():
         session_id="s5",
         lesson_id="lesson123",
         lesson_version="0.1.0",
+        course_id="CS101",
         user_id="user42",
         max_turns=5
     )

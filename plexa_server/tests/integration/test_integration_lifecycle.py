@@ -13,6 +13,7 @@ from plexa_server.tests.fixtures import make_valid_lesson_payload
 def test_full_lesson_lifecycle_with_stub(tmp_path):
     storage = FileSystemSessionStorage(tmp_path)
     inference = StubInference()
+    course_id = "CS101"
 
     manager = SessionManager(
         storage=storage,
@@ -26,6 +27,7 @@ def test_full_lesson_lifecycle_with_stub(tmp_path):
         session_id="s1",
         lesson=lesson,
         user_id="user-1",
+        course_id=course_id
     )
 
     session = storage.get_session("s1")
@@ -75,6 +77,7 @@ def test_full_lesson_lifecycle_with_stub(tmp_path):
 def test_manual_close_and_reload_persists_state(tmp_path):
     storage = FileSystemSessionStorage(tmp_path)
     inference = StubInference()
+    course_id = "CS101"
 
     manager = SessionManager(
         storage=storage,
@@ -90,6 +93,7 @@ def test_manual_close_and_reload_persists_state(tmp_path):
         session_id="s2",
         lesson=lesson,
         user_id="user-1",
+        course_id=course_id
     )
 
     # First turn
@@ -129,6 +133,7 @@ def test_manual_close_and_reload_persists_state(tmp_path):
         session_id="s3",
         lesson=lesson,
         user_id="user-1",
+        course_id=course_id
     )
 
     manager.submit_user_message("s3", "m1", "First")

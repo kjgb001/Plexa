@@ -57,17 +57,19 @@ def lesson_factory(artifact_storage):
 # Session factory
 
 @pytest.fixture
-def session_factory(client, lesson_factory):
-    def _create(lesson_id="test", version="0.1.0", user_id="tester"):
+def session_factory(client, lesson_factory, course_factory):
+    def _create(lesson_id="test", version="0.1.0", user_id="tester", course_id="CS101"):
         lesson_factory()
+        course_factory()
 
         response = client.post(
             "/sessions",
             json={
                 "lesson_id": lesson_id,
+                "course_id": course_id,
                 "lesson_version": version,
             },
-            headers={"X-User-Id": user_id}
+            headers={"X-User-Id": user_id, "X-Course-Id": course_id}
         )
 
         assert response.status_code == 201
@@ -75,6 +77,23 @@ def session_factory(client, lesson_factory):
 
     return _create
 
+
+@pytest.fixture
+def course_factory(client, valid_course_payload, admin_headers):
+    def _create():
+        payload = valid_course_payload
+        headers = admin_headers
+
+        response = client.post(
+            "/admin/courses",
+            json=payload,
+            headers=headers
+        )
+
+        assert response.status_code == 200
+        return response.json()["course_id"]
+
+    return _create
 
 # Admin token environment var
 
@@ -124,5 +143,8 @@ def valid_course_payload():
         "description": "Foundations of language models",
         "instructor": "Dr. Test",
         "term": "Fall 2026",
+        "owner_id": "ignored",
+        "enrolled_users": ["tester","Alice", "Bob"],
+        "discoverable": True,
         "lessons": {},
     }

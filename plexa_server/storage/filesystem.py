@@ -177,6 +177,8 @@ class FileSystemCourseStorage:
         results: List[Course] = []
 
         for file in self.courses_path.glob("*.json"):
+            if not file:
+                return None
             with file.open("r", encoding="utf-8") as f:
                 data = json.load(f)
                 results.append(Course.model_validate(data))

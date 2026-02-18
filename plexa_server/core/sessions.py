@@ -8,6 +8,7 @@ from uuid import uuid4
 from plexa_server.models.session import Session
 from plexa_server.models.message import Message
 from plexa_server.models.lesson import Lesson
+from plexa_server.models.course import Course
 from plexa_server.inference.base import (
     InferenceBackend, 
     InferenceConfig, 
@@ -52,6 +53,7 @@ class SessionManager:
         self,
         lesson: Lesson,
         user_id: str,
+        course_id: Course,
         session_id: str = str(uuid4()),
     ) -> Session:
 
@@ -73,6 +75,7 @@ class SessionManager:
             lesson_id=lesson.identity.lesson_id,
             lesson_version=lesson.identity.version,
             user_id=user_id,
+            course_id=course_id,
             messages=initial_messages,
             turn_count=0,
             max_turns=turn_limit,

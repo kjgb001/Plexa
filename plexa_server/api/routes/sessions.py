@@ -17,35 +17,15 @@ from plexa_server.api.schemas.responses import (
     SendMessageResponse,
 )
 
+from plexa_server.auth.user import require_user_id, require_course_id, get_owned_session
 from plexa_server.core.sessions import SessionManager
-from plexa_server.storage.filesystem import FileSystemArtifactStorage
-
-
-def require_user_id(
-    user_id: str | None = Header(default=None, alias="X-User-Id")
-) -> str:
-    if user_id is None:
-        raise HTTPException(status_code=401, detail="Missing user identity")
-    return user_id
-
-
-def get_owned_session(session_manager, session_id: str, user_id: str):
-    '''Temporary simple header id check. Should fully implement proper auth flow later.'''
-    try:
-        session = session_manager.get_session(session_id)
-    except SessionNotFoundError:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    if session.user_id != user_id:
-        # deliberate anti-enumeration
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    return session
+from plexa_server.storage.filesystem import FileSystemArtifactStorage, FileSystemCourseStorage
 
 
 def get_sessions_router(
     session_manager: SessionManager,
     artifact_storage: FileSystemArtifactStorage,
+    course_storage: FileSystemCourseStorage
 ) -> APIRouter:
 
     router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -59,6 +39,7 @@ def get_sessions_router(
     )
     def create_session(
         request: CreateSessionRequest,
+        course_id: str = Depends(require_course_id),
         user_id: str = Depends(require_user_id)
     ):
         lesson = artifact_storage.load_lesson(
@@ -72,9 +53,22 @@ def get_sessions_router(
                 detail="Lesson not found",
             )
 
+        course = course_storage.get_course(course_id)
+        if course is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Course not found."
+            )
+        if user_id not in course.enrolled_users and user_id != course.owner_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Course not found."
+            )
+
         session = session_manager.create_session(
             lesson=lesson,
             user_id=user_id,
+            course_id=course_id
         )
 
         return CreateSessionResponse(

@@ -12,6 +12,7 @@ from plexa_server.storage.filesystem import (
 from plexa_server.api.routes.sessions import get_sessions_router
 from plexa_server.api.routes.health import get_health_router
 from plexa_server.api.routes.admin import get_admin_router
+from plexa_server.api.routes.courses import get_course_router
 
 
 DATA_PATH = Path(os.path.join(os.path.dirname(__file__), "../data"))
@@ -40,6 +41,12 @@ def build_app(
         get_sessions_router(
             session_manager=session_manager,
             artifact_storage=artifact_storage,
+            course_storage=course_storage
+        )
+    )
+    app.include_router(
+        get_course_router(
+            course_storage=course_storage
         )
     )
     app.include_router(

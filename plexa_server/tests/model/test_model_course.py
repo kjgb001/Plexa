@@ -5,21 +5,10 @@ from datetime import datetime
 from plexa_server.models.course import Course
 
 
-def make_valid_course_payload():
-    return {
-        "course_id": "CS101",
-        "title": "Intro to AI",
-        "description": "Foundations of LLM literacy",
-        "instructor": "Dr. Test",
-        "term": "Fall 2026",
-        "lessons": {},
-    }
-
-
 # Valid Course
 
-def test_valid_course_parses():
-    course = Course.model_validate(make_valid_course_payload())
+def test_valid_course_parses(valid_course_payload):
+    course = Course.model_validate(valid_course_payload)
 
     assert course.course_id == "CS101"
     assert course.title == "Intro to AI"
@@ -29,8 +18,8 @@ def test_valid_course_parses():
 
 # Missing Required Field
 
-def test_missing_required_field_fails():
-    broken = make_valid_course_payload()
+def test_missing_required_field_fails(valid_course_payload):
+    broken = valid_course_payload
     broken.pop("title")
 
     with pytest.raises(ValidationError) as exc_info:
@@ -46,8 +35,8 @@ def test_missing_required_field_fails():
 
 # Lessons Default Behavior
 
-def test_lessons_default_is_empty_dict():
-    payload = make_valid_course_payload()
+def test_lessons_default_is_empty_dict(valid_course_payload):
+    payload = valid_course_payload
     payload.pop("lessons")
 
     course = Course.model_validate(payload)
@@ -57,8 +46,8 @@ def test_lessons_default_is_empty_dict():
 
 # Type Enforcement
 
-def test_lessons_must_be_mapping():
-    broken = make_valid_course_payload()
+def test_lessons_must_be_mapping(valid_course_payload):
+    broken = valid_course_payload
     broken["lessons"] = ["not", "a", "dict"]
 
     with pytest.raises(ValidationError):

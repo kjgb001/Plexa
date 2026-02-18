@@ -21,6 +21,7 @@ def make_valid_session(session_id: str = "s1"):
         "lesson_id": "intro",
         "lesson_version": "1.0",
         "user_id": "tester",
+        "course_id": "CS101",
         "messages": [],
         "turn_count": 0,
         "is_active": True,
@@ -28,20 +29,13 @@ def make_valid_session(session_id: str = "s1"):
     })
 
 
-def make_valid_course():
-    return Course.model_validate({
-        "course_id": "CS101",
-        "title": "Intro to AI",
-        "description": "Test course",
-        "instructor": "Dr. Test",
-        "term": "Fall 2026",
-        "lessons": {},
-    })
+def make_valid_course(valid_course_payload):
+    return Course.model_validate(valid_course_payload)
 
 
 def make_valid_inference_config():
     return InferenceConfig.model_validate({
-        "model_name": "stub",
+        "model": "stub",
         "temperature": 0.0,
     })
 
@@ -106,13 +100,13 @@ def test_session_storage_inference_config_roundtrip(tmp_path: Path):
     loaded = storage.get_inference_config("s1")
 
     assert loaded is not None
-    assert loaded.model_name == config.model_name
+    assert loaded.model == config.model
 
 
-def test_course_storage_roundtrip(tmp_path: Path):
+def test_course_storage_roundtrip(tmp_path: Path, valid_course_payload):
     storage = FileSystemCourseStorage(tmp_path)
 
-    course = make_valid_course()
+    course = make_valid_course(valid_course_payload)
 
     storage.save_course(course)
     loaded = storage.get_course(course.course_id)
@@ -122,10 +116,10 @@ def test_course_storage_roundtrip(tmp_path: Path):
     assert loaded.title == course.title
 
 
-def test_course_storage_delete(tmp_path: Path):
+def test_course_storage_delete(tmp_path: Path, valid_course_payload):
     storage = FileSystemCourseStorage(tmp_path)
 
-    course = make_valid_course()
+    course = make_valid_course(valid_course_payload)
 
     storage.save_course(course)
     storage.delete_course(course.course_id)
@@ -133,12 +127,13 @@ def test_course_storage_delete(tmp_path: Path):
     assert storage.get_course(course.course_id) is None
 
 
-def test_course_storage_list(tmp_path: Path):
+def test_course_storage_list(tmp_path: Path, valid_course_payload):
     storage = FileSystemCourseStorage(tmp_path)
 
-    c1 = make_valid_course()
+    c1 = make_valid_course(valid_course_payload)
     c2 = Course.model_validate({
         "course_id": "CS102",
+        "owner_id": "Bob",
         "title": "Advanced AI",
         "lessons": {},
     })

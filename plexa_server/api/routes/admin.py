@@ -7,28 +7,31 @@ import json
 
 from plexa_server.models.lesson import Lesson
 from plexa_server.models.course import Course
+from plexa_server.auth.admin import require_admin_token
+from plexa_server.auth.user import require_user_id
 from plexa_server.storage.filesystem import FileSystemArtifactStorage, FileSystemCourseStorage
 
 
-# Admin Auth Dependency
+def create_course(
+    payload: Course,
+    _: str = Depends(require_admin_token),
+    user_id: str = Depends(require_user_id),
+):
+    existing = course_storage.get_course(payload.course_id)
 
-def require_admin_token(
-    token: str | None = Header(default=None, alias="X-Admin-Token")
-) -> str:
-    expected = os.getenv("PLEXA_ADMIN_TOKEN")
-    if expected is None:
+    if existing is not None:
         raise HTTPException(
-            status_code=500,
-            detail="Admin token not configured"
+            status_code=409,
+            detail="Course already exists",
         )
 
-    if token is None or token != expected:
-        raise HTTPException(
-            status_code=403,
-            detail="Invalid admin token"
-        )
+    payload.owner_id = user_id
+    payload.enrolled_users = []
+    payload.pending_requests = []
 
-    return token
+    course_storage.save_course(payload)
+
+    return payload
 
 
 # Router Factory

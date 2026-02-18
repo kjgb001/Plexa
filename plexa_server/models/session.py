@@ -12,6 +12,7 @@ class Session(BaseModel):
 
     lesson_id: str
     lesson_version: str
+    course_id: str
 
     messages: List[Message] = Field(default_factory=list)
 

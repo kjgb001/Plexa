@@ -31,6 +31,7 @@ def test_create_session():
         session_id="s1",
         lesson=lesson,
         user_id="user-1",
+        course_id="CS101"
     )
 
     assert session.session_id == "s1"
@@ -48,6 +49,7 @@ def test_turn_increment_and_message_append():
         session_id="s1",
         lesson=lesson,
         user_id="user-1",
+        course_id="CS101"
     )
 
     assistant_message = manager.submit_user_message(
@@ -75,6 +77,7 @@ def test_turn_limit_enforced():
         session_id="s1",
         lesson=lesson,
         user_id="user-1",
+        course_id="CS101"
     )
 
     session = storage.get_session("s1")
@@ -101,6 +104,7 @@ def test_closed_session_rejects_messages():
         session_id="s1",
         lesson=lesson,
         user_id="user-1",
+        course_id="CS101"
     )
 
     manager.close_session("s1")
@@ -125,6 +129,7 @@ def test_atomic_rollback_on_inference_failure():
         session_id="s1",
         lesson=lesson,
         user_id="user-1",
+        course_id="CS101"
     )
 
     with pytest.raises(InferenceError):
@@ -145,6 +150,7 @@ def test_initial_system_message_injected():
         session_id="s1",
         lesson=lesson,
         user_id="user-1",
+        course_id="CS101"
     )
 
     session = storage.get_session("s1")
@@ -166,6 +172,7 @@ def test_initial_assistant_message_injected():
         session_id="s1",
         lesson=lesson,
         user_id="user-1",
+        course_id="CS101"
     )
 
     session = storage.get_session("s1")
@@ -184,6 +191,7 @@ def test_turn_limit_derived_from_lesson():
         session_id="s1",
         lesson=lesson,
         user_id="user-1",
+        course_id="CS101"
     )
 
     session = storage.get_session("s1")
@@ -199,6 +207,7 @@ def test_inference_config_frozen_and_stored():
         session_id="s1",
         lesson=lesson,
         user_id="user-1",
+        course_id="CS101"
     )
 
     config = storage.get_inference_config("s1")
