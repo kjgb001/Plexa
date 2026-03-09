@@ -62,13 +62,13 @@ def lesson_factory(artifact_storage) -> Lesson:
 # Session factory
 
 @pytest.fixture
-def session_factory(client, lesson_factory, course_factory) -> String:
+def session_factory(client, lesson_factory, course_factory, api_prefix) -> String:
     def _create(lesson_id="test", version="0.1.0", user_id="tester", course_id="CS101"):
         lesson_factory()
         course_id = course_factory()
 
         response = client.post(
-            f"courses/{course_id}/sessions",
+            f"{api_prefix}/courses/{course_id}/sessions",
             json={
                 "lesson_id": lesson_id,
                 "lesson_version": version,
@@ -83,13 +83,13 @@ def session_factory(client, lesson_factory, course_factory) -> String:
 
 
 @pytest.fixture
-def course_factory(client, valid_course_payload, admin_headers) -> String:
+def course_factory(client, valid_course_payload, admin_headers, api_prefix) -> String:
     def _create():
         payload = valid_course_payload
         headers = admin_headers
 
         response = client.post(
-            "/admin/courses",
+            f"{api_prefix}/admin/courses",
             json=payload,
             headers=headers
         )
@@ -115,3 +115,8 @@ def valid_lesson_payload() -> Lesson:
 @pytest.fixture
 def valid_course_payload() -> Course:
     return valid_course()
+
+
+@pytest.fixture
+def api_prefix() -> str:
+    return (f"/api/v1")

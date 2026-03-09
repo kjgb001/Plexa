@@ -29,7 +29,7 @@ def test_server_health_endpoint(tmp_path):
     # Give server time to boot
     time.sleep(0.5)
 
-    response = requests.get("http://127.0.0.1:8000/health")
+    response = requests.get("http://127.0.0.1:8000/api/health")
 
     assert response.status_code == 200
     assert response.json()["status"] == "alive"

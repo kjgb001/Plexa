@@ -5,11 +5,13 @@ export class SessionApi {
   private http: HttpClient
   constructor(http: HttpClient) {this.http = http}
 
+  COURSE_ID = String(null)
+
   createSession(courseId: string, lessonId: string, lessonVersion: string) {
-    return this.http.request<{ session: Session }>("/sessions", {
+    this.COURSE_ID = courseId
+    return this.http.request<{ session: Session }>(`courses/${courseId}/sessions`, {
       method: "POST",
       body: JSON.stringify({
-        course_id: courseId,
         lesson_id: lessonId,
         lesson_version: lessonVersion
       })
@@ -18,7 +20,7 @@ export class SessionApi {
 
   sendMessage(sessionId: string, content: string) {
     return this.http.request<{ assistant_message: Message; session: Session }>(
-      `/sessions/${sessionId}/messages`,
+      `courses/${this.COURSE_ID}/sessions/${sessionId}/messages`,
       {
         method: "POST",
         body: JSON.stringify({ content })

@@ -5,11 +5,11 @@ import pytest
 
 # Lesson Upload
 
-def test_upload_lesson_success(client, admin_headers, valid_lesson_payload):
+def test_upload_lesson_success(client, admin_headers, valid_lesson_payload, api_prefix):
     payload = valid_lesson_payload
 
     response = client.post(
-        "/admin/lessons",
+        f"{api_prefix}/admin/lessons",
         json=payload,
         headers=admin_headers,
     )
@@ -23,13 +23,13 @@ def test_upload_lesson_success(client, admin_headers, valid_lesson_payload):
     assert data["overwritten"] is False
 
 
-def test_upload_lesson_overwrite(client, admin_headers, valid_lesson_payload):
+def test_upload_lesson_overwrite(client, admin_headers, valid_lesson_payload, api_prefix):
     payload = valid_lesson_payload
 
-    client.post("/admin/lessons", json=payload, headers=admin_headers)
+    client.post(f"{api_prefix}/admin/lessons", json=payload, headers=admin_headers)
 
     response = client.post(
-        "/admin/lessons",
+        f"{api_prefix}/admin/lessons",
         json=payload,
         headers=admin_headers,
     )
@@ -38,14 +38,14 @@ def test_upload_lesson_overwrite(client, admin_headers, valid_lesson_payload):
     assert response.json()["overwritten"] is True
 
 
-def test_upload_lesson_validation_failure(client, admin_headers):
+def test_upload_lesson_validation_failure(client, admin_headers, api_prefix):
     # Missing required identity field
     payload = {
         "content": {"title": "Broken"},
     }
 
     response = client.post(
-        "/admin/lessons",
+        f"{api_prefix}/admin/lessons",
         json=payload,
         headers=admin_headers,
     )
@@ -59,9 +59,9 @@ def test_upload_lesson_validation_failure(client, admin_headers):
 
 # Admin Auth Enforcement
 
-def test_admin_requires_token(client, course_factory):
+def test_admin_requires_token(client, course_factory, api_prefix):
     response = client.get(
-        "/admin/courses"
+        f"{api_prefix}/admin/courses"
     )
 
     assert response.status_code == 403
@@ -69,17 +69,17 @@ def test_admin_requires_token(client, course_factory):
 
 # Course Binding
 
-def test_bind_lesson_to_course(client, admin_headers, valid_lesson_payload):
+def test_bind_lesson_to_course(client, admin_headers, valid_lesson_payload, api_prefix):
     payload = valid_lesson_payload
 
     client.post(
-        "/admin/lessons",
+        f"{api_prefix}/admin/lessons",
         json=payload,
         headers=admin_headers,
     )
 
     bind_response = client.post(
-        "/admin/courses/CS101/lessons",
+        f"{api_prefix}/admin/courses/CS101/lessons",
         json={
             "lesson_id": "test",
             "version": "0.1.0",
@@ -95,29 +95,29 @@ def test_bind_lesson_to_course(client, admin_headers, valid_lesson_payload):
     assert data["version"] == "0.1.0"
 
 
-def test_bind_replaces_existing_version(client, admin_headers, valid_lesson_payload):
+def test_bind_replaces_existing_version(client, admin_headers, valid_lesson_payload, api_prefix):
     lesson_v1 = valid_lesson_payload
 
     lesson_v2 = valid_lesson_payload
     lesson_v2["identity"]["version"] = "0.2.0"
 
-    client.post("/admin/lessons", json=lesson_v1, headers=admin_headers)
-    client.post("/admin/lessons", json=lesson_v2, headers=admin_headers)
+    client.post(f"{api_prefix}/admin/lessons", json=lesson_v1, headers=admin_headers)
+    client.post(f"{api_prefix}/admin/lessons", json=lesson_v2, headers=admin_headers)
 
     client.post(
-        "/admin/courses/CS101/lessons",
+        f"{api_prefix}/admin/courses/CS101/lessons",
         json={"lesson_id": "test", "version": "0.1.0"},
         headers=admin_headers,
     )
 
     client.post(
-        "/admin/courses/CS101/lessons",
+        f"{api_prefix}/admin/courses/CS101/lessons",
         json={"lesson_id": "test", "version": "0.2.0"},
         headers=admin_headers,
     )
 
     response = client.get(
-        "/admin/courses/CS101/lessons",
+        f"{api_prefix}/admin/courses/CS101/lessons",
         headers=admin_headers,
     )
 
@@ -127,9 +127,9 @@ def test_bind_replaces_existing_version(client, admin_headers, valid_lesson_payl
     assert lessons["test"] == "0.2.0"
 
 
-def test_bind_nonexistent_lesson_fails(client, admin_headers):
+def test_bind_nonexistent_lesson_fails(client, admin_headers, api_prefix):
     response = client.post(
-        "/admin/courses/CS101/lessons",
+        f"{api_prefix}/admin/courses/CS101/lessons",
         json={"lesson_id": "ghost", "version": "0.1.0"},
         headers=admin_headers,
     )
@@ -139,9 +139,9 @@ def test_bind_nonexistent_lesson_fails(client, admin_headers):
 
 # Course Creation
 
-def test_create_course_success(client, admin_headers, valid_course_payload):
+def test_create_course_success(client, admin_headers, valid_course_payload, api_prefix):
     response = client.post(
-        "/admin/courses",
+        f"{api_prefix}/admin/courses",
         json=valid_course_payload,
         headers=admin_headers,
     )
@@ -153,11 +153,11 @@ def test_create_course_success(client, admin_headers, valid_course_payload):
     assert data["title"] == "Intro to AI"
 
 
-def test_create_course_duplicate_fails(client, admin_headers, valid_course_payload):
-    client.post("/admin/courses", json=valid_course_payload, headers=admin_headers)
+def test_create_course_duplicate_fails(client, admin_headers, valid_course_payload, api_prefix):
+    client.post(f"{api_prefix}/admin/courses", json=valid_course_payload, headers=admin_headers)
 
     response = client.post(
-        "/admin/courses",
+        f"{api_prefix}/admin/courses",
         json=valid_course_payload,
         headers=admin_headers,
     )
@@ -167,11 +167,11 @@ def test_create_course_duplicate_fails(client, admin_headers, valid_course_paylo
 
 # Get & List Courses
 
-def test_get_course(client, admin_headers, valid_course_payload):
-    client.post("/admin/courses", json=valid_course_payload, headers=admin_headers)
+def test_get_course(client, admin_headers, valid_course_payload, api_prefix):
+    client.post(f"{api_prefix}/admin/courses", json=valid_course_payload, headers=admin_headers)
 
     response = client.get(
-        "/admin/courses/CS101",
+        f"{api_prefix}/admin/courses/CS101",
         headers=admin_headers,
     )
 
@@ -179,10 +179,10 @@ def test_get_course(client, admin_headers, valid_course_payload):
     assert response.json()["course_id"] == "CS101"
 
 
-def test_list_courses(client, admin_headers, valid_course_payload):
-    client.post("/admin/courses", json=valid_course_payload, headers=admin_headers)
+def test_list_courses(client, admin_headers, valid_course_payload, api_prefix):
+    client.post(f"{api_prefix}/admin/courses", json=valid_course_payload, headers=admin_headers)
 
-    response = client.get("/admin/courses", headers=admin_headers)
+    response = client.get(f"{api_prefix}/admin/courses", headers=admin_headers)
 
     assert response.status_code == 200
     courses = response.json()["courses"]
@@ -193,8 +193,8 @@ def test_list_courses(client, admin_headers, valid_course_payload):
 
 # Update Course
 
-def test_update_course_preserves_lessons(client, admin_headers, valid_course_payload):
-    client.post("/admin/courses", json=valid_course_payload, headers=admin_headers)
+def test_update_course_preserves_lessons(client, admin_headers, valid_course_payload, api_prefix):
+    client.post(f"{api_prefix}/admin/courses", json=valid_course_payload, headers=admin_headers)
 
     # Bind fake lesson mapping manually for test
     update_payload = {
@@ -208,7 +208,7 @@ def test_update_course_preserves_lessons(client, admin_headers, valid_course_pay
     }
 
     response = client.put(
-        "/admin/courses/CS101",
+        f"{api_prefix}/admin/courses/CS101",
         json=update_payload,
         headers=admin_headers,
     )
@@ -219,18 +219,18 @@ def test_update_course_preserves_lessons(client, admin_headers, valid_course_pay
 
 # Delete Course
 
-def test_delete_course(client, admin_headers, valid_course_payload):
-    client.post("/admin/courses", json=valid_course_payload, headers=admin_headers)
+def test_delete_course(client, admin_headers, valid_course_payload, api_prefix):
+    client.post(f"{api_prefix}/admin/courses", json=valid_course_payload, headers=admin_headers)
 
     delete_response = client.delete(
-        "/admin/courses/CS101",
+        f"{api_prefix}/admin/courses/CS101",
         headers=admin_headers,
     )
 
     assert delete_response.status_code == 200
 
     get_response = client.get(
-        "/admin/courses/CS101",
+        f"{api_prefix}/admin/courses/CS101",
         headers=admin_headers,
     )
 
@@ -239,9 +239,9 @@ def test_delete_course(client, admin_headers, valid_course_payload):
 
 # Binding Behavior
 
-def test_binding_requires_existing_course(client, admin_headers):
+def test_binding_requires_existing_course(client, admin_headers, api_prefix):
     response = client.post(
-        "/admin/courses/CS404/lessons",
+        f"{api_prefix}/admin/courses/CS404/lessons",
         json={"lesson_id": "test", "version": "0.1.0"},
         headers=admin_headers,
     )
@@ -249,34 +249,34 @@ def test_binding_requires_existing_course(client, admin_headers):
     assert response.status_code == 404
 
 
-def test_binding_replaces_version(client, admin_headers, valid_course_payload, valid_lesson_payload):
+def test_binding_replaces_version(client, admin_headers, valid_course_payload, valid_lesson_payload, api_prefix):
     # Create course
-    client.post("/admin/courses", json=valid_course_payload, headers=admin_headers)
+    client.post(f"{api_prefix}/admin/courses", json=valid_course_payload, headers=admin_headers)
 
     # Upload lessons
     lesson_v1 = valid_lesson_payload
     lesson_v2 = valid_lesson_payload
     lesson_v2["identity"]["version"] = "0.2.0"
 
-    client.post("/admin/lessons", json=lesson_v1, headers=admin_headers)
-    client.post("/admin/lessons", json=lesson_v2, headers=admin_headers)
+    client.post(f"{api_prefix}/admin/lessons", json=lesson_v1, headers=admin_headers)
+    client.post(f"{api_prefix}/admin/lessons", json=lesson_v2, headers=admin_headers)
 
     # Bind v1
     client.post(
-        "/admin/courses/CS101/lessons",
+        f"{api_prefix}/admin/courses/CS101/lessons",
         json={"lesson_id": "test", "version": "0.1.0"},
         headers=admin_headers,
     )
 
     # Bind v2 (replace)
     client.post(
-        "/admin/courses/CS101/lessons",
+        f"{api_prefix}/admin/courses/CS101/lessons",
         json={"lesson_id": "test", "version": "0.2.0"},
         headers=admin_headers,
     )
 
     response = client.get(
-        "/admin/courses/CS101/lessons",
+        f"{api_prefix}/admin/courses/CS101/lessons",
         headers=admin_headers,
     )
 

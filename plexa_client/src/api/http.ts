@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "./config"
+import { API_BASE_URL, TARGET_API_VERSION } from "./config"
 import {
   ApiError,
   NotFoundError,
@@ -20,7 +20,9 @@ export class HttpClient {
       ...(options.headers ?? {})
     }
 
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    const url = `${API_BASE_URL}${this.resolvePath(path)}`
+    console.log(url)
+    const response = await fetch(url, {
       ...options,
       headers
     })
@@ -30,7 +32,12 @@ export class HttpClient {
       throw this.mapError(response.status, body.detail)
     }
 
-    return response.json()
+    const contentType = response.headers.get("content-type")
+    if (contentType?.includes("application/json")) {
+      return response.json()
+    }
+
+    return undefined as T
   }
 
   private mapError(status: number, detail?: string): Error {
@@ -44,5 +51,20 @@ export class HttpClient {
       default:
         return new ApiError(status, detail)
     }
+  }
+
+  UNVERSIONED_ENDPOINTS = new Set([
+    "/health",
+    "/ready"
+  ])
+
+  private resolvePath(path: string): string {
+    const normalized = path.startsWith("/") ? path : `/${path}`
+
+    if (this.UNVERSIONED_ENDPOINTS.has(normalized)) {
+      return `${normalized}`
+    }
+
+    return `/${TARGET_API_VERSION}${normalized}`
   }
 }

@@ -4,17 +4,17 @@ from plexa_server.storage.filesystem import FileSystemArtifactStorage
 from plexa_server.models.lesson import Lesson, LessonIdentity
 
 
-def test_app_builds(client):
-    response = client.get("/health")
+def test_app_builds(client, api_prefix):
+    response = client.get("api/health")
     assert response.status_code == 200
 
 
-def test_create_session_success(client, lesson_factory, course_factory):
+def test_create_session_success(client, lesson_factory, course_factory, api_prefix):
     lesson_factory()
     course_id = course_factory()
 
     response = client.post(
-        f"/courses/{course_id}/sessions",
+        f"{api_prefix}/courses/{course_id}/sessions",
         json={
             "lesson_id": "test",
             "lesson_version": "0.1.0",
@@ -31,12 +31,12 @@ def test_create_session_success(client, lesson_factory, course_factory):
     assert data["session"]["is_active"] is True
 
 
-def test_send_message_success(client, session_factory):
+def test_send_message_success(client, session_factory, api_prefix):
     session_id = session_factory()
     course_id = "CS101"
 
     response = client.post(
-        f"/courses/{course_id}/sessions/{session_id}/messages",
+        f"{api_prefix}/courses/{course_id}/sessions/{session_id}/messages",
         json={"content": "Hello world"},
         headers={"X-User-Id": "tester"},
     )
@@ -49,12 +49,12 @@ def test_send_message_success(client, session_factory):
     assert data["session"]["turn_count"] >= 1
 
 
-def test_get_session(client, session_factory):
+def test_get_session(client, session_factory, api_prefix):
     session_id = session_factory()
     course_id = "CS101"
 
     response = client.get(
-        f"/courses/{course_id}/sessions/{session_id}",
+        f"{api_prefix}/courses/{course_id}/sessions/{session_id}",
         headers={"X-User-Id": "tester"},
     )
 
@@ -62,12 +62,12 @@ def test_get_session(client, session_factory):
     assert response.json()["session"]["session_id"] == session_id
 
 
-def test_close_session(client, session_factory):
+def test_close_session(client, session_factory, api_prefix):
     session_id = session_factory()
     course_id = "CS101"
 
     response = client.post(
-        f"/courses/{course_id}/sessions/{session_id}/close",
+        f"{api_prefix}/courses/{course_id}/sessions/{session_id}/close",
         headers={"X-User-Id": "tester"},
     )
 
@@ -75,10 +75,10 @@ def test_close_session(client, session_factory):
     assert response.json()["is_active"] is False
 
 
-def test_create_session_lesson_not_found(client):
+def test_create_session_lesson_not_found(client, api_prefix):
     course_id = "CS101"
     response = client.post(
-        f"courses/{course_id}/sessions",
+        f"{api_prefix}/courses/{course_id}/sessions",
         json={
             "lesson_id": "does_not_exist",
             "lesson_version": "0.1.0",
@@ -89,33 +89,33 @@ def test_create_session_lesson_not_found(client):
     assert response.status_code == 404
 
 
-def test_get_session_not_found(client):
+def test_get_session_not_found(client, api_prefix):
     course_id = "CS101"
     response = client.get(
-        f"courses/{course_id}/sessions/fake-id",
+        f"{api_prefix}/courses/{course_id}/sessions/fake-id",
         headers={"X-User-Id": "tester"},
     )
     assert response.status_code == 404
 
 
-def test_missing_user_header_returns_401(client, lesson_factory):
+def test_missing_user_header_returns_401(client, lesson_factory, api_prefix):
     lesson_factory()
     course_id = "CS101"
 
     response = client.post(
-        f"courses/{course_id}/sessions",
+        f"{api_prefix}/courses/{course_id}/sessions",
         json={"lesson_id": "test", "lesson_version": "1.0"},
     )
 
     assert response.status_code == 401
 
 
-def test_user_cannot_access_other_users_session(client, session_factory):
+def test_user_cannot_access_other_users_session(client, session_factory, api_prefix):
     session_id = session_factory(user_id="Alice")
     course_id = "CS101"
 
     response = client.get(
-        f"courses/{course_id}/sessions/{session_id}",
+        f"{api_prefix}/courses/{course_id}/sessions/{session_id}",
         headers={"X-User-Id": "Bob"},
     )
 
@@ -123,23 +123,23 @@ def test_user_cannot_access_other_users_session(client, session_factory):
 
 
 def test_health_alive(client):
-    r = client.get("/health")
+    r = client.get("/api/health")
     assert r.status_code == 200
     assert r.json()["status"] == "alive"
 
 
 def test_ready_success(client):
-    r = client.get("/ready")
+    r = client.get("/api/ready")
     assert r.status_code == 200
     assert r.json()["status"] == "ready"
 
 
-def test_course_creation_sets_owner(client, admin_headers, valid_course_payload):
+def test_course_creation_sets_owner(client, admin_headers, valid_course_payload, api_prefix):
     payload = valid_course_payload
     payload["owner_id"] = "Dr. Test"
 
     response = client.post(
-        "/admin/courses",
+        f"{api_prefix}/admin/courses",
         json=valid_course_payload,
         headers=admin_headers,
     )
@@ -152,10 +152,10 @@ def test_course_creation_sets_owner(client, admin_headers, valid_course_payload)
     assert data["pending_requests"] == []
 
 
-def test_discoverable_courses_visible(client, course_factory):
+def test_discoverable_courses_visible(client, course_factory, api_prefix):
     course_id = course_factory()
 
-    response = client.get("/courses", headers={"X-User-Id": "tester"})
+    response = client.get(f"{api_prefix}/courses", headers={"X-User-Id": "tester"})
 
     assert response.status_code == 200
     courses = response.json()["courses"]
@@ -163,25 +163,25 @@ def test_discoverable_courses_visible(client, course_factory):
     assert any(c["course_id"] == f"{course_id}" for c in courses)
 
 
-def test_invite_only_hidden_from_listing(client, admin_headers, valid_course_payload):
+def test_invite_only_hidden_from_listing(client, admin_headers, valid_course_payload, api_prefix):
     payload = valid_course_payload
     payload["discoverable"] = False
     course_id = payload["course_id"]
 
-    client.post("/admin/courses", json=payload, headers=admin_headers)
+    client.post(f"{api_prefix}/admin/courses", json=payload, headers=admin_headers)
 
-    response = client.get("/courses", headers={"X-User-Id": "tester"})
+    response = client.get(f"{api_prefix}/courses", headers={"X-User-Id": "tester"})
 
     courses = response.json()["courses"]
 
     assert all(c["course_id"] != f"{course_id}" for c in courses)
 
 
-def test_enrollment_request_flow(client, course_factory):
+def test_enrollment_request_flow(client, course_factory, api_prefix):
     course_id = course_factory()
 
     response = client.post(
-        f"/courses/{course_id}/enroll",
+        f"{api_prefix}/courses/{course_id}/enroll",
         headers={"X-User-Id": "testina"},
     )
 
@@ -190,7 +190,7 @@ def test_enrollment_request_flow(client, course_factory):
 
     # Owner sees request
     requests = client.get(
-        f"/courses/{course_id}/requests",
+        f"{api_prefix}/courses/{course_id}/requests",
         headers={"X-User-Id": "ignored"},
     )
 
@@ -198,16 +198,16 @@ def test_enrollment_request_flow(client, course_factory):
     assert "testina" in requests.json()["pending_requests"]
 
 
-def test_approval_moves_user_to_enrolled(client, course_factory):
+def test_approval_moves_user_to_enrolled(client, course_factory, api_prefix):
     course_id = course_factory()
 
     client.post(
-        f"/courses/{course_id}/enroll", 
+        f"{api_prefix}/courses/{course_id}/enroll", 
         headers={"X-User-Id": "testina"}
     )
 
     approve = client.post(
-        f"/courses/{course_id}/approve",
+        f"{api_prefix}/courses/{course_id}/approve",
         json={"user_id": "testina"},
         headers={"X-User-Id": "ignored"},
     )
@@ -216,7 +216,7 @@ def test_approval_moves_user_to_enrolled(client, course_factory):
     assert approve.json() == {"status":"approved"}
 
     course = client.get(
-        f"/courses/{course_id}",
+        f"{api_prefix}/courses/{course_id}",
         headers={"X-User-Id": "ignored"},
     )
 
@@ -224,14 +224,14 @@ def test_approval_moves_user_to_enrolled(client, course_factory):
     assert "testina" in course.json()["enrolled_users"]
 
 
-def test_non_enrolled_cannot_access_course(client, admin_headers, valid_course_payload):
+def test_non_enrolled_cannot_access_course(client, admin_headers, valid_course_payload, api_prefix):
     valid_course_payload["discoverable"] = False
     course_id = valid_course_payload["course_id"]
 
-    client.post("/admin/courses", json=valid_course_payload, headers=admin_headers)
+    client.post(f"{api_prefix}/admin/courses", json=valid_course_payload, headers=admin_headers)
 
     response = client.get(
-        f"/courses/{course_id}",
+        f"{api_prefix}/courses/{course_id}",
         headers={"X-User-Id": "not enrolled"},
     )
 
@@ -242,19 +242,20 @@ def test_session_creation_requires_enrollment(
     client,
     admin_headers,
     course_factory,
-    lesson_factory
+    lesson_factory,
+    api_prefix
 ):
     course_id = course_factory()
     lesson_factory()
 
     client.post(
-        f"/admin/courses/{course_id}/lessons",
+        f"{api_prefix}/admin/courses/{course_id}/lessons",
         json={"lesson_id": "test", "version": "0.1.0"},
         headers=admin_headers,
     )
 
     response = client.post(
-        f"courses/{course_id}/sessions",
+        f"{api_prefix}/courses/{course_id}/sessions",
         json={
             "lesson_id": "test",
             "lesson_version": "0.1.0",
@@ -269,30 +270,31 @@ def test_session_creation_after_enrollment(
     client,
     admin_headers,
     course_factory,
-    lesson_factory
+    lesson_factory,
+    api_prefix
 ):
     course_id = course_factory()
     lesson_factory()
 
     client.post(
-        f"/admin/courses/{course_id}/lessons",
+        f"{api_prefix}/admin/courses/{course_id}/lessons",
         json={"lesson_id": "test", "version": "0.1.0"},
         headers=admin_headers,
     )
 
     client.post(
-        f"/courses/{course_id}/enroll", 
+        f"{api_prefix}/courses/{course_id}/enroll", 
         headers={"X-User-Id": "testina"}
     )
 
     approve = client.post(
-        f"/courses/{course_id}/approve",
+        f"{api_prefix}/courses/{course_id}/approve",
         json={"user_id": "testina"},
         headers={"X-User-Id": "ignored"},
     )
 
     response = client.post(
-        f"courses/{course_id}/sessions",
+        f"{api_prefix}/courses/{course_id}/sessions",
         json={
             "lesson_id": "test",
             "lesson_version": "0.1.0",

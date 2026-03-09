@@ -10,7 +10,7 @@ def get_health_router(
     inference_backend,
 ) -> APIRouter:
 
-    router = APIRouter(tags=["health"])
+    router = APIRouter(prefix="/api", tags=["health"])
 
     @router.get("/health")
     def health():
