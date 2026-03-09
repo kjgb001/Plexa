@@ -1,5 +1,51 @@
 from plexa_server.models.lesson import Lesson
 
+
+def valid_course():
+    return {
+        "course_id": "CS101",
+        "title": "Intro to AI",
+        "description": "Foundations of language models",
+        "instructor": "Dr. Test",
+        "term": "Fall 2026",
+        "owner_id": "ignored",
+        "enrolled_users": ["tester","Alice", "Bob"],
+        "discoverable": True,
+        "lessons": {},
+    }
+
+
+def valid_lesson():
+    return {
+        "identity": {
+            "lesson_id": "test",
+            "version": "0.1.0",
+            "title": "Introduction to LLM Behavior",
+            "author": "Test Author",
+            "license": "MIT",
+        },
+        "intent": {
+            "learning_objective": "Understand model response patterns.",
+            "behavioral_focus": "Critical reasoning",
+        },
+        "execution": {
+            "system_prompt": "You are a helpful assistant.",
+            "model_profile": "default",
+        },
+        "constraints": {
+            "input_mode": "freeform",
+            "turn_limit": 5,
+        },
+        "reflection": {
+            "reflection_prompts": [
+                "What did you learn?",
+                "What surprised you?"
+            ]
+        },
+        "schema_version": "1.0"
+    }
+
+
 def make_valid_lesson_payload() -> Lesson:
     return {
         "identity": {

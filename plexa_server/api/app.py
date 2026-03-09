@@ -14,9 +14,10 @@ from plexa_server.api.routes.sessions import get_sessions_router
 from plexa_server.api.routes.health import get_health_router
 from plexa_server.api.routes.admin import get_admin_router
 from plexa_server.api.routes.courses import get_course_router
+from plexa_server.utils.filesystem_data_dir import get_data_dir_path
 
 
-DATA_PATH = Path(os.path.join(os.path.dirname(__file__), "../data"))
+DATA_PATH = get_data_dir_path()
 
 def build_app(
     inference_backend,
