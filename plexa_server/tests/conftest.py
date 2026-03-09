@@ -65,16 +65,15 @@ def lesson_factory(artifact_storage) -> Lesson:
 def session_factory(client, lesson_factory, course_factory) -> String:
     def _create(lesson_id="test", version="0.1.0", user_id="tester", course_id="CS101"):
         lesson_factory()
-        course_factory()
+        course_id = course_factory()
 
         response = client.post(
-            "/sessions",
+            f"courses/{course_id}/sessions",
             json={
                 "lesson_id": lesson_id,
-                "course_id": course_id,
                 "lesson_version": version,
             },
-            headers={"X-User-Id": user_id, "X-Course-Id": course_id}
+            headers={"X-User-Id": user_id}
         )
 
         assert response.status_code == 201

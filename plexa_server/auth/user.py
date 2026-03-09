@@ -18,7 +18,7 @@ def require_course_id(
     if course_id is None:
         raise HTTPException(status_code=401, detail="Missing course identity")
     return course_id
-
+    
 
 def get_owned_session(session_manager, session_id: str, user_id: str):
     '''Temporary simple header id check. Should fully implement proper auth flow later.'''

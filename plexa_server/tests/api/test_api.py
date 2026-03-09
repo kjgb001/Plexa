@@ -14,12 +14,12 @@ def test_create_session_success(client, lesson_factory, course_factory):
     course_id = course_factory()
 
     response = client.post(
-        "/sessions",
+        f"/courses/{course_id}/sessions",
         json={
             "lesson_id": "test",
             "lesson_version": "0.1.0",
         },
-        headers={"X-User-Id": "tester", "X-Course-Id": "CS101"},
+        headers={"X-User-Id": "tester"},
     )
 
     assert response.status_code == 201
@@ -33,9 +33,10 @@ def test_create_session_success(client, lesson_factory, course_factory):
 
 def test_send_message_success(client, session_factory):
     session_id = session_factory()
+    course_id = "CS101"
 
     response = client.post(
-        f"/sessions/{session_id}/messages",
+        f"/courses/{course_id}/sessions/{session_id}/messages",
         json={"content": "Hello world"},
         headers={"X-User-Id": "tester"},
     )
@@ -50,9 +51,10 @@ def test_send_message_success(client, session_factory):
 
 def test_get_session(client, session_factory):
     session_id = session_factory()
+    course_id = "CS101"
 
     response = client.get(
-        f"/sessions/{session_id}",
+        f"/courses/{course_id}/sessions/{session_id}",
         headers={"X-User-Id": "tester"},
     )
 
@@ -62,9 +64,10 @@ def test_get_session(client, session_factory):
 
 def test_close_session(client, session_factory):
     session_id = session_factory()
+    course_id = "CS101"
 
     response = client.post(
-        f"/sessions/{session_id}/close",
+        f"/courses/{course_id}/sessions/{session_id}/close",
         headers={"X-User-Id": "tester"},
     )
 
@@ -73,21 +76,23 @@ def test_close_session(client, session_factory):
 
 
 def test_create_session_lesson_not_found(client):
+    course_id = "CS101"
     response = client.post(
-        "/sessions",
+        f"courses/{course_id}/sessions",
         json={
             "lesson_id": "does_not_exist",
             "lesson_version": "0.1.0",
         },
-        headers={"X-User-Id": "tester", "X-Course-Id": "CS101"},
+        headers={"X-User-Id": "tester"},
     )
 
     assert response.status_code == 404
 
 
 def test_get_session_not_found(client):
+    course_id = "CS101"
     response = client.get(
-        "/sessions/fake-id",
+        f"courses/{course_id}/sessions/fake-id",
         headers={"X-User-Id": "tester"},
     )
     assert response.status_code == 404
@@ -95,9 +100,10 @@ def test_get_session_not_found(client):
 
 def test_missing_user_header_returns_401(client, lesson_factory):
     lesson_factory()
+    course_id = "CS101"
 
     response = client.post(
-        "/sessions",
+        f"courses/{course_id}/sessions",
         json={"lesson_id": "test", "lesson_version": "1.0"},
     )
 
@@ -106,9 +112,10 @@ def test_missing_user_header_returns_401(client, lesson_factory):
 
 def test_user_cannot_access_other_users_session(client, session_factory):
     session_id = session_factory(user_id="Alice")
+    course_id = "CS101"
 
     response = client.get(
-        f"/sessions/{session_id}",
+        f"courses/{course_id}/sessions/{session_id}",
         headers={"X-User-Id": "Bob"},
     )
 
@@ -146,19 +153,20 @@ def test_course_creation_sets_owner(client, admin_headers, valid_course_payload)
 
 
 def test_discoverable_courses_visible(client, course_factory):
-    course_factory()
+    course_id = course_factory()
 
     response = client.get("/courses", headers={"X-User-Id": "tester"})
 
     assert response.status_code == 200
     courses = response.json()["courses"]
 
-    assert any(c["course_id"] == "CS101" for c in courses)
+    assert any(c["course_id"] == f"{course_id}" for c in courses)
 
 
 def test_invite_only_hidden_from_listing(client, admin_headers, valid_course_payload):
     payload = valid_course_payload
     payload["discoverable"] = False
+    course_id = payload["course_id"]
 
     client.post("/admin/courses", json=payload, headers=admin_headers)
 
@@ -166,14 +174,14 @@ def test_invite_only_hidden_from_listing(client, admin_headers, valid_course_pay
 
     courses = response.json()["courses"]
 
-    assert all(c["course_id"] != "CS101" for c in courses)
+    assert all(c["course_id"] != f"{course_id}" for c in courses)
 
 
 def test_enrollment_request_flow(client, course_factory):
-    course_factory()
+    course_id = course_factory()
 
     response = client.post(
-        "/courses/CS101/enroll",
+        f"/courses/{course_id}/enroll",
         headers={"X-User-Id": "testina"},
     )
 
@@ -182,7 +190,7 @@ def test_enrollment_request_flow(client, course_factory):
 
     # Owner sees request
     requests = client.get(
-        "/courses/CS101/requests",
+        f"/courses/{course_id}/requests",
         headers={"X-User-Id": "ignored"},
     )
 
@@ -191,15 +199,15 @@ def test_enrollment_request_flow(client, course_factory):
 
 
 def test_approval_moves_user_to_enrolled(client, course_factory):
-    course_factory()
+    course_id = course_factory()
 
     client.post(
-        "/courses/CS101/enroll", 
+        f"/courses/{course_id}/enroll", 
         headers={"X-User-Id": "testina"}
     )
 
     approve = client.post(
-        "/courses/CS101/approve",
+        f"/courses/{course_id}/approve",
         json={"user_id": "testina"},
         headers={"X-User-Id": "ignored"},
     )
@@ -208,7 +216,7 @@ def test_approval_moves_user_to_enrolled(client, course_factory):
     assert approve.json() == {"status":"approved"}
 
     course = client.get(
-        "/courses/CS101",
+        f"/courses/{course_id}",
         headers={"X-User-Id": "ignored"},
     )
 
@@ -218,10 +226,12 @@ def test_approval_moves_user_to_enrolled(client, course_factory):
 
 def test_non_enrolled_cannot_access_course(client, admin_headers, valid_course_payload):
     valid_course_payload["discoverable"] = False
+    course_id = valid_course_payload["course_id"]
+
     client.post("/admin/courses", json=valid_course_payload, headers=admin_headers)
 
     response = client.get(
-        "/courses/CS101",
+        f"/courses/{course_id}",
         headers={"X-User-Id": "not enrolled"},
     )
 
@@ -234,23 +244,22 @@ def test_session_creation_requires_enrollment(
     course_factory,
     lesson_factory
 ):
-    course_factory()
+    course_id = course_factory()
     lesson_factory()
 
     client.post(
-        "/admin/courses/CS101/lessons",
+        f"/admin/courses/{course_id}/lessons",
         json={"lesson_id": "test", "version": "0.1.0"},
         headers=admin_headers,
     )
 
     response = client.post(
-        "/sessions",
+        f"courses/{course_id}/sessions",
         json={
             "lesson_id": "test",
             "lesson_version": "0.1.0",
-            "course_id": "CS101",
         },
-        headers={"X-User-Id": "not enrolled", "X-Course-Id": "CS101"},
+        headers={"X-User-Id": "not enrolled"},
     )
 
     assert response.status_code == 404
@@ -262,34 +271,33 @@ def test_session_creation_after_enrollment(
     course_factory,
     lesson_factory
 ):
-    course_factory()
+    course_id = course_factory()
     lesson_factory()
 
     client.post(
-        "/admin/courses/CS101/lessons",
+        f"/admin/courses/{course_id}/lessons",
         json={"lesson_id": "test", "version": "0.1.0"},
         headers=admin_headers,
     )
 
     client.post(
-        "/courses/CS101/enroll", 
+        f"/courses/{course_id}/enroll", 
         headers={"X-User-Id": "testina"}
     )
 
     approve = client.post(
-        "/courses/CS101/approve",
+        f"/courses/{course_id}/approve",
         json={"user_id": "testina"},
         headers={"X-User-Id": "ignored"},
     )
 
     response = client.post(
-        "/sessions",
+        f"courses/{course_id}/sessions",
         json={
             "lesson_id": "test",
             "lesson_version": "0.1.0",
-            "course_id": "CS101",
         },
-        headers={"X-User-Id": "testina", "X-Course-Id": "CS101"},
+        headers={"X-User-Id": "testina"},
     )
 
     assert response.status_code == 201

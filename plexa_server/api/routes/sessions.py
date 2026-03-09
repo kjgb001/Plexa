@@ -28,18 +28,19 @@ def get_sessions_router(
     course_storage: FileSystemCourseStorage
 ) -> APIRouter:
 
-    router = APIRouter(prefix="/sessions", tags=["sessions"])
+    #router = APIRouter(prefix="/sessions", tags=["sessions"])
+    router = APIRouter()
 
     # Create Session
 
     @router.post(
-        "",
+        "/courses/{course_id}/sessions",
         response_model=CreateSessionResponse,
         status_code=status.HTTP_201_CREATED,
     )
     def create_session(
         request: CreateSessionRequest,
-        course_id: str = Depends(require_course_id),
+        course_id: str,
         user_id: str = Depends(require_user_id)
     ):
         lesson = artifact_storage.load_lesson(
@@ -80,11 +81,12 @@ def get_sessions_router(
     # Send Message
 
     @router.post(
-        "/{session_id}/messages",
+        "/courses/{course_id}/sessions/{session_id}/messages",
         response_model=SendMessageResponse,
     )
     def send_message(
         session_id: str,
+        course_id: str,
         request: SendMessageRequest,
         user_id: str = Depends(require_user_id)
     ):
@@ -119,11 +121,12 @@ def get_sessions_router(
     # Get Session
 
     @router.get(
-        "/{session_id}",
+        "/courses/{course_id}/sessions/{session_id}",
         response_model=CreateSessionResponse,
     )
     def get_session(
         session_id: str,
+        course_id: str,
         user_id: str = Depends(require_user_id)
     ):
         try:
@@ -141,11 +144,12 @@ def get_sessions_router(
     # Close Session
 
     @router.post(
-        "/{session_id}/close",
+        "/courses/{course_id}/sessions/{session_id}/close",
         response_model=SessionResponse,
     )
     def close_session(
         session_id: str,
+        course_id: str,
         user_id: str = Depends(require_user_id)
     ):
         try:
