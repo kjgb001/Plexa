@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from plexa_server.core.sessions import SessionManager
 from plexa_server.storage.filesystem import (
@@ -61,6 +62,15 @@ def build_app(
             artifact_storage=artifact_storage,
             course_storage=course_storage
         )
+    )
+
+    # DEV: Allow cross-origin requests from port 5173 (client dev)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     return app
