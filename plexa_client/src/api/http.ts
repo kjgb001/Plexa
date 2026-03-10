@@ -21,7 +21,6 @@ export class HttpClient {
     }
 
     const url = `${API_BASE_URL}${this.resolvePath(path)}`
-    console.log(url)
     const response = await fetch(url, {
       ...options,
       headers
