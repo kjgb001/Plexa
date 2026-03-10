@@ -16,7 +16,7 @@ export class SessionApi {
     }
 
     const result = await this.http.request<{session: Session}>(
-      `courses/${courseId}/${lessonId}/${lessonVersion}/sessions`,
+      `courses/${courseId}/lessons/${lessonId}/${lessonVersion}/sessions`,
       {
         method: "POST",
       }
@@ -41,7 +41,7 @@ export class SessionApi {
     }
 
     return this.http.request<{assistant_message: Message, session: Session}>(
-      `courses/${courseId}/${lessonId}/${lessonVersion}/sessions/${sessionId}/messages`,
+      `courses/${courseId}/lessons/${lessonId}/${lessonVersion}/sessions/${sessionId}/messages`,
       {
         method: "POST",
         body: JSON.stringify({ content })
@@ -57,7 +57,7 @@ export class SessionApi {
     const lessonVersion = lessonDict.lessonVersion
 
     const result = await this.http.request(
-      `courses/${courseId}/${lessonId}/${lessonVersion}/sessions/${sessionId}/close`,
+      `courses/${courseId}/lessons/${lessonId}/${lessonVersion}/sessions/${sessionId}/close`,
       { method: "POST" }
     )
 

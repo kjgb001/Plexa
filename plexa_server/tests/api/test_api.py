@@ -17,7 +17,7 @@ def test_create_session_success(client, lesson_factory, course_factory, api_pref
     course_id = course_factory()
 
     response = client.post(
-        f"{api_prefix}/courses/{course_id}/{lesson_id}/{lesson_version}/sessions",
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions",
         headers={"X-User-Id": "tester"},
     )
 
@@ -35,7 +35,7 @@ def test_send_message_success(client, session_factory, api_prefix):
     course_id = "CS101"
 
     response = client.post(
-        f"{api_prefix}/courses/{course_id}/{lesson_id}/{lesson_version}/sessions/{session_id}/messages",
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}/messages",
         json={"content": "Hello world"},
         headers={"X-User-Id": "tester"},
     )
@@ -53,7 +53,7 @@ def test_get_session(client, session_factory, api_prefix):
     course_id = "CS101"
 
     response = client.get(
-        f"{api_prefix}/courses/{course_id}/{lesson_id}/{lesson_version}/sessions/{session_id}",
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}",
         headers={"X-User-Id": "tester"},
     )
 
@@ -66,7 +66,7 @@ def test_close_session(client, session_factory, api_prefix):
     course_id = "CS101"
 
     response = client.post(
-        f"{api_prefix}/courses/{course_id}/{lesson_id}/{lesson_version}/sessions/{session_id}/close",
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}/close",
         headers={"X-User-Id": "tester"},
     )
 
@@ -80,7 +80,7 @@ def test_create_session_lesson_not_found(client, api_prefix):
     lesson_version = "0.1.0"
 
     response = client.post(
-        f"{api_prefix}/courses/{course_id}/{lesson_id}/{lesson_version}/sessions",
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions",
         headers={"X-User-Id": "tester"},
     )
 
@@ -94,7 +94,7 @@ def test_get_session_not_found(client, lesson_factory, api_prefix):
     lesson_version = lesson.identity.version
     
     response = client.get(
-        f"{api_prefix}/courses/{course_id}/{lesson_id}/{lesson_version}/sessions/fake-id",
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/fake-id",
         headers={"X-User-Id": "tester"},
     )
     assert response.status_code == 404
@@ -107,7 +107,7 @@ def test_missing_user_header_returns_401(client, lesson_factory, api_prefix):
     course_id = "CS101"
 
     response = client.post(
-        f"{api_prefix}/courses/{course_id}/{lesson_id}/{lesson_version}/sessions",
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions",
         json={"lesson_id": "test", "lesson_version": "1.0"},
     )
 
@@ -122,7 +122,7 @@ def test_user_cannot_access_other_users_session(client, session_factory, lesson_
     course_id = "CS101"
 
     response = client.get(
-        f"{api_prefix}/courses/{course_id}/{lesson_id}/{lesson_version}/sessions/{session_id}",
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}",
         headers={"X-User-Id": "Bob"},
     )
 
@@ -264,7 +264,7 @@ def test_session_creation_requires_enrollment(
     )
 
     response = client.post(
-        f"{api_prefix}/courses/{course_id}/{lesson_id}/{lesson_version}/sessions",
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions",
         json={
             "lesson_id": "test",
             "lesson_version": "0.1.0",
@@ -305,7 +305,7 @@ def test_session_creation_after_enrollment(
     )
 
     response = client.post(
-        f"{api_prefix}/courses/{course_id}/{lesson_id}/{lesson_version}/sessions",
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions",
         json={
             "lesson_id": "test",
             "lesson_version": "0.1.0",

@@ -68,7 +68,7 @@ def session_factory(client, lesson_factory, course_factory, api_prefix) -> Strin
         course_id = course_factory()
 
         response = client.post(
-            f"{api_prefix}/courses/{course_id}/{lesson_id}/{version}/sessions",
+            f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{version}/sessions",
             headers={"X-User-Id": user_id}
         )
 

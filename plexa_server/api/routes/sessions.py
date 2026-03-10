@@ -31,7 +31,7 @@ def get_sessions_router(
     # Create Session
 
     @router.post(
-        "/courses/{course_id}/{lesson_id}/{lesson_version}/sessions",
+        "/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions",
         response_model=CreateSessionResponse,
         status_code=status.HTTP_201_CREATED,
     )
@@ -79,7 +79,7 @@ def get_sessions_router(
     # Send Message
 
     @router.post(
-        "/courses/{course_id}/{lesson_id}/{lesson_version}/sessions/{session_id}/messages",
+        "/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}/messages",
         response_model=SendMessageResponse,
     )
     def send_message(
@@ -119,7 +119,7 @@ def get_sessions_router(
     # Get Session
 
     @router.get(
-        "/courses/{course_id}/{lesson_id}/{lesson_version}/sessions/{session_id}",
+        "/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}",
         response_model=CreateSessionResponse,
     )
     def get_session(
@@ -142,7 +142,7 @@ def get_sessions_router(
     # Close Session
 
     @router.post(
-        "/courses/{course_id}/{lesson_id}/{lesson_version}/sessions/{session_id}/close",
+        "/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}/close",
         response_model=SessionResponse,
     )
     def close_session(
