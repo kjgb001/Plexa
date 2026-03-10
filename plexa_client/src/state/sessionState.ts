@@ -12,6 +12,6 @@ export function getCurrentSession() {
   return currentSessionId
 }
 
-export function clearSession() {
+export function clearCurrentSession() {
   currentSessionId = null
 }

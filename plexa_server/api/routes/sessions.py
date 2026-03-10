@@ -7,10 +7,8 @@ from plexa_server.core.sessions import (
     TurnLimitExceededError
 )
 from plexa_server.inference.base import InferenceError
-from plexa_server.api.schemas.requests import (
-    CreateSessionRequest,
-    SendMessageRequest,
-)
+from plexa_server.api.schemas.requests import SendMessageRequest
+
 from plexa_server.api.schemas.responses import (
     SessionResponse,
     CreateSessionResponse,
@@ -28,24 +26,24 @@ def get_sessions_router(
     course_storage: FileSystemCourseStorage
 ) -> APIRouter:
 
-    #router = APIRouter(prefix="/sessions", tags=["sessions"])
-    router = APIRouter()
+    router = APIRouter(tags=["sessions"])
 
     # Create Session
 
     @router.post(
-        "/courses/{course_id}/sessions",
+        "/courses/{course_id}/{lesson_id}/{lesson_version}/sessions",
         response_model=CreateSessionResponse,
         status_code=status.HTTP_201_CREATED,
     )
     def create_session(
-        request: CreateSessionRequest,
         course_id: str,
+        lesson_id: str,
+        lesson_version: str,
         user_id: str = Depends(require_user_id)
     ):
         lesson = artifact_storage.load_lesson(
-            lesson_id=request.lesson_id,
-            version=request.lesson_version,
+            lesson_id=lesson_id,
+            version=lesson_version,
         )
 
         if lesson is None:
@@ -81,7 +79,7 @@ def get_sessions_router(
     # Send Message
 
     @router.post(
-        "/courses/{course_id}/sessions/{session_id}/messages",
+        "/courses/{course_id}/{lesson_id}/{lesson_version}/sessions/{session_id}/messages",
         response_model=SendMessageResponse,
     )
     def send_message(
@@ -121,7 +119,7 @@ def get_sessions_router(
     # Get Session
 
     @router.get(
-        "/courses/{course_id}/sessions/{session_id}",
+        "/courses/{course_id}/{lesson_id}/{lesson_version}/sessions/{session_id}",
         response_model=CreateSessionResponse,
     )
     def get_session(
@@ -144,12 +142,14 @@ def get_sessions_router(
     # Close Session
 
     @router.post(
-        "/courses/{course_id}/sessions/{session_id}/close",
+        "/courses/{course_id}/{lesson_id}/{lesson_version}/sessions/{session_id}/close",
         response_model=SessionResponse,
     )
     def close_session(
         session_id: str,
         course_id: str,
+        lesson_id: str,
+        lesson_version: str,
         user_id: str = Depends(require_user_id)
     ):
         try:

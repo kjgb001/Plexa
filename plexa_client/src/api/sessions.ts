@@ -1,7 +1,8 @@
 import { HttpClient } from "./http"
 import type { Session, Message } from "./types"
-import { getCurrentCourse, setCurrentCourse } from "../state/courseState"
-import { getCurrentSession, setCurrentSession, clearSession } from "../state/sessionState"
+import { getCurrentCourse, setCurrentCourse, clearCurrentCourse } from "../state/courseState"
+import { getCurrentSession, setCurrentSession, clearCurrentSession } from "../state/sessionState"
+import { getCurrentLesson, setCurrentLesson, clearCurrentLesson } from "../state/lessonState"
 
 export class SessionApi {
   private http: HttpClient
@@ -15,23 +16,24 @@ export class SessionApi {
     }
 
     const result = await this.http.request<{session: Session}>(
-      `courses/${courseId}/sessions`,
+      `courses/${courseId}/${lessonId}/${lessonVersion}/sessions`,
       {
         method: "POST",
-        body: JSON.stringify({
-          lesson_id: lessonId,
-          lesson_version: lessonVersion
-        })
       }
     )
     
     setCurrentSession(result.session.session_id)
+    setCurrentLesson(lessonId, lessonVersion)
 
     return result
   }
 
   async sendMessage(sessionId: string = String(null), content: string) {
     const courseId = getCurrentCourse()
+    const lessonDict = getCurrentLesson()
+    const lessonId = lessonDict.lessonId
+    const lessonVersion = lessonDict.lessonVersion
+
     if (!sessionId) {
       sessionId = getCurrentSession()
     } else {
@@ -41,7 +43,7 @@ export class SessionApi {
     
 
     return this.http.request<{assistant_message: Message, session: Session}>(
-      `courses/${courseId}/sessions/${sessionId}/messages`,
+      `courses/${courseId}/${lessonId}/${lessonVersion}/sessions/${sessionId}/messages`,
       {
         method: "POST",
         body: JSON.stringify({ content })
@@ -52,13 +54,18 @@ export class SessionApi {
   async closeSession() {
     const courseId = getCurrentCourse()
     const sessionId = getCurrentSession()
+    const lessonDict = getCurrentLesson()
+    const lessonId = lessonDict.lessonId
+    const lessonVersion = lessonDict.lessonVersion
 
     const result = await this.http.request(
-      `courses/${courseId}/sessions/${sessionId}/close`,
+      `courses/${courseId}/${lessonId}/${lessonVersion}/sessions/${sessionId}/close`,
       { method: "POST" }
     )
 
-    clearSession()
+    clearCurrentSession()
+    clearCurrentCourse()
+    clearCurrentLesson()
 
     return result
   }

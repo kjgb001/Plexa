@@ -68,16 +68,12 @@ def session_factory(client, lesson_factory, course_factory, api_prefix) -> Strin
         course_id = course_factory()
 
         response = client.post(
-            f"{api_prefix}/courses/{course_id}/sessions",
-            json={
-                "lesson_id": lesson_id,
-                "lesson_version": version,
-            },
+            f"{api_prefix}/courses/{course_id}/{lesson_id}/{version}/sessions",
             headers={"X-User-Id": user_id}
         )
 
         assert response.status_code == 201
-        return response.json()["session"]["session_id"]
+        return response.json()["session"]["session_id"], lesson_id, version
 
     return _create
 
@@ -98,6 +94,7 @@ def course_factory(client, valid_course_payload, admin_headers, api_prefix) -> S
         return response.json()["course_id"]
 
     return _create
+
 
 # Admin token environment var
 
