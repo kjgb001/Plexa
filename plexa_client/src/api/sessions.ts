@@ -37,10 +37,8 @@ export class SessionApi {
     if (!sessionId) {
       sessionId = getCurrentSession()
     } else {
-      /*this.createSession(courseId, )*/
-      null
-    } /* finish once lessons are in url paths */
-    
+      this.createSession(courseId, lessonId, lessonVersion)
+    }
 
     return this.http.request<{assistant_message: Message, session: Session}>(
       `courses/${courseId}/${lessonId}/${lessonVersion}/sessions/${sessionId}/messages`,
