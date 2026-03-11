@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Optional
 from typing import List
+from uuid import uuid4
 
 from plexa_server.models.lesson import Lesson
 from plexa_server.models.session import Session
@@ -11,7 +12,9 @@ from plexa_server.storage.session_protocol import SessionStorage
 
 
 def _atomic_write(path: Path, data: str) -> None:
-    temp_path = path.with_suffix(".tmp")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(f"{path.name}.{uuid4().hex}.tmp")
+
     with temp_path.open("w", encoding="utf-8") as f:
         f.write(data)
     temp_path.replace(path)
