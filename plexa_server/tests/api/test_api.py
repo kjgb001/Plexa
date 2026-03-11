@@ -306,11 +306,29 @@ def test_session_creation_after_enrollment(
 
     response = client.post(
         f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions",
-        json={
-            "lesson_id": "test",
-            "lesson_version": "0.1.0",
-        },
         headers={"X-User-Id": "testina"},
     )
 
     assert response.status_code == 201
+
+
+def test_lesson_list(client, course_factory, lesson_factory, api_prefix, admin_headers):
+    course_id = course_factory()
+    lesson_factory()
+
+    bind_response = client.post(
+        f"{api_prefix}/admin/courses/CS101/lessons",
+        json={
+            "lesson_id": "test",
+            "version": "0.1.0",
+        },
+        headers=admin_headers,
+    )
+
+    response = client.get(
+        f"{api_prefix}/courses/{course_id}/lessons",
+        headers={"X-User-Id": "tester"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()[0]["identity"]["lesson_id"] == "test"

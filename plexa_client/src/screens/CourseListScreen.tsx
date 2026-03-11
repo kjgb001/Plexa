@@ -1,38 +1,38 @@
 import { useEffect, useState } from "react"
 import { courseApi } from "../api"
-import type { Course } from "../api/types"
+import type { Course } from "../api/interfaces"
 
-export default function CourseListScreen() {
+interface Props {
+  onSelectCourse: (courseId: string) => void
+}
+
+export default function CourseListScreen({ onSelectCourse }: Props) {
   const [courses, setCourses] = useState<Course[]>([])
-  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    async function loadCourses() {
-      const result = await courseApi.listDiscoverable()
+    courseApi.listDiscoverable().then(result => {
       setCourses(result.courses)
-      setLoading(false)
-    }
-
-    loadCourses()
+    })
   }, [])
 
-  if (loading) {
-    return <p>Loading courses...</p>
-  }
-
   return (
-    <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      <h1>Available Courses</h1>
+    <div>
+      <h1>Courses</h1>
 
-      {courses.length === 0 && <p>No discoverable courses.</p>}
-
-      <ul>
-        {courses.map(course => (
-          <li key={course.course_id}>
-            {course.title}
-          </li>
-        ))}
-      </ul>
+      {courses.map((course) => (
+        <div
+          key={course.course_id}
+          onClick={() => onSelectCourse(course.course_id)}
+          style={{
+            cursor: "pointer",
+            border: "1px solid #ccc",
+            padding: "10px",
+            marginBottom: "10px"
+          }}
+        >
+          {course.title}
+        </div>
+      ))}
     </div>
   )
 }

@@ -4,7 +4,10 @@ from fastapi.responses import JSONResponse
 from plexa_server.auth.user import require_user_id
 
 
-def get_course_router(course_storage: FileSystemCourseStorage) -> APIRouter:
+def get_course_router(
+    course_storage: FileSystemCourseStorage, artifact_storage: FileSystemArtifactStorage
+) -> APIRouter:
+
     router = APIRouter(prefix="/courses", tags=["courses"])
 
     @router.get("")
@@ -39,6 +42,28 @@ def get_course_router(course_storage: FileSystemCourseStorage) -> APIRouter:
 
         raise HTTPException(status_code=404, detail="Course not found")
 
+
+    @router.get("/{course_id}/lessons")
+    def get_course_lessons(
+        course_id: str,
+        user_id: str = Depends(require_user_id)
+    ):
+        course = course_storage.get_course(course_id)
+
+        if (
+            course is None
+            or not course.discoverable
+            or user_id not in course.enrolled_users
+            and user_id != course.owner_id
+        ):
+            raise HTTPException(status_code=404, detail="Course not found")
+        
+        else:
+            lessons = []
+            for lesson_id, lesson_version in course.lessons.items():
+                lessons.append(artifact_storage.load_lesson(lesson_id, lesson_version))
+            return lessons
+        
 
     @router.post("/{course_id}/enroll")
     def request_enrollment(
@@ -92,8 +117,10 @@ def get_course_router(course_storage: FileSystemCourseStorage) -> APIRouter:
 
         if target_user in course.pending_requests:
             course.pending_requests.remove(target_user)
+
             if target_user not in course.enrolled_users:
                 course.enrolled_users.append(target_user)
+
             course_storage.save_course(course)
 
         return {"status": "approved"}

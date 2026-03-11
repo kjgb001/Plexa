@@ -1,23 +1,34 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { sessionApi } from "../api"
-import type { Message, Session } from "../api/types"
+import type { Message, Session } from "../api/interfaces"
 
-export default function ChatScreen() {
+
+interface Props {
+  courseId: string
+  lessonId: string
+  lessonVersion: string
+}
+
+export default function ChatScreen({ courseId, lessonId, lessonVersion }: Props) {
   const [session, setSession] = useState<Session | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
 
-  async function startSession() {
-    const result = await sessionApi.createSession(
-      "CS101",
-      "test",
-      "0.1.0"
-    )
+  useEffect(() => {
+    async function initSession() {
+      const result = await sessionApi.createSession(
+        courseId,
+        lessonId,
+        lessonVersion
+      )
 
-    setSession(result.session)
-    setMessages(result.session.messages ?? [])
-  }
+      setSession(result.session)
+      setMessages(result.session.messages ?? [])
+    }
+
+    initSession()
+  }, [courseId, lessonId])
 
   async function sendMessage() {
     if (!session || !input.trim()) return
@@ -32,7 +43,7 @@ export default function ChatScreen() {
     setLoading(true)
 
     try {
-      const result = await sessionApi.sendMessage(session.session_id, input)
+      const result = await sessionApi.sendMessage(input)
 
       setMessages(prev => [
         ...prev,
@@ -46,13 +57,12 @@ export default function ChatScreen() {
   }
 
   if (!session) {
-    return (
-      <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-        <h1>Plexa Chat</h1>
-        <button onClick={startSession}>Start Session</button>
-      </div>
-    )
-  }
+  return (
+    <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
+      <h1>Plexa Chat</h1>
+      <p>Starting session...</p>
+    </div>
+  )}
 
   return (
     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>

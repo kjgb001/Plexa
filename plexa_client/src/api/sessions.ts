@@ -1,5 +1,5 @@
 import { HttpClient } from "./http"
-import type { Session, Message } from "./types"
+import type { Session, Message } from "./interfaces"
 import { getCurrentCourse, setCurrentCourse, clearCurrentCourse } from "../state/courseState"
 import { getCurrentSession, setCurrentSession, clearCurrentSession } from "../state/sessionState"
 import { getCurrentLesson, setCurrentLesson, clearCurrentLesson } from "../state/lessonState"
@@ -28,15 +28,16 @@ export class SessionApi {
     return result
   }
 
-  async sendMessage(sessionId: string = String(null), content: string) {
+  async sendMessage(content: string, sessionId: string | null = null) {
     const courseId = getCurrentCourse()
     const lessonDict = getCurrentLesson()
     const lessonId = lessonDict.lessonId
     const lessonVersion = lessonDict.lessonVersion
 
-    if (!sessionId) {
+
+    try {
       sessionId = getCurrentSession()
-    } else {
+    } catch {
       this.createSession(courseId, lessonId, lessonVersion)
     }
 

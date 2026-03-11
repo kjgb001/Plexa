@@ -46,8 +46,7 @@ def artifact_storage(tmp_data_dir: Path) -> FileSystemArtifactStorage:
     return FileSystemArtifactStorage(tmp_data_dir)
 
 
-
-# Lesson factory
+# Factories
 
 @pytest.fixture
 def lesson_factory(artifact_storage) -> Lesson:
@@ -58,8 +57,6 @@ def lesson_factory(artifact_storage) -> Lesson:
 
     return _create
 
-
-# Session factory
 
 @pytest.fixture
 def session_factory(client, lesson_factory, course_factory, api_prefix) -> String:

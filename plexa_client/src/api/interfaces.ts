@@ -1,9 +1,9 @@
-export type Message = {
+export interface Message {
   role: "user" | "assistant" | "system"
   content: string
 }
 
-export type Session = {
+export interface Session {
   session_id: string
   lesson_id: string
   lesson_version: string
@@ -13,11 +13,21 @@ export type Session = {
   is_active: boolean
 }
 
-export type Course = {
+export interface Course {
   course_id: string
   title: string
   description?: string
   discoverable: boolean
   lessons: Record<string, string>
   enrolled_users: string[]
+}
+
+export interface Lesson {
+  lesson_id: string
+  version: string
+  title: string
+  author?: string
+  difficulty?: string
+  approximate_time?: string
+  tags?: string[]
 }

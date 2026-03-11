@@ -51,7 +51,8 @@ def build_app(
     )
     api_router.include_router(
         get_course_router(
-            course_storage=course_storage
+            course_storage=course_storage,
+            artifact_storage=artifact_storage
         )
     )
     api_router.include_router(

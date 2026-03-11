@@ -1,5 +1,5 @@
 import { HttpClient } from "./http"
-import type { Course } from "./types"
+import type { Course, Lesson } from "./interfaces"
 
 export class CourseApi {
   private http: HttpClient
@@ -18,4 +18,24 @@ export class CourseApi {
       method: "POST"
     })
   }
+
+async listLessons(courseId: string): Promise<{ lessons: Lesson[] }> {
+  const result = await this.http.request<any>(
+    `courses/${courseId}/lessons`, {
+      method: "GET"
+    }
+  )
+
+  return {
+    lessons: result.map((lesson: any) => ({
+      lesson_id: lesson.identity.lesson_id,
+      version: lesson.identity.version,
+      title: lesson.identity.title,
+      author: lesson.identity.author,
+      difficulty: lesson.intent?.difficulty,
+      approximate_time: lesson.intent?.approximate_time,
+      tags: lesson.identity?.tags
+    }))
+  }
+}
 }

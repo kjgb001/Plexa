@@ -17,7 +17,6 @@ from plexa_server.tests.fixtures import (
 
 DATA_PATH = get_data_dir_path()
 
-
 def seed_course(lesson_id, lesson_version, course_storage: FileSystemCourseStorage):
     payload = valid_course()
     payload["lessons"][lesson_id] = lesson_version
