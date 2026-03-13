@@ -12,34 +12,21 @@ from plexa_server.auth.user import require_user_id
 from plexa_server.storage.filesystem import FileSystemArtifactStorage, FileSystemCourseStorage
 
 
-def create_course(
-    payload: Course,
-    _: str = Depends(require_admin_token),
-    user_id: str = Depends(require_user_id),
-):
-    existing = course_storage.get_course(payload.course_id)
-
-    if existing is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="Course already exists",
-        )
-
-    payload.owner_id = user_id
-    payload.enrolled_users = []
-    payload.pending_requests = []
-
-    course_storage.save_course(payload)
-
-    return payload
-
-
 # Router Factory
 
 def get_admin_router(
     artifact_storage: FileSystemArtifactStorage,
     course_storage: FileSystemCourseStorage
 ) -> APIRouter:
+    """Create administrative lesson and course management endpoints.
+
+    Args:
+        artifact_storage: Artifact storage used for lesson persistence.
+        course_storage: Course storage used for course persistence.
+
+    Returns:
+        APIRouter: Router exposing admin-only lesson and course endpoints.
+    """
 
     router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -50,6 +37,16 @@ def get_admin_router(
         lesson_payload: dict,
         _: str = Depends(require_admin_token),
     ):
+        """Validate and persist a lesson payload, noting whether it overwrote an existing version.
+
+        Args:
+            lesson_payload: Raw lesson document submitted by the caller.
+            _: Validated admin token dependency value.
+
+        Returns:
+            dict | JSONResponse: Success metadata for the stored lesson, or a
+            validation failure payload.
+        """
         try:
             lesson = Lesson.model_validate(lesson_payload)
         except ValidationError as e:
@@ -87,6 +84,19 @@ def get_admin_router(
         version: str,
         _: str = Depends(require_admin_token),
     ):
+        """Return a stored lesson artifact by lesson id and version.
+
+        Args:
+            lesson_id: Lesson identifier to load.
+            version: Lesson version to load.
+            _: Validated admin token dependency value.
+
+        Returns:
+            Lesson: Stored lesson artifact.
+
+        Raises:
+            HTTPException: If the requested lesson does not exist.
+        """
         lesson = artifact_storage.load_lesson(lesson_id, version)
 
         if lesson is None:
@@ -105,6 +115,18 @@ def get_admin_router(
         payload: Course,
         _: str = Depends(require_admin_token),
     ):
+        """Persist a new course document if the course id is unused.
+
+        Args:
+            payload: Course payload to persist.
+            _: Validated admin token dependency value.
+
+        Returns:
+            Course: Persisted course payload.
+
+        Raises:
+            HTTPException: If a course with the same id already exists.
+        """
         existing = course_storage.get_course(payload.course_id)
 
         if existing is not None:
@@ -124,6 +146,18 @@ def get_admin_router(
         course_id: str,
         _: str = Depends(require_admin_token),
     ):
+        """Return a stored course document for administrative access.
+
+        Args:
+            course_id: Course identifier to load.
+            _: Validated admin token dependency value.
+
+        Returns:
+            Course: Stored course document.
+
+        Raises:
+            HTTPException: If the requested course does not exist.
+        """
         course = course_storage.get_course(course_id)
 
         if course is None:
@@ -141,6 +175,14 @@ def get_admin_router(
     def list_courses(
         _: str = Depends(require_admin_token),
     ):
+        """List all persisted courses for administrative inspection.
+
+        Args:
+            _: Validated admin token dependency value.
+
+        Returns:
+            dict: Mapping containing all persisted courses.
+        """
         courses = course_storage.list_courses()
         return {"courses": courses}
 
@@ -153,6 +195,19 @@ def get_admin_router(
         payload: Course,
         _: str = Depends(require_admin_token),
     ):
+        """Replace course metadata while preserving existing lesson bindings.
+
+        Args:
+            course_id: Course identifier to update.
+            payload: Replacement course payload.
+            _: Validated admin token dependency value.
+
+        Returns:
+            Course: Updated course payload with preserved lesson bindings.
+
+        Raises:
+            HTTPException: If the requested course does not exist.
+        """
         existing = course_storage.get_course(course_id)
 
         if existing is None:
@@ -175,6 +230,18 @@ def get_admin_router(
         course_id: str,
         _: str = Depends(require_admin_token),
     ):
+        """Delete a persisted course document.
+
+        Args:
+            course_id: Course identifier to delete.
+            _: Validated admin token dependency value.
+
+        Returns:
+            dict: Deletion status payload.
+
+        Raises:
+            HTTPException: If the requested course does not exist.
+        """
         existing = course_storage.get_course(course_id)
 
         if existing is None:
@@ -199,6 +266,20 @@ def get_admin_router(
         payload: dict,
         _: str = Depends(require_admin_token),
     ):
+        """Bind or replace a lesson version in the course's lesson mapping.
+
+        Args:
+            course_id: Course identifier whose lesson mapping should change.
+            payload: Mapping containing `lesson_id` and `version`.
+            _: Validated admin token dependency value.
+
+        Returns:
+            dict | JSONResponse: Binding success payload, or a validation
+            failure payload when required fields are missing.
+
+        Raises:
+            HTTPException: If the requested lesson does not exist.
+        """
         lesson_id = payload.get("lesson_id")
         version = payload.get("version")
 
@@ -219,26 +300,7 @@ def get_admin_router(
                 detail="Lesson not found",
             )
 
-        # Course storage path
-        courses_dir = artifact_storage.base_path / "configs" / "courses"
-        courses_dir.mkdir(parents=True, exist_ok=True)
-
-        course_path = courses_dir / f"{course_id}.json"
-
-        if course_path.exists():
-            with open(course_path, "r") as f:
-                course_data = json.load(f)
-        else:
-            course_data = {
-                "course_id": course_id,
-                "lessons": {},
-            }
-
-        # Replace or insert
-        course_data["lessons"][lesson_id] = version
-
-        with open(course_path, "w") as f:
-            json.dump(course_data, f, indent=2)
+        course_storage.bind_lesson_to_course(course_id, lesson_id, version)
 
         return {
             "status": "ok",
@@ -255,6 +317,18 @@ def get_admin_router(
         course_id: str,
         _: str = Depends(require_admin_token),
     ):
+        """Return the raw persisted lesson bindings for a course.
+
+        Args:
+            course_id: Course identifier whose lesson bindings should be read.
+            _: Validated admin token dependency value.
+
+        Returns:
+            dict: Raw persisted course document containing lesson bindings.
+
+        Raises:
+            HTTPException: If the requested course does not exist.
+        """
         course_path = (
             artifact_storage.base_path
             / "configs"

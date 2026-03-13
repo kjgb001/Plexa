@@ -9,12 +9,19 @@ from plexa_server.inference.base import InferenceConfig
 
 
 class LessonRuntimeError(Exception):
+    """Raised when a lesson is structurally valid but not runnable."""
     pass
 
 
 def validate_lesson_runtime(lesson: Lesson) -> None:
-    """
-    Perform runtime validation beyond schema-level checks.
+    """Validate that a lesson has the fields required for runtime execution.
+
+    Args:
+        lesson: Lesson document to validate before creating a session.
+
+    Raises:
+        LessonRuntimeError: If the lesson has an empty system prompt, an empty
+            model profile, or a non-positive turn limit.
     """
 
     if not lesson.execution.system_prompt.strip():
@@ -32,8 +39,15 @@ def build_initial_messages(
     lesson: Lesson,
     session_id: str,
 ) -> List[Message]:
-    """
-    Construct the deterministic initial message list.
+    """Build the initial transcript for a new session.
+
+    Args:
+        lesson: Lesson whose execution settings seed the transcript.
+        session_id: Session identifier to assign to the generated messages.
+
+    Returns:
+        List[Message]: Ordered starting transcript containing the system message
+        and any optional initial assistant message.
     """
 
     messages: List[Message] = []
@@ -62,8 +76,13 @@ def build_initial_messages(
 
 
 def freeze_inference_config(lesson: Lesson) -> InferenceConfig:
-    """
-    Convert lesson execution settings into a frozen InferenceConfig.
+    """Map lesson execution settings into an immutable inference config.
+
+    Args:
+        lesson: Lesson whose execution settings should be frozen for runtime use.
+
+    Returns:
+        InferenceConfig: Frozen inference parameters derived from the lesson.
     """
 
     params = lesson.execution.parameters or {}

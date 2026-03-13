@@ -25,6 +25,16 @@ def get_sessions_router(
     artifact_storage: FileSystemArtifactStorage,
     course_storage: FileSystemCourseStorage
 ) -> APIRouter:
+    """Create session endpoints bound to the supplied storage and manager objects.
+
+    Args:
+        session_manager: Session manager handling lifecycle mutations.
+        artifact_storage: Artifact storage used to load lesson definitions.
+        course_storage: Course storage used for enrollment checks.
+
+    Returns:
+        APIRouter: Router exposing session lifecycle endpoints.
+    """
 
     router = APIRouter(tags=["sessions"])
 
@@ -41,6 +51,21 @@ def get_sessions_router(
         lesson_version: str,
         user_id: str = Depends(require_user_id)
     ):
+        """Create a new lesson session for an enrolled user.
+
+        Args:
+            course_id: Course containing the requested lesson.
+            lesson_id: Lesson identifier to load.
+            lesson_version: Lesson version to load.
+            user_id: Caller identity resolved from the request header.
+
+        Returns:
+            CreateSessionResponse: Session summary and initial transcript.
+
+        Raises:
+            HTTPException: If the lesson does not exist, the course does not
+                exist, or the caller is not allowed to create a session.
+        """
         lesson = artifact_storage.load_lesson(
             lesson_id=lesson_id,
             version=lesson_version,
@@ -88,6 +113,21 @@ def get_sessions_router(
         request: SendMessageRequest,
         user_id: str = Depends(require_user_id)
     ):
+        """Append a user message to a session and return the assistant reply.
+
+        Args:
+            session_id: Session identifier to mutate.
+            course_id: Course identifier from the route path.
+            request: Request payload containing message content and id.
+            user_id: Caller identity resolved from the request header.
+
+        Returns:
+            SendMessageResponse: Assistant reply and updated session summary.
+
+        Raises:
+            HTTPException: If the session is closed, the turn limit is exceeded,
+                inference fails, or the caller does not own the session.
+        """
         message_id = request.message_id or str(uuid4())
 
         try:
@@ -127,6 +167,20 @@ def get_sessions_router(
         course_id: str,
         user_id: str = Depends(require_user_id)
     ):
+        """Return the full transcript for a session owned by the caller.
+
+        Args:
+            session_id: Session identifier to load.
+            course_id: Course identifier from the route path.
+            user_id: Caller identity resolved from the request header.
+
+        Returns:
+            CreateSessionResponse: Session summary and full transcript.
+
+        Raises:
+            HTTPException: If the caller does not own the session or the
+                session does not exist.
+        """
         try:
             session = get_owned_session(session_manager, session_id, user_id)
 
@@ -152,6 +206,22 @@ def get_sessions_router(
         lesson_version: str,
         user_id: str = Depends(require_user_id)
     ):
+        """Close an owned session and return its updated summary.
+
+        Args:
+            session_id: Session identifier to close.
+            course_id: Course identifier from the route path.
+            lesson_id: Lesson identifier from the route path.
+            lesson_version: Lesson version from the route path.
+            user_id: Caller identity resolved from the request header.
+
+        Returns:
+            SessionResponse: Updated session summary after closure.
+
+        Raises:
+            HTTPException: If the caller does not own the session or the
+                session is already closed.
+        """
         try:
             session = get_owned_session(session_manager, session_id, user_id)
             session_manager.close_session(session_id)

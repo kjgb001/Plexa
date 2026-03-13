@@ -2,11 +2,21 @@ from fastapi import APIRouter, Header, HTTPException, Depends, status
 from fastapi.responses import JSONResponse
 
 from plexa_server.auth.user import require_user_id
+from plexa_server.storage.filesystem import FileSystemCourseStorage, FileSystemArtifactStorage
 
 
 def get_course_router(
     course_storage: FileSystemCourseStorage, artifact_storage: FileSystemArtifactStorage
 ) -> APIRouter:
+    """Create learner-facing course discovery and enrollment endpoints.
+
+    Args:
+        course_storage: Course storage used for discovery and enrollment state.
+        artifact_storage: Artifact storage used to load bound lessons.
+
+    Returns:
+        APIRouter: Router exposing learner-facing course endpoints.
+    """
 
     router = APIRouter(prefix="/courses", tags=["courses"])
 
@@ -14,6 +24,14 @@ def get_course_router(
     def list_discoverable_courses(
         user_id: str = Depends(require_user_id)
     ):
+        """List courses that are currently marked discoverable.
+
+        Args:
+            user_id: Caller identity resolved from the request header.
+
+        Returns:
+            dict: Mapping containing discoverable course documents.
+        """
         courses = course_storage.list_courses()
 
         visible = [
@@ -28,6 +46,19 @@ def get_course_router(
         course_id: str,
         user_id: str = Depends(require_user_id)
     ):
+        """Return course metadata when the caller is allowed to view it.
+
+        Args:
+            course_id: Course identifier to load.
+            user_id: Caller identity resolved from the request header.
+
+        Returns:
+            Course: Visible course document.
+
+        Raises:
+            HTTPException: If the course does not exist or is not visible to
+                the caller.
+        """
         course = course_storage.get_course(course_id)
 
         if course is None:
@@ -48,6 +79,19 @@ def get_course_router(
         course_id: str,
         user_id: str = Depends(require_user_id)
     ):
+        """Return lesson documents for a course visible to the caller.
+
+        Args:
+            course_id: Course identifier whose lessons should be loaded.
+            user_id: Caller identity resolved from the request header.
+
+        Returns:
+            list: Lesson documents bound to the requested course.
+
+        Raises:
+            HTTPException: If the course does not exist or is not visible to
+                the caller.
+        """
         course = course_storage.get_course(course_id)
 
         if (
@@ -70,6 +114,18 @@ def get_course_router(
         course_id: str,
         user_id: str = Depends(require_user_id)
     ):
+        """Queue the caller for enrollment in a discoverable course.
+
+        Args:
+            course_id: Course identifier to request enrollment for.
+            user_id: Caller identity resolved from the request header.
+
+        Returns:
+            dict: Enrollment status payload.
+
+        Raises:
+            HTTPException: If the course does not exist or is not discoverable.
+        """
         course = course_storage.get_course(course_id)
 
         if course is None or not course.discoverable:
@@ -90,6 +146,19 @@ def get_course_router(
         course_id: str,
         user_id: str = Depends(require_user_id)
     ):
+        """Return pending enrollment requests for a course owner.
+
+        Args:
+            course_id: Course identifier whose pending requests should be read.
+            user_id: Caller identity resolved from the request header.
+
+        Returns:
+            dict: Mapping containing pending enrollment requests.
+
+        Raises:
+            HTTPException: If the course does not exist or the caller is not
+                the owner.
+        """
         course = course_storage.get_course(course_id)
 
         if course is None or user_id != course.owner_id:
@@ -104,6 +173,20 @@ def get_course_router(
         payload: dict,
         user_id: str = Depends(require_user_id)
     ):
+        """Approve a pending learner and move them into the enrolled list.
+
+        Args:
+            course_id: Course identifier to update.
+            payload: Mapping containing the `user_id` to approve.
+            user_id: Caller identity resolved from the request header.
+
+        Returns:
+            dict: Approval status payload.
+
+        Raises:
+            HTTPException: If the course does not exist, the caller is not the
+                owner, or the payload omits the target user.
+        """
         target_user = payload.get("user_id")
 
         course = course_storage.get_course(course_id)
@@ -132,6 +215,20 @@ def get_course_router(
         payload: dict,
         user_id: str = Depends(require_user_id)
     ):
+        """Remove an enrolled learner from a course.
+
+        Args:
+            course_id: Course identifier to update.
+            payload: Mapping containing the `user_id` to remove.
+            user_id: Caller identity resolved from the request header.
+
+        Returns:
+            dict: Removal status payload.
+
+        Raises:
+            HTTPException: If the course does not exist, the caller is not the
+                owner, or the payload omits the target user.
+        """
         target_user = payload.get("user_id")
 
         course = course_storage.get_course(course_id)

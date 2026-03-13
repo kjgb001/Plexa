@@ -7,6 +7,8 @@ from plexa_server.models.message import Message
 
 
 class Session(BaseModel):
+    """Persisted state for a user's lesson conversation."""
+
     session_id: str = Field(default_factory=lambda: str(uuid4()))
     user_id: str
 

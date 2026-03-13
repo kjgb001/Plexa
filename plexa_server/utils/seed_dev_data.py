@@ -18,6 +18,13 @@ from plexa_server.tests.fixtures import (
 DATA_PATH = get_data_dir_path()
 
 def seed_course(lesson_id, lesson_version, course_storage: FileSystemCourseStorage):
+    """Create a fixture-backed course and bind the supplied lesson version.
+
+    Args:
+        lesson_id: Lesson identifier to bind into the seeded course.
+        lesson_version: Lesson version to bind into the seeded course.
+        course_storage: Storage backend used to persist the seeded course.
+    """
     payload = valid_course()
     payload["lessons"][lesson_id] = lesson_version
     course = Course.model_validate(payload)
@@ -25,6 +32,14 @@ def seed_course(lesson_id, lesson_version, course_storage: FileSystemCourseStora
 
 
 def seed_lesson(artifact_storage: FileSystemArtifactStorage):
+    """Create and persist the fixture lesson, returning its id and version.
+
+    Args:
+        artifact_storage: Storage backend used to persist the seeded lesson.
+
+    Returns:
+        tuple[str, str]: Seeded lesson id and version.
+    """
     payload = valid_lesson()
     lesson = Lesson.model_validate(payload)
 
@@ -36,6 +51,8 @@ def seed_lesson(artifact_storage: FileSystemArtifactStorage):
 
 
 def main():
+    """Seed the repository data directory with one lesson and one course."""
+    
     artifact_storage = FileSystemArtifactStorage(DATA_PATH)
     course_storage = FileSystemCourseStorage(DATA_PATH)
 

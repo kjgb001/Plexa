@@ -4,6 +4,8 @@ from datetime import datetime, UTC
 
 
 class Message(BaseModel):
+    """Canonical transcript entry stored within a session."""
+
     message_id: str
     session_id: str
     role: Literal["system", "assistant", "user", "instructor"] # Can map instructor to system if not in use

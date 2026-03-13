@@ -21,9 +21,23 @@ class StubInference(InferenceBackend):
 
     @property
     def name(self) -> str:
+        """Return the stable backend identifier used in result metadata.
+
+        Returns:
+            str: Stable backend name for the stub adapter.
+        """
         return "stub"
 
     def generate(self, messages: List["Message"], config: InferenceConfig) -> InferenceResult:
+        """Generate a deterministic assistant reply from the latest user message.
+
+        Args:
+            messages: Ordered transcript supplied to the backend.
+            config: Frozen inference config for the current session.
+
+        Returns:
+            InferenceResult: Deterministic assistant reply with usage metadata.
+        """
         start = time.perf_counter()
 
         # Extract the most recent user message (if any)
@@ -61,7 +75,12 @@ class StubInference(InferenceBackend):
             latency_ms=latency_ms,
         )
 
-    def healthcheck(self) -> bool:
+    def health_check(self) -> bool:
+        """Report stub readiness for health and readiness checks.
+
+        Returns:
+            bool: Always `True` for the in-process stub backend.
+        """
         return True
 
 

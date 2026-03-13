@@ -7,6 +7,11 @@ from plexa_server.inference.stub import StubInference
 
 
 def create_app():
+    """Create the default application instance backed by the stub inference backend.
+
+    Returns:
+        FastAPI: Application instance configured with `StubInference`.
+    """
     #data_dir = Path(os.environ.get("PLEXA_DATA_DIR", "data"))
     return build_app(StubInference())
 

@@ -6,6 +6,8 @@ from plexa_server.models.message import Message
 
 
 class SessionResponse(BaseModel):
+    """API projection of session state returned by session endpoints."""
+
     session_id: str
     user_id: str
     lesson_id: str
@@ -17,6 +19,14 @@ class SessionResponse(BaseModel):
 
     @classmethod
     def from_session(cls, session: Session):
+        """Build a response model from a persisted session object.
+
+        Args:
+            session: Session model to project into the API response shape.
+
+        Returns:
+            SessionResponse: Response model populated from the session.
+        """
         return cls(
             session_id=session.session_id,
             user_id=session.user_id,
@@ -30,10 +40,14 @@ class SessionResponse(BaseModel):
 
 
 class CreateSessionResponse(BaseModel):
+    """Response payload for session creation and session fetch endpoints."""
+
     session: SessionResponse
     messages: List[Message]
 
 
 class SendMessageResponse(BaseModel):
+    """Response payload returned after a successful user turn submission."""
+
     assistant_message: Message
     session: SessionResponse

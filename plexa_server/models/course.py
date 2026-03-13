@@ -5,6 +5,8 @@ from uuid import uuid4
 
 
 class Course(BaseModel):
+    """Course metadata, enrollment state, and lesson-version bindings."""
+
     course_id: str = Field(default_factory=lambda: str(uuid4()))
     title: str
     description: Optional[str] = None

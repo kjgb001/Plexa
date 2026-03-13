@@ -25,6 +25,15 @@ def build_app(
     inference_backend,
     data_dir: Path | str = DATA_PATH,
 ) -> FastAPI:
+    """Assemble the FastAPI application and its storage-backed dependencies.
+
+    Args:
+        inference_backend: Inference backend instance to inject into the app.
+        data_dir: Base directory used for filesystem-backed persistence.
+
+    Returns:
+        FastAPI: Configured application instance with all routers mounted.
+    """
     data_path = Path(data_dir)
 
     # Infrastructure wiring (composition root)
@@ -82,5 +91,10 @@ def build_app(
     return app
 
 
-def get_app():
-    return build_app()
+def get_app(inference_backend):
+    """Delegate to `build_app` using the current implementation defaults.
+
+    Args:
+        inference_backend: AI inference class object to be used in application instance.
+    """
+    return build_app(inference_backend=inference_backend)

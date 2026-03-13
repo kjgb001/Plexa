@@ -21,15 +21,19 @@ from plexa_server.core.lessons import (
 )
 from plexa_server.utils.lock_manager import LockManager
 
+
 class SessionClosedError(Exception):
+    """Raised when a caller tries to mutate an inactive session."""
     pass
 
 
 class TurnLimitExceededError(Exception):
+    """Raised when a session has already consumed its maximum turns."""
     pass
 
 
 class SessionNotFoundError(Exception):
+    """Raised when session storage has no record for the requested session."""
     pass
 
 
@@ -45,6 +49,13 @@ class SessionManager:
     """
 
     def __init__(self, storage, inference_backend: InferenceBackend):
+        """Initialize the session manager.
+
+        Args:
+            storage: Storage backend used to persist sessions and inference
+                configs.
+            inference_backend: Backend used to generate assistant responses.
+        """
         self._storage = storage
         self._inference = inference_backend
         self._lock_manager = LockManager()
@@ -53,9 +64,26 @@ class SessionManager:
         self,
         lesson: Lesson,
         user_id: str,
-        course_id: Course,
-        session_id: str = str(uuid4()),
+        course_id: str,
+        session_id: str | None = None,
     ) -> Session:
+        """Create and persist a new session seeded from a lesson definition.
+
+        Args:
+            lesson: Lesson document that defines the runtime configuration.
+            user_id: Identifier of the user who owns the session.
+            course_id: Course identifier associated with the session.
+            session_id: Identifier to assign to the new session, randomly generated if None.
+
+        Returns:
+            Session: Newly created session with its initial transcript.
+
+        Raises:
+            LessonRuntimeError: If the lesson is not runnable at runtime.
+            ValueError: If the lesson does not define a turn limit.
+        """
+        if session_id == None:
+            session_id = str(uuid4())
 
         validate_lesson_runtime(lesson)
 
@@ -90,12 +118,31 @@ class SessionManager:
         return session
 
     def get_session(self, session_id: str) -> Session:
+        """Load a session by id.
+
+        Args:
+            session_id: Identifier of the session to load.
+
+        Returns:
+            Session: Persisted session matching the requested id.
+
+        Raises:
+            SessionNotFoundError: If no session exists for the given id.
+        """
         session = self._storage.get_session(session_id)
         if session is None:
             raise SessionNotFoundError(session_id)
         return session
 
     def close_session(self, session_id: str) -> None:
+        """Mark a session inactive and persist the closure timestamp.
+
+        Args:
+            session_id: Identifier of the session to close.
+
+        Raises:
+            SessionNotFoundError: If no session exists for the given id.
+        """
         lock = self._lock_manager.get_lock(session_id)
 
         with lock:
@@ -114,6 +161,23 @@ class SessionManager:
         message_id: str,
         content: str,
     ) -> Message:
+        """Append a user turn, run inference, and atomically persist the reply.
+
+        Args:
+            session_id: Identifier of the session to mutate.
+            message_id: Identifier to assign to the new user message.
+            content: User message content to submit for inference.
+
+        Returns:
+            Message: Persisted assistant reply generated for the submitted turn.
+
+        Raises:
+            SessionNotFoundError: If no session exists for the given id.
+            SessionClosedError: If the session is already inactive.
+            TurnLimitExceededError: If the session has reached its turn limit.
+            InferenceError: If the inference backend fails before the turn is
+                committed.
+        """
         lock = self._lock_manager.get_lock(session_id)
 
         with lock:

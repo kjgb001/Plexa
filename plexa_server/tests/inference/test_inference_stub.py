@@ -68,6 +68,6 @@ def test_stub_handles_no_user_message():
     assert "<no user message found>" in result.content
 
 
-def test_stub_healthcheck():
+def test_stub_health_check():
     backend = StubInference()
-    assert backend.healthcheck() is True
+    assert backend.health_check() is True
