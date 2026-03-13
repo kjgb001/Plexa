@@ -6,6 +6,7 @@ from plexa_server.core.sessions import (
     SessionClosedError,
     TurnLimitExceededError
 )
+from plexa_server.models.session import Session
 from plexa_server.inference.base import InferenceError
 from plexa_server.api.schemas.requests import SendMessageRequest
 
@@ -38,6 +39,35 @@ def get_sessions_router(
 
     router = APIRouter(tags=["sessions"])
 
+
+    def check_session_path(
+        session: Session, 
+        course_id: str, 
+        lesson_id: str,
+        lesson_version: str
+    ) -> bool:
+        """Check api path variables against session attributes.
+        
+        Args:
+            session: Session object to test against.
+            course_id: Course identifier specified in path.
+            lesson_id: Lesson identifier specified in path.
+            lesson_version: Lesson version identifier specified in path.
+
+        Returns:
+            bool: True if all identifiers match session object attributes.
+
+        Raises:
+            HTTPException: If any identifiers do not match session attributes.
+        """
+        if (session.course_id == course_id and
+            session.lesson_id == lesson_id and
+        session.lesson_version == lesson_version):
+            return True
+        else: 
+            raise HTTPException(status_code=404, details="Session not found.")
+        
+
     # Create Session
 
     @router.post(
@@ -50,7 +80,7 @@ def get_sessions_router(
         lesson_id: str,
         lesson_version: str,
         user_id: str = Depends(require_user_id)
-    ):
+    ) -> CreateSessionResponse:
         """Create a new lesson session for an enrolled user.
 
         Args:
@@ -66,10 +96,13 @@ def get_sessions_router(
             HTTPException: If the lesson does not exist, the course does not
                 exist, or the caller is not allowed to create a session.
         """
-        lesson = artifact_storage.load_lesson(
-            lesson_id=lesson_id,
-            version=lesson_version,
-        )
+        try:
+            lesson = artifact_storage.load_lesson(
+                lesson_id=lesson_id,
+                version=lesson_version,
+            )
+        except:
+            pass
 
         if lesson is None:
             raise HTTPException(
@@ -110,9 +143,11 @@ def get_sessions_router(
     def send_message(
         session_id: str,
         course_id: str,
+        lesson_id: str,
+        lesson_version: str,
         request: SendMessageRequest,
         user_id: str = Depends(require_user_id)
-    ):
+    ) -> SendMessageResponse:
         """Append a user message to a session and return the assistant reply.
 
         Args:
@@ -132,6 +167,7 @@ def get_sessions_router(
 
         try:
             session = get_owned_session(session_manager, session_id, user_id)
+            check_session_path(session, session_id, course_id, lesson_id, lesson_version)
 
             assistant_message = session_manager.submit_user_message(
                 session_id=session_id,
@@ -165,8 +201,10 @@ def get_sessions_router(
     def get_session(
         session_id: str,
         course_id: str,
+        lesson_id: str,
+        lesson_version: str,
         user_id: str = Depends(require_user_id)
-    ):
+    ) -> CreateSessionResponse:
         """Return the full transcript for a session owned by the caller.
 
         Args:
@@ -183,6 +221,7 @@ def get_sessions_router(
         """
         try:
             session = get_owned_session(session_manager, session_id, user_id)
+            check_session_path(session, session_id, course_id, lesson_id, lesson_version)
 
             return CreateSessionResponse(
                 session=SessionResponse.from_session(session),
@@ -205,7 +244,7 @@ def get_sessions_router(
         lesson_id: str,
         lesson_version: str,
         user_id: str = Depends(require_user_id)
-    ):
+    ) -> SessionResponse:
         """Close an owned session and return its updated summary.
 
         Args:
@@ -224,6 +263,8 @@ def get_sessions_router(
         """
         try:
             session = get_owned_session(session_manager, session_id, user_id)
+            check_session_path(session, session_id, course_id, lesson_id, lesson_version)
+
             session_manager.close_session(session_id)
             session = session_manager.get_session(session_id)
             return SessionResponse.from_session(session)
