@@ -1,5 +1,11 @@
 *json
 
-__*
+# Python
+__pycache__/
+*.pyc
 
 *uml.txt
+
+.venv/
+
+docs/build/
