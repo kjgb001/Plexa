@@ -7,4 +7,5 @@ Welcome to the Plexa documentation site.
    :caption: Application Docs:
    
 server/index.md
+client/index.md
 
