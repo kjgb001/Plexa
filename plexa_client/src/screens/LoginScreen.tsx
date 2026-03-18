@@ -1,13 +1,11 @@
 import { useState } from "react"
-import { authService } from "../api"
 
-export default function LoginScreen({ onLogin }: { onLogin: () => void }) {
+export default function LoginScreen({ onLogin }: { onLogin: (userId: string) => Promise<void> }) {
   const [userId, setUserId] = useState("")
 
-  function handleLogin() {
+  async function handleLogin() {
     if (!userId.trim()) return
-    authService.login(userId)
-    onLogin()
+    await onLogin(userId.trim())
   }
 
   return (
@@ -21,7 +19,7 @@ export default function LoginScreen({ onLogin }: { onLogin: () => void }) {
         placeholder="student1"
       />
 
-      <button onClick={handleLogin}>Login</button>
+      <button onClick={() => void handleLogin()}>Login</button>
     </div>
   )
 }

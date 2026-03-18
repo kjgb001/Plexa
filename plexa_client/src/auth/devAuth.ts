@@ -1,4 +1,16 @@
-export class DevAuthService {
+import type { AuthService, AuthUser } from "./types"
+
+export class DevAuthService implements AuthService {
+  async boot(): Promise<AuthUser | null> {
+    const user = localStorage.getItem("plexa_user")
+
+    if (!user) {
+      return null
+    }
+
+    return { userId: user }
+  }
+
   async getAuthHeaders(): Promise<Record<string, string>> {
     const user = localStorage.getItem("plexa_user")
 
@@ -11,11 +23,16 @@ export class DevAuthService {
     }
   }
 
-  login(userId: string) {
+  async login(userId: string): Promise<AuthUser> {
     localStorage.setItem("plexa_user", userId)
+    return { userId }
   }
 
-  logout() {
+  async logout(): Promise<void> {
     localStorage.removeItem("plexa_user")
+  }
+
+  async handleCallback(): Promise<AuthUser | null> {
+    return this.boot()
   }
 }

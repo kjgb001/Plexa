@@ -14,6 +14,26 @@ export class SessionApi {
   private http: HttpClient
   constructor(http: HttpClient) {this.http = http}
 
+  async getSession(
+    courseId: string,
+    lessonId: string,
+    lessonVersion: string,
+    sessionId: string,
+  ): Promise<CreateSessionResult> {
+    setCurrentCourse(courseId)
+    setCurrentLesson(lessonId, lessonVersion)
+    setCurrentSession(sessionId)
+
+    const result = await this.http.request<ApiCreateSessionResponse>(
+      `courses/${courseId}/lessons/${lessonId}/${lessonVersion}/sessions/${sessionId}`,
+      {
+        method: "GET",
+      }
+    )
+
+    return mapCreateSessionResult(result)
+  }
+
   async createSession(
     courseId: string | null = null,
     lessonId: string,

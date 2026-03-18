@@ -1,58 +1,107 @@
-import { useState } from "react"
+import { useEffect } from "react"
+import BootScreen from "./app/BootScreen"
+import AuthCallbackScreen from "./app/AuthCallbackScreen"
+import { navigate, parseRoute, useCurrentPathname } from "./app/router"
+import { useAuth } from "./auth/useAuth"
+import { ApiProvider } from "./api"
+import StudentShell from "./app/StudentShell"
 import LoginScreen from "./screens/LoginScreen"
 import CourseListScreen from "./screens/CourseListScreen"
 import LessonListScreen from "./screens/LessonListScreen"
 import ChatScreen from "./screens/ChatScreen"
 
-type Screen = "courses" | "lessons" | "chat"
-
 export default function App() {
-  const [loggedIn, setLoggedIn] = useState(
-    !!localStorage.getItem("plexa_user")
+  return (
+    <ApiProvider>
+      <AppView />
+    </ApiProvider>
   )
+}
 
-  const [screen, setScreen] = useState<Screen>("courses")
-  const [courseId, setCourseId] = useState<string | null>(null)
-  const [lessonId, setLessonId] = useState<string | null>(null)
-  const [lessonVersion, setLessonVersion] = useState<string | null>(null)
+function AppView() {
+  const pathname = useCurrentPathname()
+  const route = parseRoute(pathname)
+  const { status, user, error, login, logout } = useAuth()
 
-  if (!loggedIn) {
-    return <LoginScreen onLogin={() => setLoggedIn(true)} />
+  useEffect(() => {
+    if (status === "authenticated" && route.kind === "login") {
+      navigate("/app/courses", { replace: true })
+    }
+  }, [route.kind, status])
+
+  if (status === "booting") {
+    return <BootScreen />
   }
 
-  if (screen === "courses") {
+  if (route.kind === "auth-callback") {
+    return <AuthCallbackScreen />
+  }
+
+  if (status === "error") {
     return (
-      <CourseListScreen
-        onSelectCourse={(course) => {
-          setCourseId(course)
-          setScreen("lessons")
+      <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
+        <h1>Plexa</h1>
+        <p>Authentication failed during app boot.</p>
+        <pre>{error?.message}</pre>
+      </div>
+    )
+  }
+
+  if (status !== "authenticated") {
+    return (
+      <LoginScreen
+        onLogin={async (userId) => {
+          await login(userId)
+          navigate("/app/courses", { replace: true })
         }}
       />
     )
   }
 
-  if (screen === "lessons" && courseId) {
+  if (route.kind === "courses") {
     return (
-      <LessonListScreen
-        courseId={courseId}
-        onSelectLesson={(lessonId, lessonVersion) => {
-          setLessonId(lessonId)
-          setLessonVersion(lessonVersion)
-          setScreen("chat")
-        }}
-      />
+      <StudentShell route={route} userId={user?.userId ?? null} onLogout={logout}>
+        <CourseListScreen
+          onSelectCourse={(course) => {
+            navigate(`/app/courses/${encodeURIComponent(course)}`)
+          }}
+        />
+      </StudentShell>
     )
   }
 
-  if (screen === "chat" && courseId && lessonId && lessonVersion) {
+  if (route.kind === "lessons") {
     return (
-      <ChatScreen
-        courseId={courseId}
-        lessonId={lessonId}
-        lessonVersion={lessonVersion}
-      />
+      <StudentShell route={route} userId={user?.userId ?? null} onLogout={logout}>
+        <LessonListScreen
+          courseId={route.courseId}
+          onSelectLesson={(lessonId, lessonVersion) => {
+            navigate(
+              `/app/courses/${encodeURIComponent(route.courseId)}/lessons/${encodeURIComponent(lessonId)}/${encodeURIComponent(lessonVersion)}`
+            )
+          }}
+        />
+      </StudentShell>
     )
   }
 
-  return null
+  if (route.kind === "chat") {
+    return (
+      <StudentShell route={route} userId={user?.userId ?? null} onLogout={logout}>
+        <ChatScreen
+          courseId={route.courseId}
+          lessonId={route.lessonId}
+          lessonVersion={route.lessonVersion}
+          sessionId={route.sessionId}
+        />
+      </StudentShell>
+    )
+  }
+
+  return (
+    <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
+      <h1>Plexa</h1>
+      <p>Page not found.</p>
+    </div>
+  )
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { courseApi } from "../api"
+import { useApis } from "../api"
 import type { Course } from "../api/interfaces"
 
 interface Props {
@@ -7,32 +7,69 @@ interface Props {
 }
 
 export default function CourseListScreen({ onSelectCourse }: Props) {
+  const { courseApi } = useApis()
   const [courses, setCourses] = useState<Course[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    courseApi.listDiscoverable().then(result => {
-      setCourses(result.courses)
-    })
-  }, [])
+    let active = true
+
+    async function loadCourses() {
+      try {
+        const result = await courseApi.listDiscoverable()
+
+        if (active) {
+          setCourses(result.courses)
+        }
+      } finally {
+        if (active) {
+          setLoading(false)
+        }
+      }
+    }
+
+    void loadCourses()
+
+    return () => {
+      active = false
+    }
+  }, [courseApi])
 
   return (
-    <div>
-      <h1>Courses</h1>
-
-      {courses.map((course) => (
-        <div
-          key={course.course_id}
-          onClick={() => onSelectCourse(course.course_id)}
-          style={{
-            cursor: "pointer",
-            border: "1px solid #ccc",
-            padding: "10px",
-            marginBottom: "10px"
-          }}
-        >
-          {course.title}
+    <section className="screen-card">
+      <div className="screen-card__header">
+        <div>
+          <p className="eyebrow">Course Discovery</p>
+          <h1>Choose a course space</h1>
+          <p>
+            Start from a course home, then narrow into one lesson workspace. The
+            shell stays stable so students can move around without losing context.
+          </p>
         </div>
-      ))}
-    </div>
+      </div>
+
+      {loading ? <p>Loading available courses...</p> : null}
+
+      {!loading && courses.length === 0 ? (
+        <div className="empty-panel">
+          No discoverable courses are available for this account yet.
+        </div>
+      ) : null}
+
+      <div className="rail__list">
+        {courses.map((course) => (
+          <button
+            key={course.course_id}
+            className="rail-card"
+            onClick={() => onSelectCourse(course.course_id)}
+          >
+            <span className="rail-card__title">{course.title}</span>
+            <span className="rail-card__meta">
+              {course.description ?? "Enter to browse lessons and begin a session."}
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
   )
 }

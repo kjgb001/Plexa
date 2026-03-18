@@ -24,8 +24,8 @@ export class CourseApi {
     return mapCourse(result)
   }
 
-  requestEnrollment(courseId: string) {
-    return this.http.request(`/courses/${courseId}/enroll`, {
+  requestEnrollment(courseId: string): Promise<{ status: string }> {
+    return this.http.request<{ status: string }>(`/courses/${courseId}/enroll`, {
       method: "POST"
     })
   }

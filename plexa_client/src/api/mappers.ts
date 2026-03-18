@@ -53,6 +53,8 @@ export function mapLessonSummary(lesson: ApiLessonDocument): Lesson {
     version: lesson.identity.version,
     title: lesson.identity.title,
     author: lesson.identity.author,
+    learning_objective: lesson.intent.learning_objective,
+    behavioral_focus: lesson.intent.behavioral_focus,
     difficulty: lesson.intent.difficulty ?? undefined,
     approximate_time: lesson.intent.approximate_time ?? undefined,
     tags: lesson.identity.tags ?? undefined,

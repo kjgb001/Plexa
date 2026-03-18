@@ -29,6 +29,8 @@ export interface Lesson {
   version: string
   title: string
   author?: string
+  learning_objective?: string
+  behavioral_focus?: string
   difficulty?: string
   approximate_time?: string
   tags?: string[]
