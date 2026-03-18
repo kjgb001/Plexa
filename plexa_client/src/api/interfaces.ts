@@ -1,15 +1,17 @@
 export interface Message {
-  role: "user" | "assistant" | "system"
+  role: "user" | "assistant" | "system" | "instructor"
   content: string
 }
 
 export interface Session {
   session_id: string
+  user_id: string
+  course_id: string
   lesson_id: string
   lesson_version: string
-  course_id: string
-  messages: Message[]
+  created_at: string
   turn_count: number
+  max_turns: number
   is_active: boolean
 }
 
@@ -30,4 +32,14 @@ export interface Lesson {
   difficulty?: string
   approximate_time?: string
   tags?: string[]
+}
+
+export interface CreateSessionResult {
+  session: Session
+  messages: Message[]
+}
+
+export interface SendMessageResult {
+  assistantMessage: Message
+  session: Session
 }

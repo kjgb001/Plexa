@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Header, HTTPException, Depends, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, HTTPException, Depends
 
 from plexa_server.auth.user import require_user_id
 from plexa_server.storage.filesystem import FileSystemCourseStorage, FileSystemArtifactStorage
+from plexa_server.api.schemas.responses import CourseLessonsResponse
 
 
 def get_course_router(
@@ -78,7 +78,7 @@ def get_course_router(
     def get_course_lessons(
         course_id: str,
         user_id: str = Depends(require_user_id)
-    ):
+    ) -> CourseLessonsResponse:
         """Return lesson documents for a course visible to the caller.
 
         Args:
@@ -106,7 +106,7 @@ def get_course_router(
             lessons = []
             for lesson_id, lesson_version in course.lessons.items():
                 lessons.append(artifact_storage.load_lesson(lesson_id, lesson_version))
-            return lessons
+            return CourseLessonsResponse(lessons=lessons)
         
 
     @router.post("/{course_id}/enroll")

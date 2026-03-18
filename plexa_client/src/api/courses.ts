@@ -1,16 +1,27 @@
 import { HttpClient } from "./http"
+import type {
+  ApiCourse,
+  ApiCourseLessonsResponse,
+  ApiCourseListResponse,
+} from "./dto"
 import type { Course, Lesson } from "./interfaces"
+import { mapCourse, mapLessonSummary } from "./mappers"
 
 export class CourseApi {
   private http: HttpClient
   constructor(http: HttpClient) {this.http = http}
 
-  listDiscoverable(): Promise<{ courses: Course[] }> {
-    return this.http.request("/courses")
+  async listDiscoverable(): Promise<{ courses: Course[] }> {
+    const result = await this.http.request<ApiCourseListResponse>("/courses")
+
+    return {
+      courses: result.courses.map(mapCourse),
+    }
   }
 
-  get(courseId: string): Promise<Course> {
-    return this.http.request(`/courses/${courseId}`)
+  async get(courseId: string): Promise<Course> {
+    const result = await this.http.request<ApiCourse>(`/courses/${courseId}`)
+    return mapCourse(result)
   }
 
   requestEnrollment(courseId: string) {
@@ -19,23 +30,15 @@ export class CourseApi {
     })
   }
 
-async listLessons(courseId: string): Promise<{ lessons: Lesson[] }> {
-  const result = await this.http.request<any>(
-    `courses/${courseId}/lessons`, {
+  async listLessons(courseId: string): Promise<{ lessons: Lesson[] }> {
+    const result = await this.http.request<ApiCourseLessonsResponse>(
+      `courses/${courseId}/lessons`, {
       method: "GET"
-    }
-  )
+      }
+    )
 
-  return {
-    lessons: result.map((lesson: any) => ({
-      lesson_id: lesson.identity.lesson_id,
-      version: lesson.identity.version,
-      title: lesson.identity.title,
-      author: lesson.identity.author,
-      difficulty: lesson.intent?.difficulty,
-      approximate_time: lesson.intent?.approximate_time,
-      tags: lesson.identity?.tags
-    }))
+    return {
+      lessons: result.lessons.map(mapLessonSummary),
+    }
   }
-}
 }

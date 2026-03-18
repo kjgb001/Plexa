@@ -25,6 +25,7 @@ def test_create_session_success(client, lesson_factory, course_factory, api_pref
 
     data = response.json()
     assert data["session"]["user_id"] == "tester"
+    assert data["session"]["course_id"] == course_id
     assert data["session"]["lesson_id"] == "test"
     assert data["session"]["lesson_version"] == "0.1.0"
     assert data["session"]["is_active"] is True
@@ -331,4 +332,4 @@ def test_lesson_list(client, course_factory, lesson_factory, api_prefix, admin_h
     )
 
     assert response.status_code == 200
-    assert response.json()[0]["identity"]["lesson_id"] == "test"
+    assert response.json()["lessons"][0]["identity"]["lesson_id"] == "test"

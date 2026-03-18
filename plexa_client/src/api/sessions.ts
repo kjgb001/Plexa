@@ -1,63 +1,82 @@
 import { HttpClient } from "./http"
-import type { Session, Message } from "./interfaces"
+import type {
+  ApiCreateSessionResponse,
+  ApiSendMessageResponse,
+  ApiSessionResponse,
+} from "./dto"
+import type { CreateSessionResult, SendMessageResult, Session } from "./interfaces"
 import { getCurrentCourse, setCurrentCourse, clearCurrentCourse } from "../state/courseState"
 import { getCurrentSession, setCurrentSession, clearCurrentSession } from "../state/sessionState"
 import { getCurrentLesson, setCurrentLesson, clearCurrentLesson } from "../state/lessonState"
+import { mapCreateSessionResult, mapSendMessageResult, mapSession } from "./mappers"
 
 export class SessionApi {
   private http: HttpClient
   constructor(http: HttpClient) {this.http = http}
 
-  async createSession(courseId: string = String(null), lessonId: string, lessonVersion: string) {
-    if (!courseId) {
+  async createSession(
+    courseId: string | null = null,
+    lessonId: string,
+    lessonVersion: string,
+  ): Promise<CreateSessionResult> {
+    if (courseId === null) {
       courseId = getCurrentCourse()
     } else {
       setCurrentCourse(courseId)
     }
 
-    const result = await this.http.request<{session: Session}>(
+    const result = await this.http.request<ApiCreateSessionResponse>(
       `courses/${courseId}/lessons/${lessonId}/${lessonVersion}/sessions`,
       {
         method: "POST",
       }
     )
+
+    const mapped = mapCreateSessionResult(result)
     
-    setCurrentSession(result.session.session_id)
+    setCurrentSession(mapped.session.session_id)
     setCurrentLesson(lessonId, lessonVersion)
 
-    return result
+    return mapped
   }
 
-  async sendMessage(content: string, sessionId: string | null = null) {
+  async sendMessage(
+    content: string,
+    sessionId: string | null = null,
+  ): Promise<SendMessageResult> {
     const courseId = getCurrentCourse()
     const lessonDict = getCurrentLesson()
     const lessonId = lessonDict.lessonId
     const lessonVersion = lessonDict.lessonVersion
 
-
-    try {
-      sessionId = getCurrentSession()
-    } catch {
-      this.createSession(courseId, lessonId, lessonVersion)
+    if (sessionId === null) {
+      try {
+        sessionId = getCurrentSession()
+      } catch {
+        const createdSession = await this.createSession(courseId, lessonId, lessonVersion)
+        sessionId = createdSession.session.session_id
+      }
     }
 
-    return this.http.request<{assistant_message: Message, session: Session}>(
+    const result = await this.http.request<ApiSendMessageResponse>(
       `courses/${courseId}/lessons/${lessonId}/${lessonVersion}/sessions/${sessionId}/messages`,
       {
         method: "POST",
         body: JSON.stringify({ content })
       }
     )
+
+    return mapSendMessageResult(result)
   }
 
-  async closeSession() {
+  async closeSession(): Promise<Session> {
     const courseId = getCurrentCourse()
     const sessionId = getCurrentSession()
     const lessonDict = getCurrentLesson()
     const lessonId = lessonDict.lessonId
     const lessonVersion = lessonDict.lessonVersion
 
-    const result = await this.http.request(
+    const result = await this.http.request<ApiSessionResponse>(
       `courses/${courseId}/lessons/${lessonId}/${lessonVersion}/sessions/${sessionId}/close`,
       { method: "POST" }
     )
@@ -66,7 +85,7 @@ export class SessionApi {
     clearCurrentCourse()
     clearCurrentLesson()
 
-    return result
+    return mapSession(result)
   }
 
 }

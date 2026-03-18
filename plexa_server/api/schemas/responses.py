@@ -3,6 +3,7 @@ from typing import List
 from datetime import datetime
 from plexa_server.models.session import Session
 from plexa_server.models.message import Message
+from plexa_server.models.lesson import Lesson
 
 
 class SessionResponse(BaseModel):
@@ -10,6 +11,7 @@ class SessionResponse(BaseModel):
 
     session_id: str
     user_id: str
+    course_id: str
     lesson_id: str
     lesson_version: str
     created_at: datetime
@@ -30,6 +32,7 @@ class SessionResponse(BaseModel):
         return cls(
             session_id=session.session_id,
             user_id=session.user_id,
+            course_id=session.course_id,
             lesson_id=session.lesson_id,
             lesson_version=session.lesson_version,
             created_at=session.created_at,
@@ -37,6 +40,12 @@ class SessionResponse(BaseModel):
             turn_count=session.turn_count,
             max_turns=session.max_turns,
         )
+
+
+class CourseLessonsResponse(BaseModel):
+    """Response payload returned when listing lessons bound to a course."""
+
+    lessons: List[Lesson]
 
 
 class CreateSessionResponse(BaseModel):

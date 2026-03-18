@@ -1,8 +1,7 @@
-from fastapi import APIRouter, Header, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status
 from uuid import uuid4
 
 from plexa_server.core.sessions import (
-    SessionNotFoundError,
     SessionClosedError,
     TurnLimitExceededError
 )
@@ -16,7 +15,7 @@ from plexa_server.api.schemas.responses import (
     SendMessageResponse,
 )
 
-from plexa_server.auth.user import require_user_id, require_course_id, get_owned_session
+from plexa_server.auth.user import require_user_id, get_owned_session
 from plexa_server.core.sessions import SessionManager
 from plexa_server.storage.filesystem import FileSystemArtifactStorage, FileSystemCourseStorage
 
@@ -45,7 +44,7 @@ def get_sessions_router(
         course_id: str, 
         lesson_id: str,
         lesson_version: str
-    ) -> bool:
+    ) -> None:
         """Check api path variables against session attributes.
         
         Args:
@@ -54,18 +53,15 @@ def get_sessions_router(
             lesson_id: Lesson identifier specified in path.
             lesson_version: Lesson version identifier specified in path.
 
-        Returns:
-            bool: True if all identifiers match session object attributes.
-
         Raises:
             HTTPException: If any identifiers do not match session attributes.
         """
         if (session.course_id == course_id and
             session.lesson_id == lesson_id and
-        session.lesson_version == lesson_version):
-            return True
-        else: 
-            raise HTTPException(status_code=404, details="Session not found.")
+            session.lesson_version == lesson_version):
+            return
+
+        raise HTTPException(status_code=404, detail="Session not found.")
         
 
     # Create Session
@@ -96,13 +92,10 @@ def get_sessions_router(
             HTTPException: If the lesson does not exist, the course does not
                 exist, or the caller is not allowed to create a session.
         """
-        try:
-            lesson = artifact_storage.load_lesson(
-                lesson_id=lesson_id,
-                version=lesson_version,
-            )
-        except:
-            pass
+        lesson = artifact_storage.load_lesson(
+            lesson_id=lesson_id,
+            version=lesson_version,
+        )
 
         if lesson is None:
             raise HTTPException(
@@ -167,7 +160,7 @@ def get_sessions_router(
 
         try:
             session = get_owned_session(session_manager, session_id, user_id)
-            check_session_path(session, session_id, course_id, lesson_id, lesson_version)
+            check_session_path(session, course_id, lesson_id, lesson_version)
 
             assistant_message = session_manager.submit_user_message(
                 session_id=session_id,
@@ -221,7 +214,7 @@ def get_sessions_router(
         """
         try:
             session = get_owned_session(session_manager, session_id, user_id)
-            check_session_path(session, session_id, course_id, lesson_id, lesson_version)
+            check_session_path(session, course_id, lesson_id, lesson_version)
 
             return CreateSessionResponse(
                 session=SessionResponse.from_session(session),
@@ -263,7 +256,7 @@ def get_sessions_router(
         """
         try:
             session = get_owned_session(session_manager, session_id, user_id)
-            check_session_path(session, session_id, course_id, lesson_id, lesson_version)
+            check_session_path(session, course_id, lesson_id, lesson_version)
 
             session_manager.close_session(session_id)
             session = session_manager.get_session(session_id)

@@ -24,11 +24,11 @@ export default function ChatScreen({ courseId, lessonId, lessonVersion }: Props)
       )
 
       setSession(result.session)
-      setMessages(result.session.messages ?? [])
+      setMessages(result.messages)
     }
 
     initSession()
-  }, [courseId, lessonId])
+  }, [courseId, lessonId, lessonVersion])
 
   async function sendMessage() {
     if (!session || !input.trim()) return
@@ -47,7 +47,7 @@ export default function ChatScreen({ courseId, lessonId, lessonVersion }: Props)
 
       setMessages(prev => [
         ...prev,
-        result.assistant_message
+        result.assistantMessage
       ])
 
       setSession(result.session)
