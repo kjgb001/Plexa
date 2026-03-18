@@ -55,6 +55,12 @@ class CreateSessionResponse(BaseModel):
     messages: List[Message]
 
 
+class ListSessionsResponse(BaseModel):
+    """Response payload for listing a learner's sessions for one lesson."""
+
+    sessions: List[SessionResponse]
+
+
 class SendMessageResponse(BaseModel):
     """Response payload returned after a successful user turn submission."""
 

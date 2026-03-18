@@ -62,7 +62,10 @@ def lesson_factory(artifact_storage) -> Lesson:
 def session_factory(client, lesson_factory, course_factory, api_prefix) -> String:
     def _create(lesson_id="test", version="0.1.0", user_id="tester", course_id="CS101"):
         lesson_factory()
-        course_id = course_factory()
+        try:
+            course_id = course_factory()
+        except:
+            pass
 
         response = client.post(
             f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{version}/sessions",

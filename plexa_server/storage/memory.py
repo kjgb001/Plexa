@@ -1,8 +1,9 @@
 from typing import Dict, Optional
+from typing import List
 
 from plexa_server.models.session import Session
 from plexa_server.inference.base import InferenceConfig
-from plexa_server.storage.session_protocol import SessionStorage
+from plexa_server.storage.storage_interface import SessionStorage
 
 
 class InMemoryStorage(SessionStorage):
@@ -72,3 +73,11 @@ class InMemoryStorage(SessionStorage):
             Optional[InferenceConfig]: Stored config, or `None` if absent.
         """
         return self._inference_configs.get(session_id)
+
+    def list_sessions(self) -> List[Session]:
+        """Return all stored sessions.
+
+        Returns:
+            List[Session]: Sessions currently held in memory.
+        """
+        return list(self._sessions.values())

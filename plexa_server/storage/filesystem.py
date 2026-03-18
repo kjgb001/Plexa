@@ -8,7 +8,11 @@ from plexa_server.models.lesson import Lesson
 from plexa_server.models.session import Session
 from plexa_server.models.course import Course
 from plexa_server.inference.base import InferenceConfig
-from plexa_server.storage.session_protocol import SessionStorage
+from plexa_server.storage.storage_interface import (
+    ArtifactStorage,
+    CourseStorage,
+    SessionStorage,
+)
 
 
 def _atomic_write(path: Path, data: str) -> None:
@@ -26,7 +30,7 @@ def _atomic_write(path: Path, data: str) -> None:
     temp_path.replace(path)
 
 
-class FileSystemArtifactStorage:
+class FileSystemArtifactStorage(ArtifactStorage):
     """
     Persistent storage for lesson artifacts and encrypted logs.
 
@@ -222,8 +226,23 @@ class FileSystemSessionStorage(SessionStorage):
 
         return InferenceConfig.model_validate(data)
 
+    def list_sessions(self) -> List[Session]:
+        """Load and return every persisted session document.
 
-class FileSystemCourseStorage:
+        Returns:
+            List[Session]: Parsed session documents found in storage.
+        """
+        results: List[Session] = []
+
+        for file in self.sessions_path.glob("*.json"):
+            with file.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+                results.append(Session.model_validate(data))
+
+        return results
+
+
+class FileSystemCourseStorage(CourseStorage):
     """
     Persistent filesystem-backed storage for Course metadata.
 
@@ -309,7 +328,7 @@ class FileSystemCourseStorage:
 
         return results
 
-    def bind_lesson_to_course(self, course_id, lesson_id, version) -> None:
+    def bind_lesson_to_course(self, course_id: str, lesson_id: str, version: str) -> None:
         """Bind or replace a lesson version in a course document.
 
         Args:

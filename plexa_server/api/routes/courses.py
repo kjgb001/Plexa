@@ -1,12 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends
 
 from plexa_server.auth.user import require_user_id
-from plexa_server.storage.filesystem import FileSystemCourseStorage, FileSystemArtifactStorage
+from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage
 from plexa_server.api.schemas.responses import CourseLessonsResponse
 
 
 def get_course_router(
-    course_storage: FileSystemCourseStorage, artifact_storage: FileSystemArtifactStorage
+    course_storage: CourseStorage, artifact_storage: ArtifactStorage
 ) -> APIRouter:
     """Create learner-facing course discovery and enrollment endpoints.
 

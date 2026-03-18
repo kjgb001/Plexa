@@ -103,6 +103,18 @@ def test_session_storage_inference_config_roundtrip(tmp_path: Path):
     assert loaded.model == config.model
 
 
+def test_session_storage_list_sessions(tmp_path: Path):
+    storage = FileSystemSessionStorage(tmp_path)
+
+    storage.save_session(make_valid_session("s1"))
+    storage.save_session(make_valid_session("s2"))
+
+    sessions = storage.list_sessions()
+    session_ids = {session.session_id for session in sessions}
+
+    assert session_ids == {"s1", "s2"}
+
+
 def test_course_storage_roundtrip(tmp_path: Path, valid_course_payload):
     storage = FileSystemCourseStorage(tmp_path)
 

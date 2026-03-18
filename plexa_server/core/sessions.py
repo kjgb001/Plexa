@@ -19,6 +19,7 @@ from plexa_server.core.lessons import (
     build_initial_messages,
     freeze_inference_config,
 )
+from plexa_server.storage.storage_interface import SessionStorage
 from plexa_server.utils.lock_manager import LockManager
 
 
@@ -48,7 +49,7 @@ class SessionManager:
     - Deterministic ordering
     """
 
-    def __init__(self, storage, inference_backend: InferenceBackend):
+    def __init__(self, storage: SessionStorage, inference_backend: InferenceBackend):
         """Initialize the session manager.
 
         Args:
@@ -133,6 +134,35 @@ class SessionManager:
         if session is None:
             raise SessionNotFoundError(session_id)
         return session
+
+    def list_sessions(
+        self,
+        user_id: str,
+        course_id: str,
+        lesson_id: str,
+        lesson_version: str,
+    ) -> List[Session]:
+        """Return the caller's sessions for a specific course lesson version.
+
+        Args:
+            user_id: Identifier of the user who owns the sessions.
+            course_id: Course identifier to match.
+            lesson_id: Lesson identifier to match.
+            lesson_version: Lesson version to match.
+
+        Returns:
+            List[Session]: Matching sessions ordered from newest to oldest.
+        """
+        sessions = [
+            session
+            for session in self._storage.list_sessions()
+            if session.user_id == user_id
+            and session.course_id == course_id
+            and session.lesson_id == lesson_id
+            and session.lesson_version == lesson_version
+        ]
+
+        return sorted(sessions, key=lambda session: session.created_at, reverse=True)
 
     def close_session(self, session_id: str) -> None:
         """Mark a session inactive and persist the closure timestamp.

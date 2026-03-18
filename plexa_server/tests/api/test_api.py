@@ -62,6 +62,28 @@ def test_get_session(client, session_factory, api_prefix):
     assert response.json()["session"]["session_id"] == session_id
 
 
+def test_list_sessions_for_lesson(client, session_factory, api_prefix):
+    first_session_id, lesson_id, lesson_version = session_factory()
+    second_session_id, _, _ = session_factory()
+    session_factory(user_id="Alice")
+    course_id = "CS101"
+
+    response = client.get(
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions",
+        headers={"X-User-Id": "tester"},
+    )
+
+    assert response.status_code == 200
+
+    sessions = response.json()["sessions"]
+
+    assert [session["session_id"] for session in sessions] == [
+        second_session_id,
+        first_session_id,
+    ]
+    assert all(session["user_id"] == "tester" for session in sessions)
+
+
 def test_close_session(client, session_factory, api_prefix):
     session_id, lesson_id, lesson_version = session_factory()
     course_id = "CS101"

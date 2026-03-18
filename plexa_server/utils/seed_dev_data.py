@@ -4,6 +4,7 @@ from plexa_server.storage.filesystem import (
     FileSystemArtifactStorage,
     FileSystemCourseStorage,
 )
+from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage
 
 from plexa_server.models.lesson import Lesson
 from plexa_server.models.course import Course
@@ -17,7 +18,7 @@ from plexa_server.tests.fixtures import (
 
 DATA_PATH = get_data_dir_path()
 
-def seed_course(lesson_id, lesson_version, course_storage: FileSystemCourseStorage):
+def seed_course(lesson_id, lesson_version, course_storage: CourseStorage):
     """Create a fixture-backed course and bind the supplied lesson version.
 
     Args:
@@ -31,7 +32,7 @@ def seed_course(lesson_id, lesson_version, course_storage: FileSystemCourseStora
     course_storage.save_course(course)
 
 
-def seed_lesson(artifact_storage: FileSystemArtifactStorage):
+def seed_lesson(artifact_storage: ArtifactStorage):
     """Create and persist the fixture lesson, returning its id and version.
 
     Args:

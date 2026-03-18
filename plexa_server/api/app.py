@@ -9,6 +9,11 @@ from plexa_server.storage.filesystem import (
     FileSystemArtifactStorage,
     FileSystemCourseStorage
 )
+from plexa_server.storage.storage_interface import (
+    ArtifactStorage,
+    CourseStorage,
+    SessionStorage,
+)
 
 from plexa_server.api.routes.sessions import get_sessions_router
 from plexa_server.api.routes.health import get_health_router
@@ -37,9 +42,9 @@ def build_app(
     data_path = Path(data_dir)
 
     # Infrastructure wiring (composition root)
-    artifact_storage = FileSystemArtifactStorage(data_path)
-    session_storage = FileSystemSessionStorage(data_path)
-    course_storage = FileSystemCourseStorage(data_path)
+    artifact_storage: ArtifactStorage = FileSystemArtifactStorage(data_path)
+    session_storage: SessionStorage = FileSystemSessionStorage(data_path)
+    course_storage: CourseStorage = FileSystemCourseStorage(data_path)
     inference_backend = inference_backend
 
     session_manager = SessionManager(

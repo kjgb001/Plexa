@@ -9,14 +9,14 @@ from plexa_server.models.lesson import Lesson
 from plexa_server.models.course import Course
 from plexa_server.auth.admin import require_admin_token
 from plexa_server.auth.user import require_user_id
-from plexa_server.storage.filesystem import FileSystemArtifactStorage, FileSystemCourseStorage
+from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage
 
 
 # Router Factory
 
 def get_admin_router(
-    artifact_storage: FileSystemArtifactStorage,
-    course_storage: FileSystemCourseStorage
+    artifact_storage: ArtifactStorage,
+    course_storage: CourseStorage
 ) -> APIRouter:
     """Create administrative lesson and course management endpoints.
 

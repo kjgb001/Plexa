@@ -12,18 +12,19 @@ from plexa_server.api.schemas.requests import SendMessageRequest
 from plexa_server.api.schemas.responses import (
     SessionResponse,
     CreateSessionResponse,
+    ListSessionsResponse,
     SendMessageResponse,
 )
 
 from plexa_server.auth.user import require_user_id, get_owned_session
 from plexa_server.core.sessions import SessionManager
-from plexa_server.storage.filesystem import FileSystemArtifactStorage, FileSystemCourseStorage
+from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage
 
 
 def get_sessions_router(
     session_manager: SessionManager,
-    artifact_storage: FileSystemArtifactStorage,
-    course_storage: FileSystemCourseStorage
+    artifact_storage: ArtifactStorage,
+    course_storage: CourseStorage
 ) -> APIRouter:
     """Create session endpoints bound to the supplied storage and manager objects.
 
@@ -124,6 +125,68 @@ def get_sessions_router(
         return CreateSessionResponse(
             session=SessionResponse.from_session(session),
             messages=session.messages,
+        )
+
+
+    # List Sessions
+
+    @router.get(
+        "/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions",
+        response_model=ListSessionsResponse,
+    )
+    def list_sessions(
+        course_id: str,
+        lesson_id: str,
+        lesson_version: str,
+        user_id: str = Depends(require_user_id)
+    ) -> ListSessionsResponse:
+        """Return the caller's sessions for a specific course lesson version.
+
+        Args:
+            course_id: Course containing the requested lesson.
+            lesson_id: Lesson identifier to match.
+            lesson_version: Lesson version to match.
+            user_id: Caller identity resolved from the request header.
+
+        Returns:
+            ListSessionsResponse: Matching session summaries ordered newest first.
+
+        Raises:
+            HTTPException: If the lesson does not exist, the course does not
+                exist, or the caller is not allowed to view sessions for it.
+        """
+        lesson = artifact_storage.load_lesson(
+            lesson_id=lesson_id,
+            version=lesson_version,
+        )
+
+        if lesson is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Lesson not found",
+            )
+
+        course = course_storage.get_course(course_id)
+        if course is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Course not found."
+            )
+        if user_id not in course.enrolled_users and user_id != course.owner_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Course not found."
+            )
+
+        sessions = session_manager.list_sessions(
+            user_id=user_id,
+            course_id=course_id,
+            lesson_id=lesson_id,
+            lesson_version=lesson_version,
+        )
+
+        return ListSessionsResponse(
+            sessions=[SessionResponse.from_session(session) for session in sessions]
         )
 
 
