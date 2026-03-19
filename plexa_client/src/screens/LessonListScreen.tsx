@@ -79,8 +79,8 @@ export default function LessonListScreen({ courseId, onSelectLesson }: Props) {
           <p className="eyebrow">Lesson Selection</p>
           <h1>Pick a lesson workspace</h1>
           <p>
-            Each lesson opens as its own focused chat context. Multiple sessions
-            can exist later, but the lesson remains the stable frame.
+            Each lesson opens as its own focused chat context. You can return to
+            prior sessions later, but the lesson remains the stable frame.
           </p>
         </div>
       </div>

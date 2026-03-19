@@ -1,18 +1,44 @@
 import { HttpClient } from "./http"
 import type {
   ApiCreateSessionResponse,
+  ApiListSessionsResponse,
   ApiSendMessageResponse,
   ApiSessionResponse,
 } from "./dto"
-import type { CreateSessionResult, SendMessageResult, Session } from "./interfaces"
-import { getCurrentCourse, setCurrentCourse, clearCurrentCourse } from "../state/courseState"
-import { getCurrentSession, setCurrentSession, clearCurrentSession } from "../state/sessionState"
-import { getCurrentLesson, setCurrentLesson, clearCurrentLesson } from "../state/lessonState"
-import { mapCreateSessionResult, mapSendMessageResult, mapSession } from "./mappers"
+import type {
+  CreateSessionResult,
+  ListSessionsResult,
+  SendMessageResult,
+  Session,
+} from "./interfaces"
+import {
+  mapCreateSessionResult,
+  mapListSessionsResult,
+  mapSendMessageResult,
+  mapSession,
+} from "./mappers"
 
 export class SessionApi {
   private http: HttpClient
-  constructor(http: HttpClient) {this.http = http}
+
+  constructor(http: HttpClient) {
+    this.http = http
+  }
+
+  async listSessions(
+    courseId: string,
+    lessonId: string,
+    lessonVersion: string,
+  ): Promise<ListSessionsResult> {
+    const result = await this.http.request<ApiListSessionsResponse>(
+      `courses/${courseId}/lessons/${lessonId}/${lessonVersion}/sessions`,
+      {
+        method: "GET",
+      },
+    )
+
+    return mapListSessionsResult(result)
+  }
 
   async getSession(
     courseId: string,
@@ -20,92 +46,60 @@ export class SessionApi {
     lessonVersion: string,
     sessionId: string,
   ): Promise<CreateSessionResult> {
-    setCurrentCourse(courseId)
-    setCurrentLesson(lessonId, lessonVersion)
-    setCurrentSession(sessionId)
-
     const result = await this.http.request<ApiCreateSessionResponse>(
       `courses/${courseId}/lessons/${lessonId}/${lessonVersion}/sessions/${sessionId}`,
       {
         method: "GET",
-      }
+      },
     )
 
     return mapCreateSessionResult(result)
   }
 
   async createSession(
-    courseId: string | null = null,
+    courseId: string,
     lessonId: string,
     lessonVersion: string,
   ): Promise<CreateSessionResult> {
-    if (courseId === null) {
-      courseId = getCurrentCourse()
-    } else {
-      setCurrentCourse(courseId)
-    }
-
     const result = await this.http.request<ApiCreateSessionResponse>(
       `courses/${courseId}/lessons/${lessonId}/${lessonVersion}/sessions`,
       {
         method: "POST",
-      }
+      },
     )
 
-    const mapped = mapCreateSessionResult(result)
-    
-    setCurrentSession(mapped.session.session_id)
-    setCurrentLesson(lessonId, lessonVersion)
-
-    return mapped
+    return mapCreateSessionResult(result)
   }
 
   async sendMessage(
+    courseId: string,
+    lessonId: string,
+    lessonVersion: string,
+    sessionId: string,
     content: string,
-    sessionId: string | null = null,
   ): Promise<SendMessageResult> {
-    const courseId = getCurrentCourse()
-    const lessonDict = getCurrentLesson()
-    const lessonId = lessonDict.lessonId
-    const lessonVersion = lessonDict.lessonVersion
-
-    if (sessionId === null) {
-      try {
-        sessionId = getCurrentSession()
-      } catch {
-        const createdSession = await this.createSession(courseId, lessonId, lessonVersion)
-        sessionId = createdSession.session.session_id
-      }
-    }
-
     const result = await this.http.request<ApiSendMessageResponse>(
       `courses/${courseId}/lessons/${lessonId}/${lessonVersion}/sessions/${sessionId}/messages`,
       {
         method: "POST",
-        body: JSON.stringify({ content })
-      }
+        body: JSON.stringify({ content }),
+      },
     )
 
     return mapSendMessageResult(result)
   }
 
-  async closeSession(): Promise<Session> {
-    const courseId = getCurrentCourse()
-    const sessionId = getCurrentSession()
-    const lessonDict = getCurrentLesson()
-    const lessonId = lessonDict.lessonId
-    const lessonVersion = lessonDict.lessonVersion
-
+  async closeSession(
+    courseId: string,
+    lessonId: string,
+    lessonVersion: string,
+    sessionId: string,
+  ): Promise<Session> {
     const result = await this.http.request<ApiSessionResponse>(
       `courses/${courseId}/lessons/${lessonId}/${lessonVersion}/sessions/${sessionId}/close`,
-      { method: "POST" }
+      { method: "POST" },
     )
-
-    clearCurrentSession()
-    clearCurrentCourse()
-    clearCurrentLesson()
 
     return mapSession(result)
   }
-
 }

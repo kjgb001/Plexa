@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
-import { navigate, type AppRoute } from "./router"
 import { useApis } from "../api"
-import type { Course, Lesson } from "../api/interfaces"
+import type { Course, Lesson, Session } from "../api/interfaces"
+import { navigate, type AppRoute } from "./router"
 
 interface StudentShellProps {
   route: Exclude<AppRoute, { kind: "login" | "auth-callback" | "not-found" }>
@@ -10,29 +10,39 @@ interface StudentShellProps {
   children: ReactNode
 }
 
+function formatSessionTimestamp(value: string) {
+  return new Date(value).toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short",
+  })
+}
+
 export default function StudentShell({
   route,
   userId,
   onLogout,
   children,
 }: StudentShellProps) {
-  const { courseApi } = useApis()
+  const { courseApi, sessionApi } = useApis()
   const [courses, setCourses] = useState<Course[]>([])
   const [lessons, setLessons] = useState<Lesson[]>([])
+  const [sessions, setSessions] = useState<Session[]>([])
+  const [coursesLoading, setCoursesLoading] = useState(true)
+  const [lessonsLoading, setLessonsLoading] = useState(false)
+  const [sessionsLoading, setSessionsLoading] = useState(false)
+  const [sessionsError, setSessionsError] = useState<string | null>(null)
 
-  const selectedCourseId =
-    route.kind === "courses" ? null : route.courseId
-
-  const selectedLessonId =
-    route.kind === "chat" ? route.lessonId : null
-
-  const selectedLessonVersion =
-    route.kind === "chat" ? route.lessonVersion : null
+  const selectedCourseId = route.kind === "courses" ? null : route.courseId
+  const selectedLessonId = route.kind === "chat" ? route.lessonId : null
+  const selectedLessonVersion = route.kind === "chat" ? route.lessonVersion : null
+  const activeSessionId = route.kind === "chat" ? route.sessionId : null
 
   useEffect(() => {
     let active = true
 
     async function loadCourses() {
+      setCoursesLoading(true)
+
       try {
         const result = await courseApi.listDiscoverable()
 
@@ -42,6 +52,10 @@ export default function StudentShell({
       } catch {
         if (active) {
           setCourses([])
+        }
+      } finally {
+        if (active) {
+          setCoursesLoading(false)
         }
       }
     }
@@ -59,8 +73,11 @@ export default function StudentShell({
     async function loadLessons() {
       if (!selectedCourseId) {
         setLessons([])
+        setLessonsLoading(false)
         return
       }
+
+      setLessonsLoading(true)
 
       try {
         const result = await courseApi.listLessons(selectedCourseId)
@@ -72,6 +89,10 @@ export default function StudentShell({
         if (active) {
           setLessons([])
         }
+      } finally {
+        if (active) {
+          setLessonsLoading(false)
+        }
       }
     }
 
@@ -81,6 +102,55 @@ export default function StudentShell({
       active = false
     }
   }, [courseApi, selectedCourseId])
+
+  useEffect(() => {
+    let active = true
+
+    async function loadSessions() {
+      if (!selectedCourseId || !selectedLessonId || !selectedLessonVersion) {
+        setSessions([])
+        setSessionsError(null)
+        setSessionsLoading(false)
+        return
+      }
+
+      setSessionsLoading(true)
+      setSessionsError(null)
+
+      try {
+        const result = await sessionApi.listSessions(
+          selectedCourseId,
+          selectedLessonId,
+          selectedLessonVersion,
+        )
+
+        if (active) {
+          setSessions(result.sessions)
+        }
+      } catch {
+        if (active) {
+          setSessions([])
+          setSessionsError("Unable to load prior sessions for this lesson.")
+        }
+      } finally {
+        if (active) {
+          setSessionsLoading(false)
+        }
+      }
+    }
+
+    void loadSessions()
+
+    return () => {
+      active = false
+    }
+  }, [
+    activeSessionId,
+    selectedCourseId,
+    selectedLessonId,
+    selectedLessonVersion,
+    sessionApi,
+  ])
 
   const selectedCourse = useMemo(
     () => courses.find((course) => course.course_id === selectedCourseId) ?? null,
@@ -129,26 +199,31 @@ export default function StudentShell({
           </div>
 
           <div className="rail__list">
-            {courses.map((course) => {
-              const isActive = course.course_id === selectedCourseId
+            {coursesLoading ? <div className="empty-panel">Loading courses...</div> : null}
 
-              return (
-                <button
-                  key={course.course_id}
-                  className={isActive ? "rail-card rail-card--active" : "rail-card"}
-                  onClick={() => navigate(`/app/courses/${encodeURIComponent(course.course_id)}`)}
-                >
-                  <span className="rail-card__title">{course.title}</span>
-                  {course.description ? (
-                    <span className="rail-card__meta">{course.description}</span>
-                  ) : null}
-                </button>
-              )
-            })}
+            {!coursesLoading &&
+              courses.map((course) => {
+                const isActive = course.course_id === selectedCourseId
+
+                return (
+                  <button
+                    key={course.course_id}
+                    className={isActive ? "rail-card rail-card--active" : "rail-card"}
+                    onClick={() =>
+                      navigate(`/app/courses/${encodeURIComponent(course.course_id)}`)
+                    }
+                  >
+                    <span className="rail-card__title">{course.title}</span>
+                    {course.description ? (
+                      <span className="rail-card__meta">{course.description}</span>
+                    ) : null}
+                  </button>
+                )
+              })}
           </div>
         </section>
 
-        <section className="rail__section rail__section--flex">
+        <section className="rail__section">
           <div className="rail__section-header">
             <h2>Lessons</h2>
             {selectedCourse ? (
@@ -158,32 +233,117 @@ export default function StudentShell({
 
           {selectedCourseId ? (
             <div className="rail__list">
-              {lessons.map((lesson) => {
-                const isActive =
-                  lesson.lesson_id === selectedLessonId &&
-                  lesson.version === selectedLessonVersion
+              {lessonsLoading ? <div className="empty-panel">Loading lessons...</div> : null}
 
-                return (
-                  <button
-                    key={`${lesson.lesson_id}:${lesson.version}`}
-                    className={isActive ? "rail-card rail-card--active" : "rail-card"}
-                    onClick={() =>
-                      navigate(
-                        `/app/courses/${encodeURIComponent(selectedCourseId)}/lessons/${encodeURIComponent(lesson.lesson_id)}/${encodeURIComponent(lesson.version)}`,
-                      )
-                    }
-                  >
-                    <span className="rail-card__title">{lesson.title}</span>
-                    <span className="rail-card__meta">
-                      {lesson.difficulty ?? "Open level"}
-                    </span>
-                  </button>
-                )
-              })}
+              {!lessonsLoading &&
+                lessons.map((lesson) => {
+                  const isActive =
+                    lesson.lesson_id === selectedLessonId &&
+                    lesson.version === selectedLessonVersion
+
+                  return (
+                    <button
+                      key={`${lesson.lesson_id}:${lesson.version}`}
+                      className={isActive ? "rail-card rail-card--active" : "rail-card"}
+                      onClick={() =>
+                        navigate(
+                          `/app/courses/${encodeURIComponent(selectedCourseId)}/lessons/${encodeURIComponent(lesson.lesson_id)}/${encodeURIComponent(lesson.version)}`,
+                        )
+                      }
+                    >
+                      <span className="rail-card__title">{lesson.title}</span>
+                      <span className="rail-card__meta">
+                        {lesson.difficulty ?? "Open level"}
+                      </span>
+                    </button>
+                  )
+                })}
             </div>
           ) : (
             <div className="empty-panel">
               Choose a course to view lesson options.
+            </div>
+          )}
+        </section>
+
+        <section className="rail__section rail__section--flex">
+          <div className="rail__section-header">
+            <h2>Sessions</h2>
+            {selectedLesson ? (
+              <button
+                className="ghost-button"
+                onClick={() =>
+                  navigate(
+                    `/app/courses/${encodeURIComponent(selectedCourseId ?? "")}/lessons/${encodeURIComponent(selectedLesson.lesson_id)}/${encodeURIComponent(selectedLesson.version)}`,
+                  )
+                }
+              >
+                New
+              </button>
+            ) : null}
+          </div>
+
+          {!selectedLesson ? (
+            <div className="empty-panel">
+              Select a lesson to see prior sessions and start a new one.
+            </div>
+          ) : (
+            <div className="rail__list">
+              <button
+                className={
+                  activeSessionId === null ? "session-card session-card--active" : "session-card"
+                }
+                onClick={() =>
+                  navigate(
+                    `/app/courses/${encodeURIComponent(selectedCourseId ?? "")}/lessons/${encodeURIComponent(selectedLesson.lesson_id)}/${encodeURIComponent(selectedLesson.version)}`,
+                  )
+                }
+              >
+                <span className="session-card__title">New session</span>
+                <span className="session-card__meta">
+                  Start a fresh conversation for this lesson.
+                </span>
+              </button>
+
+              {sessionsLoading ? <div className="empty-panel">Loading session history...</div> : null}
+
+              {!sessionsLoading && sessionsError ? (
+                <div className="empty-panel">{sessionsError}</div>
+              ) : null}
+
+              {!sessionsLoading && !sessionsError && sessions.length === 0 ? (
+                <div className="empty-panel">
+                  No prior sessions yet. Start a new one when you are ready.
+                </div>
+              ) : null}
+
+              {!sessionsLoading &&
+                !sessionsError &&
+                sessions.map((session) => {
+                  const isActive = session.session_id === activeSessionId
+
+                  return (
+                    <button
+                      key={session.session_id}
+                      className={isActive ? "session-card session-card--active" : "session-card"}
+                      onClick={() =>
+                        navigate(
+                          `/app/courses/${encodeURIComponent(session.course_id)}/lessons/${encodeURIComponent(session.lesson_id)}/${encodeURIComponent(session.lesson_version)}/sessions/${encodeURIComponent(session.session_id)}`,
+                        )
+                      }
+                    >
+                      <span className="session-card__title">
+                        {session.is_active ? "Open session" : "Closed session"}
+                      </span>
+                      <span className="session-card__meta">
+                        {formatSessionTimestamp(session.created_at)}
+                      </span>
+                      <span className="session-card__meta">
+                        {session.turn_count} / {session.max_turns} turns
+                      </span>
+                    </button>
+                  )
+                })}
             </div>
           )}
         </section>
@@ -206,7 +366,12 @@ export default function StudentShell({
               <span className="section-chip">{selectedCourse.course_id}</span>
             ) : null}
             {selectedLesson ? (
-              <span className="section-chip">v{selectedLesson.version}</span>
+              <>
+                <span className="section-chip">v{selectedLesson.version}</span>
+                <span className="section-chip">
+                  {activeSessionId ? "Session selected" : "Ready for new session"}
+                </span>
+              </>
             ) : null}
           </div>
         </header>
@@ -258,19 +423,10 @@ export default function StudentShell({
               <h3>Context will live here</h3>
               <p>
                 Select a lesson to keep its goals, framing, and constraints visible
-                while students work in chat.
+                while you work through multiple chat sessions.
               </p>
             </>
           )}
-        </div>
-
-        <div className="context-card context-card--muted">
-          <p className="eyebrow">Design Direction</p>
-          <p>
-            The shell keeps navigation stable, chat central, and course context
-            persistent so the later UI pass can feel familiar without turning into
-            a generic chatbot clone.
-          </p>
         </div>
       </aside>
     </div>

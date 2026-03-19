@@ -41,6 +41,10 @@ export interface CreateSessionResult {
   messages: Message[]
 }
 
+export interface ListSessionsResult {
+  sessions: Session[]
+}
+
 export interface SendMessageResult {
   assistantMessage: Message
   session: Session

@@ -24,6 +24,10 @@ export interface ApiCreateSessionResponse {
   messages: ApiMessage[]
 }
 
+export interface ApiListSessionsResponse {
+  sessions: ApiSessionResponse[]
+}
+
 export interface ApiSendMessageResponse {
   assistant_message: ApiMessage
   session: ApiSessionResponse
