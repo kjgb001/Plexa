@@ -28,6 +28,11 @@ export interface ApiListSessionsResponse {
   sessions: ApiSessionResponse[]
 }
 
+export interface ApiDeleteSessionResponse {
+  status: string
+  session_id: string
+}
+
 export interface ApiSendMessageResponse {
   assistant_message: ApiMessage
   session: ApiSessionResponse

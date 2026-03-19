@@ -226,6 +226,16 @@ button {
   border-color: rgba(239, 131, 84, 0.38);
 }
 
+.ghost-button--danger {
+  color: #8d2b20;
+  border-color: rgba(141, 43, 32, 0.2);
+}
+
+.ghost-button--danger:hover {
+  border-color: rgba(141, 43, 32, 0.4);
+  background: rgba(141, 43, 32, 0.08);
+}
+
 .primary-button,
 .composer-button {
   background: var(--ink);
@@ -237,6 +247,11 @@ button {
 .composer-button:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+.primary-button--danger {
+  background: #8d2b20;
+  border-color: #8d2b20;
 }
 
 .section-chip,
@@ -423,6 +438,40 @@ button {
   border: 1px dashed var(--border);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.36);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(20, 33, 61, 0.32);
+  backdrop-filter: blur(8px);
+  z-index: 20;
+}
+
+.modal-card {
+  width: min(100%, 440px);
+  padding: 1.3rem;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+}
+
+.modal-card h2 {
+  margin: 0;
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+  letter-spacing: -0.02em;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1rem;
 }
 
 @media (max-width: 1180px) {

@@ -45,6 +45,11 @@ export interface ListSessionsResult {
   sessions: Session[]
 }
 
+export interface DeleteSessionResult {
+  status: string
+  sessionId: string
+}
+
 export interface SendMessageResult {
   assistantMessage: Message
   session: Session

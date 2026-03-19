@@ -1,18 +1,21 @@
 import { HttpClient } from "./http"
 import type {
   ApiCreateSessionResponse,
+  ApiDeleteSessionResponse,
   ApiListSessionsResponse,
   ApiSendMessageResponse,
   ApiSessionResponse,
 } from "./dto"
 import type {
   CreateSessionResult,
+  DeleteSessionResult,
   ListSessionsResult,
   SendMessageResult,
   Session,
 } from "./interfaces"
 import {
   mapCreateSessionResult,
+  mapDeleteSessionResult,
   mapListSessionsResult,
   mapSendMessageResult,
   mapSession,
@@ -101,5 +104,19 @@ export class SessionApi {
     )
 
     return mapSession(result)
+  }
+
+  async deleteSession(
+    courseId: string,
+    lessonId: string,
+    lessonVersion: string,
+    sessionId: string,
+  ): Promise<DeleteSessionResult> {
+    const result = await this.http.request<ApiDeleteSessionResponse>(
+      `courses/${courseId}/lessons/${lessonId}/${lessonVersion}/sessions/${sessionId}/delete`,
+      { method: "POST" },
+    )
+
+    return mapDeleteSessionResult(result)
   }
 }

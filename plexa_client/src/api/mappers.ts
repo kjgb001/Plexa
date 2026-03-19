@@ -1,6 +1,7 @@
 import type {
   ApiCourse,
   ApiCreateSessionResponse,
+  ApiDeleteSessionResponse,
   ApiLessonDocument,
   ApiListSessionsResponse,
   ApiMessage,
@@ -10,6 +11,7 @@ import type {
 import type {
   Course,
   CreateSessionResult,
+  DeleteSessionResult,
   Lesson,
   ListSessionsResult,
   Message,
@@ -77,6 +79,15 @@ export function mapListSessionsResult(
 ): ListSessionsResult {
   return {
     sessions: result.sessions.map(mapSession),
+  }
+}
+
+export function mapDeleteSessionResult(
+  result: ApiDeleteSessionResponse,
+): DeleteSessionResult {
+  return {
+    status: result.status,
+    sessionId: result.session_id,
   }
 }
 
