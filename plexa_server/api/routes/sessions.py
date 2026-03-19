@@ -13,6 +13,7 @@ from plexa_server.api.schemas.responses import (
     SessionResponse,
     CreateSessionResponse,
     ListSessionsResponse,
+    DeleteSessionResponse,
     SendMessageResponse,
 )
 
@@ -327,5 +328,45 @@ def get_sessions_router(
 
         except SessionClosedError:
             raise HTTPException(status_code=409, detail="Session already closed")
+
+
+    # Delete Session
+
+    @router.post(
+        "/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}/delete",
+        response_model=DeleteSessionResponse,
+    )
+    def delete_session(
+        session_id: str,
+        course_id: str,
+        lesson_id: str,
+        lesson_version: str,
+        user_id: str = Depends(require_user_id)
+    ) -> DeleteSessionResponse:
+        """Delete an owned session and its persisted inference config.
+
+        Args:
+            session_id: Session identifier to delete.
+            course_id: Course identifier from the route path.
+            lesson_id: Lesson identifier from the route path.
+            lesson_version: Lesson version from the route path.
+            user_id: Caller identity resolved from the request header.
+
+        Returns:
+            DeleteSessionResponse: Deletion status payload.
+
+        Raises:
+            HTTPException: If the caller does not own the session or the
+                session does not exist.
+        """
+        session = get_owned_session(session_manager, session_id, user_id)
+        check_session_path(session, course_id, lesson_id, lesson_version)
+
+        session_manager.delete_session(session_id)
+
+        return DeleteSessionResponse(
+            status="deleted",
+            session_id=session_id,
+        )
 
     return router

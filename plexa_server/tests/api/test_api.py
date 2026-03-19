@@ -97,6 +97,29 @@ def test_close_session(client, session_factory, api_prefix):
     assert response.json()["is_active"] is False
 
 
+def test_delete_session(client, session_factory, api_prefix):
+    session_id, lesson_id, lesson_version = session_factory()
+    course_id = "CS101"
+
+    response = client.post(
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}/delete",
+        headers={"X-User-Id": "tester"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "deleted",
+        "session_id": session_id,
+    }
+
+    get_response = client.get(
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}",
+        headers={"X-User-Id": "tester"},
+    )
+
+    assert get_response.status_code == 404
+
+
 def test_create_session_lesson_not_found(client, api_prefix):
     course_id = "CS101"
     lesson_id = "does_not_exist"

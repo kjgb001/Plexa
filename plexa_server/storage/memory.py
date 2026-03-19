@@ -46,6 +46,7 @@ class InMemoryStorage(SessionStorage):
             session_id: Identifier of the session to remove.
         """
         self._sessions.pop(session_id, None)
+        self._inference_configs.pop(session_id, None)
 
     def save_inference_config(
         self,

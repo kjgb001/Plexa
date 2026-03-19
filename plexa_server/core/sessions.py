@@ -185,6 +185,22 @@ class SessionManager:
             self._storage.save_session(session)
             self._lock_manager.release_lock(session_id)
 
+    def delete_session(self, session_id: str) -> None:
+        """Delete a persisted session and its associated inference config.
+
+        Args:
+            session_id: Identifier of the session to delete.
+
+        Raises:
+            SessionNotFoundError: If no session exists for the given id.
+        """
+        lock = self._lock_manager.get_lock(session_id)
+
+        with lock:
+            self.get_session(session_id)
+            self._storage.delete_session(session_id)
+            self._lock_manager.release_lock(session_id)
+
     def submit_user_message(
         self,
         session_id: str,

@@ -61,6 +61,13 @@ class ListSessionsResponse(BaseModel):
     sessions: List[SessionResponse]
 
 
+class DeleteSessionResponse(BaseModel):
+    """Response payload returned after a session deletion succeeds."""
+
+    status: str
+    session_id: str
+
+
 class SendMessageResponse(BaseModel):
     """Response payload returned after a successful user turn submission."""
 

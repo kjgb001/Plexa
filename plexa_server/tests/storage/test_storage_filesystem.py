@@ -84,11 +84,14 @@ def test_session_storage_delete(tmp_path: Path):
     storage = FileSystemSessionStorage(tmp_path)
 
     session = make_valid_session()
+    config = make_valid_inference_config()
 
     storage.save_session(session)
+    storage.save_inference_config(session.session_id, config)
     storage.delete_session(session.session_id)
 
     assert storage.get_session(session.session_id) is None
+    assert storage.get_inference_config(session.session_id) is None
 
 
 def test_session_storage_inference_config_roundtrip(tmp_path: Path):

@@ -11,6 +11,8 @@ from plexa_server.storage.storage_interface import (
     CourseStorage,
     SessionStorage,
 )
+from plexa_server.inference.base import InferenceConfig
+from plexa_server.models.session import Session
 
 
 def test_storage_interfaces_are_abstract():
@@ -44,3 +46,29 @@ def test_in_memory_session_storage_lists_sessions():
     storage = InMemoryStorage()
 
     assert storage.list_sessions() == []
+
+
+def test_in_memory_session_storage_delete_clears_session_and_config():
+    storage = InMemoryStorage()
+    session = Session.model_validate({
+        "session_id": "s1",
+        "lesson_id": "intro",
+        "lesson_version": "1.0",
+        "user_id": "tester",
+        "course_id": "CS101",
+        "messages": [],
+        "turn_count": 0,
+        "is_active": True,
+        "created_at": "2026-01-01T00:00:00Z",
+    })
+    config = InferenceConfig.model_validate({
+        "model": "stub",
+        "temperature": 0.0,
+    })
+
+    storage.save_session(session)
+    storage.save_inference_config(session.session_id, config)
+    storage.delete_session(session.session_id)
+
+    assert storage.get_session(session.session_id) is None
+    assert storage.get_inference_config(session.session_id) is None

@@ -216,3 +216,23 @@ def test_inference_config_frozen_and_stored():
 
     if lesson.execution.parameters:
         assert config.temperature == lesson.execution.parameters.get("temperature")
+
+
+def test_delete_session_removes_session_and_config():
+    manager, storage = setup_manager()
+    lesson = Lesson.model_validate(make_valid_lesson_payload())
+
+    manager.create_session(
+        session_id="s1",
+        lesson=lesson,
+        user_id="user-1",
+        course_id="CS101"
+    )
+
+    assert storage.get_session("s1") is not None
+    assert storage.get_inference_config("s1") is not None
+
+    manager.delete_session("s1")
+
+    assert storage.get_session("s1") is None
+    assert storage.get_inference_config("s1") is None
