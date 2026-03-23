@@ -9,3 +9,6 @@ __pycache__/
 .venv/
 
 docs/build/
+
+.impeccable.md
+AGENTS.md

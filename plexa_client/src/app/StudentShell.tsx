@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { useApis } from "../api"
 import type { Course, Lesson, Session } from "../api/interfaces"
+import { useTheme } from "../theme/useTheme"
 import { navigate, type AppRoute } from "./router"
 
 interface StudentShellProps {
@@ -24,6 +25,7 @@ export default function StudentShell({
   children,
 }: StudentShellProps) {
   const { courseApi, sessionApi } = useApis()
+  const { theme, toggleTheme } = useTheme()
   const [courses, setCourses] = useState<Course[]>([])
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [sessions, setSessions] = useState<Session[]>([])
@@ -175,16 +177,21 @@ export default function StudentShell({
             <p className="eyebrow">Student Workspace</p>
             <h1>Plexa</h1>
           </div>
-          <button
-            className="ghost-button"
-            onClick={() => {
-              void onLogout().then(() => {
-                navigate("/login", { replace: true })
-              })
-            }}
-          >
-            Logout
-          </button>
+          <div className="rail__brand-actions">
+            <button className="ghost-button" onClick={toggleTheme}>
+              {theme === "light" ? "Dark mode" : "Light mode"}
+            </button>
+            <button
+              className="ghost-button"
+              onClick={() => {
+                void onLogout().then(() => {
+                  navigate("/login", { replace: true })
+                })
+              }}
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
         <section className="rail__section">
