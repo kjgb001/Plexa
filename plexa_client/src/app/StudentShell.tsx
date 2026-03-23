@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react"
 import { useApis } from "../api"
 import type { Course, Lesson, Session } from "../api/interfaces"
 import { useTheme } from "../theme/useTheme"
@@ -33,6 +33,9 @@ export default function StudentShell({
   const [lessonsLoading, setLessonsLoading] = useState(false)
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [sessionsError, setSessionsError] = useState<string | null>(null)
+  const [sessionRefreshKey, setSessionRefreshKey] = useState(0)
+  const [sessionPendingDelete, setSessionPendingDelete] = useState<Session | null>(null)
+  const [sessionDeleting, setSessionDeleting] = useState(false)
 
   const selectedCourseId = route.kind === "courses" ? null : route.courseId
   const selectedLessonId = route.kind === "chat" ? route.lessonId : null
@@ -152,6 +155,7 @@ export default function StudentShell({
     selectedLessonId,
     selectedLessonVersion,
     sessionApi,
+    sessionRefreshKey,
   ])
 
   const selectedCourse = useMemo(
@@ -168,6 +172,53 @@ export default function StudentShell({
       ) ?? null,
     [lessons, selectedLessonId, selectedLessonVersion],
   )
+
+
+  function handleSessionCardKeyDown(
+    event: KeyboardEvent<HTMLElement>,
+    session: Session,
+  ) {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return
+    }
+
+    event.preventDefault()
+    navigate(
+      `/app/courses/${encodeURIComponent(session.course_id)}/lessons/${encodeURIComponent(session.lesson_id)}/${encodeURIComponent(session.lesson_version)}/sessions/${encodeURIComponent(session.session_id)}`,
+    )
+  }
+
+  async function handleConfirmDeleteSession() {
+    if (sessionPendingDelete === null) {
+      return
+    }
+
+    setSessionDeleting(true)
+
+    try {
+      await sessionApi.deleteSession(
+        sessionPendingDelete.course_id,
+        sessionPendingDelete.lesson_id,
+        sessionPendingDelete.lesson_version,
+        sessionPendingDelete.session_id,
+      )
+
+      const deletedActiveSession = sessionPendingDelete.session_id === activeSessionId
+
+      setSessionPendingDelete(null)
+      setSessionRefreshKey((value) => value + 1)
+
+      if (deletedActiveSession) {
+        navigate(
+          `/app/courses/${encodeURIComponent(sessionPendingDelete.course_id)}/lessons/${encodeURIComponent(sessionPendingDelete.lesson_id)}/${encodeURIComponent(sessionPendingDelete.lesson_version)}`,
+        )
+      }
+    } catch {
+      setSessionsError("Unable to delete this session right now.")
+    } finally {
+      setSessionDeleting(false)
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -330,25 +381,45 @@ export default function StudentShell({
                   const isActive = session.session_id === activeSessionId
 
                   return (
-                    <button
+                    <article
                       key={session.session_id}
-                      className={isActive ? "session-card session-card--active" : "session-card"}
-                      onClick={() =>
-                        navigate(
-                          `/app/courses/${encodeURIComponent(session.course_id)}/lessons/${encodeURIComponent(session.lesson_id)}/${encodeURIComponent(session.lesson_version)}/sessions/${encodeURIComponent(session.session_id)}`,
-                        )
-                      }
+                      className={isActive ? "session-card session-card--active session-card--deletable" : "session-card session-card--deletable"}
                     >
-                      <span className="session-card__title">
-                        {session.is_active ? "Open session" : "Closed session"}
-                      </span>
-                      <span className="session-card__meta">
-                        {formatSessionTimestamp(session.created_at)}
-                      </span>
-                      <span className="session-card__meta">
-                        {session.turn_count} / {session.max_turns} turns
-                      </span>
-                    </button>
+                      <div
+                        className="session-card__main"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() =>
+                          navigate(
+                            `/app/courses/${encodeURIComponent(session.course_id)}/lessons/${encodeURIComponent(session.lesson_id)}/${encodeURIComponent(session.lesson_version)}/sessions/${encodeURIComponent(session.session_id)}`,
+                          )
+                        }
+                        onKeyDown={(event) => handleSessionCardKeyDown(event, session)}
+                      >
+                        <span className="session-card__title">
+                          {session.is_active ? "Open session" : "Closed session"}
+                        </span>
+                        <span className="session-card__meta">
+                          {formatSessionTimestamp(session.created_at)}
+                        </span>
+                        <span className="session-card__meta">
+                          {session.turn_count} / {session.max_turns} turns
+                        </span>
+                      </div>
+                      <button
+                        className="session-card__delete"
+                        type="button"
+                        aria-label="Delete session"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setSessionPendingDelete(session)
+                        }}
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                          <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v7h-2v-7Zm4 0h2v7h-2v-7ZM7 10h2v7H7v-7Zm1 10h8a2 2 0 0 0 2-2V8H6v10a2 2 0 0 0 2 2Z" fill="currentColor" />
+                        </svg>
+                      </button>
+                    </article>
                   )
                 })}
             </div>
@@ -356,10 +427,9 @@ export default function StudentShell({
         </section>
       </aside>
 
-      <div className="app-shell__main">
+      <section className="app-shell__main">
         <header className="workspace-header">
           <div>
-            <p className="eyebrow">Active Context</p>
             <h2>
               {selectedLesson?.title ??
                 selectedCourse?.title ??
@@ -384,11 +454,46 @@ export default function StudentShell({
         </header>
 
         <main className="workspace-main">{children}</main>
-      </div>
+      </section>
+
+      {sessionPendingDelete ? (
+        <aside className="modal-backdrop" aria-hidden="true">
+          <section
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-session-rail-title"
+          >
+            <p className="eyebrow">Confirm Action</p>
+            <h2 id="delete-session-rail-title">Delete this session?</h2>
+            <p>
+              This permanently removes the selected session from this lesson history.
+            </p>
+            <footer className="modal-actions">
+              <button
+                className="ghost-button"
+                onClick={() => setSessionPendingDelete(null)}
+                disabled={sessionDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                className="primary-button"
+                onClick={() => void handleConfirmDeleteSession()}
+                disabled={sessionDeleting}
+              >
+                {sessionDeleting ? "Deleting..." : "Delete session"}
+              </button>
+            </footer>
+          </section>
+        </aside>
+      ) : null}
 
       <aside className="app-shell__context">
-        <div className="context-card">
-          <p className="eyebrow">Lesson Context</p>
+        <section className="context-panel">
+          <header className="context-panel__header">
+            <p className="eyebrow">Lesson Context</p>
+          </header>
           {selectedLesson ? (
             <>
               <h3>{selectedLesson.title}</h3>
@@ -434,7 +539,7 @@ export default function StudentShell({
               </p>
             </>
           )}
-        </div>
+        </section>
       </aside>
     </div>
   )

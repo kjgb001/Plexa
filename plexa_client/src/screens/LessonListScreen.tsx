@@ -5,7 +5,7 @@ import type { Lesson } from "../api/interfaces"
 
 interface Props {
   courseId: string
-  onSelectLesson: (lessonId: string, lessonVersion:string) => void
+  onSelectLesson: (lessonId: string, lessonVersion: string) => void
 }
 
 export default function LessonListScreen({ courseId, onSelectLesson }: Props) {
@@ -37,7 +37,7 @@ export default function LessonListScreen({ courseId, onSelectLesson }: Props) {
 
           if (err instanceof NotFoundError) {
             setLoadError(
-              "This course is visible, but its lessons are not available to your account yet. You may need enrollment approval."
+              "This course is visible, but its lessons are not available to your account yet. You may need enrollment approval.",
             )
           } else {
             setLoadError("Failed to load lessons for this course.")
@@ -73,64 +73,105 @@ export default function LessonListScreen({ courseId, onSelectLesson }: Props) {
   }
 
   return (
-    <section className="screen-card">
-      <div className="screen-card__header">
-        <div>
-          <p className="eyebrow">Lesson Selection</p>
-          <h1>Pick a lesson workspace</h1>
+    <section className="catalog-stage catalog-stage--lessons" aria-labelledby="lesson-stage-title">
+      <header className="catalog-stage__hero">
+        <p className="eyebrow">Lesson Selection</p>
+        <h1 id="lesson-stage-title">Pick a lesson workspace</h1>
+        <p className="catalog-stage__summary">
+          Each lesson is an instructional frame with its own objectives,
+          behavioral expectations, and session history.
+        </p>
+      </header>
+
+      <section className="catalog-stage__body" aria-label="Lesson browser">
+        <aside className="catalog-stage__brief">
+          <h2>What carries into every session</h2>
           <p>
-            Each lesson opens as its own focused chat context. You can return to
-            prior sessions later, but the lesson remains the stable frame.
+            The lesson objective stays persistent while sessions let students
+            iterate, restart, and compare different conversational attempts.
           </p>
-        </div>
-      </div>
 
-      {loading ? <p>Loading lesson menu...</p> : null}
+          {loading === false && loadError ? (
+            <section className="notice-panel" aria-label="Enrollment notice">
+              <h3>Access needed</h3>
+              <p>{loadError}</p>
+              <footer className="notice-panel__actions">
+                <button
+                  className="primary-button"
+                  onClick={() => void handleEnrollmentRequest()}
+                  disabled={requestingEnrollment}
+                >
+                  {requestingEnrollment ? "Requesting..." : "Request enrollment"}
+                </button>
+                {enrollmentStatus ? (
+                  <span className="section-chip">
+                    {enrollmentStatus === "pending"
+                      ? "Enrollment requested"
+                      : enrollmentStatus === "already_enrolled"
+                        ? "Already enrolled"
+                        : "Request failed"}
+                  </span>
+                ) : null}
+              </footer>
+            </section>
+          ) : null}
+        </aside>
 
-      {!loading && loadError ? (
-        <div className="empty-panel">
-          <p>{loadError}</p>
-          <div className="screen-card__actions">
-            <button
-              className="primary-button"
-              onClick={() => void handleEnrollmentRequest()}
-              disabled={requestingEnrollment}
-            >
-              {requestingEnrollment ? "Requesting..." : "Request Enrollment"}
-            </button>
-            {enrollmentStatus ? (
-              <span className="section-chip">
-                {enrollmentStatus === "pending"
-                  ? "Enrollment requested"
-                  : enrollmentStatus === "already_enrolled"
-                    ? "Already enrolled"
-                    : "Request failed"}
-              </span>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
+        <section className="catalog-stage__rail" aria-label="Available lessons">
+          <header className="catalog-stage__section-header">
+            <h2>Available Lessons</h2>
+            <p>Choose the lesson that will anchor the chat workspace.</p>
+          </header>
 
-      {!loading && lessons.length === 0 ? (
-        <div className="empty-panel">
-          This course has no visible lessons yet.
-        </div>
-      ) : null}
+          {loading ? <p className="status-note">Loading lesson menu...</p> : null}
 
-      <div className="rail__list">
-        {lessons.map((lesson) => (
-          <button
-            key={`${lesson.lesson_id}:${lesson.version}`}
-            className="rail-card"
-            onClick={() => onSelectLesson(lesson.lesson_id, lesson.version)}
-          >
-            <span className="rail-card__title">{lesson.title}</span>
-            <span className="rail-card__meta">
-              {lesson.learning_objective ?? lesson.difficulty ?? "Open lesson"}
-            </span>
-          </button>
-        ))}
-      </div>
+          {loading === false && loadError === null && lessons.length === 0 ? (
+            <p className="empty-panel" role="status">
+              This course has no visible lessons yet.
+            </p>
+          ) : null}
+
+          <ol className="catalog-list catalog-list--compact">
+            {lessons.map((lesson, index) => (
+              <li key={lesson.lesson_id + ":" + lesson.version}>
+                <article className="catalog-entry catalog-entry--lesson">
+                  <header className="catalog-entry__header">
+                    <p className="catalog-entry__index">{String(index + 1).padStart(2, "0")}</p>
+                    <div>
+                      <p className="catalog-entry__eyebrow">Lesson</p>
+                      <h3>{lesson.title}</h3>
+                    </div>
+                    <span className="section-chip">v{lesson.version}</span>
+                  </header>
+                  <dl className="catalog-entry__details">
+                    <div>
+                      <dt>Objective</dt>
+                      <dd>{lesson.learning_objective ?? "Open lesson"}</dd>
+                    </div>
+                    <div>
+                      <dt>Difficulty</dt>
+                      <dd>{lesson.difficulty ?? "Flexible"}</dd>
+                    </div>
+                    <div>
+                      <dt>Duration</dt>
+                      <dd>{lesson.approximate_time ?? "Flexible pace"}</dd>
+                    </div>
+                  </dl>
+                  <footer className="catalog-entry__footer">
+                    <p>{lesson.author ?? "Unknown author"}</p>
+                    <button
+                      className="catalog-entry__action"
+                      onClick={() => onSelectLesson(lesson.lesson_id, lesson.version)}
+                    >
+                      Open lesson
+                    </button>
+                  </footer>
+                </article>
+              </li>
+            ))}
+          </ol>
+        </section>
+      </section>
     </section>
   )
 }

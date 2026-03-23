@@ -17,7 +17,8 @@ export default function ChatScreen({
   sessionId = null,
 }: Props) {
   const { sessionApi } = useApis()
-  const transcriptRef = useRef<HTMLDivElement | null>(null)
+  const transcriptRef = useRef<HTMLOListElement | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
   const latestSessionRef = useRef<Session | null>(null)
   const latestMessagesRef = useRef<Message[]>([])
   const latestLoadingRef = useRef(false)
@@ -43,7 +44,7 @@ export default function ChatScreen({
     let active = true
 
     async function loadSession() {
-      if (!sessionId) {
+      if (sessionId === null) {
         setSession(null)
         setMessages([])
         setInput("")
@@ -67,12 +68,10 @@ export default function ChatScreen({
           sessionId,
         )
 
-        if (!active) {
-          return
+        if (active) {
+          setSession(result.session)
+          setMessages(result.messages)
         }
-
-        setSession(result.session)
-        setMessages(result.messages)
       } catch (error) {
         console.error("Failed to load session", error)
 
@@ -98,11 +97,9 @@ export default function ChatScreen({
   useEffect(() => {
     const element = transcriptRef.current
 
-    if (!element) {
-      return
+    if (element) {
+      element.scrollTop = element.scrollHeight
     }
-
-    element.scrollTop = element.scrollHeight
   }, [messages, loading])
 
   useEffect(() => {
@@ -118,9 +115,9 @@ export default function ChatScreen({
       const hasUserMessages = currentMessages.some((message) => message.role === "user")
 
       if (
-        !sessionIdAtMount ||
+        sessionIdAtMount === null ||
         suppressAutoDeleteRef.current ||
-        !currentSession ||
+        currentSession === null ||
         currentSession.session_id !== sessionIdAtMount ||
         currentSession.turn_count > 0 ||
         hasUserMessages ||
@@ -144,11 +141,7 @@ export default function ChatScreen({
     setInteractionError(null)
 
     try {
-      const result = await sessionApi.createSession(
-        courseId,
-        lessonId,
-        lessonVersion,
-      )
+      const result = await sessionApi.createSession(courseId, lessonId, lessonVersion)
 
       navigate(
         `/app/courses/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}/${encodeURIComponent(lessonVersion)}/sessions/${encodeURIComponent(result.session.session_id)}`,
@@ -162,7 +155,7 @@ export default function ChatScreen({
   }
 
   async function handleDeleteSession() {
-    if (!session) {
+    if (session === null) {
       return
     }
 
@@ -171,12 +164,7 @@ export default function ChatScreen({
 
     try {
       suppressAutoDeleteRef.current = true
-      await sessionApi.deleteSession(
-        courseId,
-        lessonId,
-        lessonVersion,
-        session.session_id,
-      )
+      await sessionApi.deleteSession(courseId, lessonId, lessonVersion, session.session_id)
       setShowDeleteConfirm(false)
       navigate(
         `/app/courses/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}/${encodeURIComponent(lessonVersion)}`,
@@ -191,7 +179,7 @@ export default function ChatScreen({
   }
 
   async function sendMessage() {
-    if (!session || !input.trim() || loading || !session.is_active) {
+    if (session === null || input.trim() === "" || loading || session.is_active === false) {
       return
     }
 
@@ -224,82 +212,94 @@ export default function ChatScreen({
       setInteractionError("Message delivery failed. Try again.")
     } finally {
       setLoading(false)
+      requestAnimationFrame(() => {
+        inputRef.current?.focus()
+      })
     }
   }
 
-  if (!sessionId) {
+  if (sessionId === null) {
     return (
-      <section className="screen-card chat-layout">
-        <div className="screen-card__header">
-          <div>
-            <p className="eyebrow">Conversation</p>
-            <h1>Start a lesson session</h1>
-            <p>
-              Review the lesson context, then start a fresh session or reopen one
-              from the history rail.
-            </p>
-          </div>
-          <div className="screen-card__actions">
-            <button
-              className="primary-button"
-              onClick={() => void handleCreateSession()}
-              disabled={creating}
-            >
-              {creating ? "Starting..." : "Start new session"}
-            </button>
-          </div>
-        </div>
+      <section className="conversation-stage conversation-stage--empty" aria-labelledby="conversation-empty-title">
+        <header className="conversation-stage__hero">
+          <p className="eyebrow">Conversation</p>
+          <h1 id="conversation-empty-title">Start a lesson session</h1>
+          <p className="conversation-stage__summary">
+            The lesson stays fixed while sessions hold each separate attempt. Open
+            an older conversation from the rail or create a new workspace here.
+          </p>
+        </header>
 
-        <div className="chat-empty-state">
-          <div className="empty-panel">
-            No session is active yet for this view. Start a new session to begin
-            working, or select a prior session from the left rail.
-          </div>
-          {bootError ? <div className="empty-panel">{bootError}</div> : null}
-        </div>
+        <section className="conversation-stage__empty-card">
+          <h2>Ready to begin?</h2>
+          <p>
+            New sessions are lightweight. If you leave before sending a message,
+            Plexa will automatically clean that session up.
+          </p>
+          <button
+            className="primary-button conversation-stage__primary"
+            onClick={() => void handleCreateSession()}
+            disabled={creating}
+          >
+            {creating ? "Starting..." : "Start new session"}
+          </button>
+          {bootError ? <p className="empty-panel">{bootError}</p> : null}
+        </section>
       </section>
     )
   }
 
   if (booting) {
     return (
-      <section className="screen-card">
-        <p className="eyebrow">Conversation</p>
-        <h1>Preparing workspace</h1>
-        <p>Loading transcript and lesson session state...</p>
+      <section className="conversation-stage conversation-stage--empty">
+        <header className="conversation-stage__hero">
+          <p className="eyebrow">Conversation</p>
+          <h1>Preparing workspace</h1>
+          <p className="conversation-stage__summary">
+            Loading transcript and session state...
+          </p>
+        </header>
       </section>
     )
   }
 
-  if (!session) {
+  if (session === null) {
     return (
-      <section className="screen-card">
-        <p className="eyebrow">Conversation</p>
-        <h1>Session unavailable</h1>
-        <p>{bootError ?? "This session could not be loaded."}</p>
+      <section className="conversation-stage conversation-stage--empty">
+        <header className="conversation-stage__hero">
+          <p className="eyebrow">Conversation</p>
+          <h1>Session unavailable</h1>
+          <p className="conversation-stage__summary">
+            {bootError ?? "This session could not be loaded."}
+          </p>
+        </header>
       </section>
     )
   }
 
   return (
     <>
-      <section className="screen-card chat-layout">
-        <div className="screen-card__header">
+      <section className="conversation-stage" aria-labelledby="conversation-title">
+        <header className="conversation-stage__hero conversation-stage__hero--tight">
           <div>
-            <p className="eyebrow">Conversation</p>
-            <h1>Lesson chat</h1>
-            <p>
-              Work inside the lesson context, ask questions, test ideas, and keep a
-              reusable transcript for later reflection.
+            <h1 id="conversation-title">Lesson chat</h1>
+            <p className="conversation-stage__summary">
+              Ask questions, test reasoning, and keep a reusable transcript for
+              this lesson context.
             </p>
           </div>
-          <div className="screen-card__actions">
-            <span className="section-chip">
-              Turn {session.turn_count} / {session.max_turns}
-            </span>
-            <span className="section-chip">
-              {session.is_active ? "Active" : "Closed"}
-            </span>
+
+          <div className="conversation-stage__meta">
+            <dl className="conversation-stage__stats" aria-label="Session details">
+              <div>
+                <dt>Turns</dt>
+                <dd>{session.turn_count} / {session.max_turns}</dd>
+              </div>
+              <div>
+                <dt>Status</dt>
+                <dd>{session.is_active ? "Active" : "Closed"}</dd>
+              </div>
+            </dl>
             <button
               className="ghost-button ghost-button--danger"
               onClick={() => setShowDeleteConfirm(true)}
@@ -308,72 +308,87 @@ export default function ChatScreen({
               Delete session
             </button>
           </div>
-        </div>
+        </header>
 
-        {!session.is_active ? (
-          <div className="empty-panel">
-            This session is closed. Review it here or start a new session from the
-            left rail.
-          </div>
-        ) : null}
+        <section className="conversation-stage__frame" aria-label="Conversation transcript">
+          <ol ref={transcriptRef} className="transcript transcript-list" aria-label="Messages">
+            {session.is_active === false ? (
+              <li>
+                <p className="empty-panel">
+                  This session is closed. Review it here or start a new one from the left rail.
+                </p>
+              </li>
+            ) : null}
 
-        {session.turn_count === 0 ? (
-          <div className="empty-panel">
-            Leave this session without sending a message and it will be deleted
-            automatically.
-          </div>
-        ) : null}
+            {session.turn_count === 0 ? (
+              <li>
+                <p className="empty-panel">
+                  Leave this session without sending a message and it will be deleted automatically.
+                </p>
+              </li>
+            ) : null}
 
-        <div ref={transcriptRef} className="transcript">
-          <div className="transcript__stack">
+            {interactionError ? (
+              <li>
+                <p className="empty-panel">{interactionError}</p>
+              </li>
+            ) : null}
+
             {messages.map((message, index) => (
-              <article
-                key={`${message.role}:${index}:${message.content.slice(0, 24)}`}
-                className={`message-card message-card--${message.role}`}
-              >
-                <span className="message-role">{message.role}</span>
-                <p className="message-body">{message.content}</p>
-              </article>
+              <li key={`${message.role}:${index}:${message.content.slice(0, 24)}`}>
+                <article className={`message-card message-card--${message.role}`}>
+                  <header className="message-card__header">
+                    <span className="message-role">{message.role}</span>
+                  </header>
+                  <p className="message-body">{message.content}</p>
+                </article>
+              </li>
             ))}
 
             {loading ? (
-              <article className="message-card message-card--assistant message-card--pending">
-                <span className="message-role">assistant</span>
-                <p className="message-body">Thinking...</p>
-              </article>
+              <li>
+                <article className="message-card message-card--assistant message-card--pending">
+                  <header className="message-card__header">
+                    <span className="message-role">assistant</span>
+                  </header>
+                  <p className="message-body">Thinking...</p>
+                </article>
+              </li>
             ) : null}
-          </div>
-        </div>
+          </ol>
 
-        {interactionError ? <div className="empty-panel">{interactionError}</div> : null}
-
-        <div className="composer">
-          <input
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            placeholder="Ask a question, test a prompt, or reflect on the lesson."
-            disabled={loading || deleting || !session.is_active}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault()
-                void sendMessage()
-              }
+          <form
+            className="composer composer-form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void sendMessage()
             }}
-          />
-
-          <button
-            className="composer-button"
-            onClick={() => void sendMessage()}
-            disabled={loading || deleting || !session.is_active || !input.trim()}
           >
-            {loading ? "Sending..." : "Send"}
-          </button>
-        </div>
+            <label className="composer-form__field">
+              <span className="sr-only">Message</span>
+              <input
+                ref={inputRef}
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                placeholder="Ask a question, test a prompt, or reflect on the lesson."
+                disabled={loading || deleting || session.is_active === false}
+              />
+            </label>
+
+            <button
+              className="composer-button"
+              type="submit"
+              disabled={loading || deleting || session.is_active === false || input.trim() === ""}
+            >
+              {loading ? "Sending..." : "Send"}
+            </button>
+          </form>
+        </section>
       </section>
 
       {showDeleteConfirm ? (
-        <div className="modal-backdrop" role="presentation">
-          <div
+        <aside className="modal-backdrop" aria-hidden="true">
+          <section
             className="modal-card"
             role="dialog"
             aria-modal="true"
@@ -382,10 +397,9 @@ export default function ChatScreen({
             <p className="eyebrow">Confirm Action</p>
             <h2 id="delete-session-title">Delete this session?</h2>
             <p>
-              This will permanently remove the transcript and session state for
-              this lesson conversation.
+              This permanently removes the transcript and session state for this lesson conversation.
             </p>
-            <div className="modal-actions">
+            <footer className="modal-actions">
               <button
                 className="ghost-button"
                 onClick={() => setShowDeleteConfirm(false)}
@@ -394,15 +408,15 @@ export default function ChatScreen({
                 Cancel
               </button>
               <button
-                className="primary-button primary-button--danger"
+                className="primary-button"
                 onClick={() => void handleDeleteSession()}
                 disabled={deleting}
               >
                 {deleting ? "Deleting..." : "Delete session"}
               </button>
-            </div>
-          </div>
-        </div>
+            </footer>
+          </section>
+        </aside>
       ) : null}
     </>
   )
