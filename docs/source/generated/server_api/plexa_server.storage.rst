@@ -4,29 +4,12 @@ plexa\_server.storage package
 Submodules
 ----------
 
-plexa\_server.storage.filesystem module
----------------------------------------
+.. toctree::
+   :maxdepth: 4
 
-.. automodule:: plexa_server.storage.filesystem
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-plexa\_server.storage.memory module
------------------------------------
-
-.. automodule:: plexa_server.storage.memory
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-plexa\_server.storage.session\_protocol module
-----------------------------------------------
-
-.. automodule:: plexa_server.storage.session_protocol
-   :members:
-   :show-inheritance:
-   :undoc-members:
+   plexa_server.storage.filesystem
+   plexa_server.storage.memory
+   plexa_server.storage.storage_interface
 
 Module contents
 ---------------

@@ -4,21 +4,11 @@ plexa\_server.inference package
 Submodules
 ----------
 
-plexa\_server.inference.base module
------------------------------------
+.. toctree::
+   :maxdepth: 4
 
-.. automodule:: plexa_server.inference.base
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-plexa\_server.inference.stub module
------------------------------------
-
-.. automodule:: plexa_server.inference.stub
-   :members:
-   :show-inheritance:
-   :undoc-members:
+   plexa_server.inference.base
+   plexa_server.inference.stub
 
 Module contents
 ---------------

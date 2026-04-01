@@ -3,7 +3,8 @@
 set -e
 
 echo "Generating server API docs"
-sphinx-apidoc -o docs/source/generated/server_api plexa_server
+rm -rf docs/source/generated/server_api
+sphinx-apidoc -f -e -o docs/source/generated/server_api plexa_server
 
 echo "Generating client API docs"
 cd plexa_client

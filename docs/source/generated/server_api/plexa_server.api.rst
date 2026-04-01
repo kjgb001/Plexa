@@ -1,24 +1,23 @@
 plexa\_server.api package
 =========================
 
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   plexa_server.api.routes
+   plexa_server.api.schemas
+
 Submodules
 ----------
 
-plexa\_server.api.app module
-----------------------------
+.. toctree::
+   :maxdepth: 4
 
-.. automodule:: plexa_server.api.app
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-plexa\_server.api.main module
------------------------------
-
-.. automodule:: plexa_server.api.main
-   :members:
-   :show-inheritance:
-   :undoc-members:
+   plexa_server.api.app
+   plexa_server.api.main
 
 Module contents
 ---------------

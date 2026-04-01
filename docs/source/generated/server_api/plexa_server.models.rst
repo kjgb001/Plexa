@@ -4,37 +4,13 @@ plexa\_server.models package
 Submodules
 ----------
 
-plexa\_server.models.course module
-----------------------------------
+.. toctree::
+   :maxdepth: 4
 
-.. automodule:: plexa_server.models.course
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-plexa\_server.models.lesson module
-----------------------------------
-
-.. automodule:: plexa_server.models.lesson
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-plexa\_server.models.message module
------------------------------------
-
-.. automodule:: plexa_server.models.message
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-plexa\_server.models.session module
------------------------------------
-
-.. automodule:: plexa_server.models.session
-   :members:
-   :show-inheritance:
-   :undoc-members:
+   plexa_server.models.course
+   plexa_server.models.lesson
+   plexa_server.models.message
+   plexa_server.models.session
 
 Module contents
 ---------------

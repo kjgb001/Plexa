@@ -4,29 +4,12 @@ plexa\_server.auth package
 Submodules
 ----------
 
-plexa\_server.auth.admin module
--------------------------------
+.. toctree::
+   :maxdepth: 4
 
-.. automodule:: plexa_server.auth.admin
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-plexa\_server.auth.middleware module
-------------------------------------
-
-.. automodule:: plexa_server.auth.middleware
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-plexa\_server.auth.user module
-------------------------------
-
-.. automodule:: plexa_server.auth.user
-   :members:
-   :show-inheritance:
-   :undoc-members:
+   plexa_server.auth.admin
+   plexa_server.auth.middleware
+   plexa_server.auth.user
 
 Module contents
 ---------------
