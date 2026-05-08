@@ -5,7 +5,7 @@ import pytest
 
 # Lesson Upload
 
-def test_upload_lesson_success(client, admin_headers, valid_lesson_payload, api_prefix):
+def test_upload_lesson_success(client, admin_headers, valid_lesson_payload, api_prefix, storage_backend):
     payload = valid_lesson_payload
 
     response = client.post(
@@ -23,7 +23,7 @@ def test_upload_lesson_success(client, admin_headers, valid_lesson_payload, api_
     assert data["overwritten"] is False
 
 
-def test_upload_lesson_overwrite(client, admin_headers, valid_lesson_payload, api_prefix):
+def test_upload_lesson_overwrite(client, admin_headers, valid_lesson_payload, api_prefix, storage_backend):
     payload = valid_lesson_payload
 
     client.post(f"{api_prefix}/admin/lessons", json=payload, headers=admin_headers)
@@ -38,7 +38,7 @@ def test_upload_lesson_overwrite(client, admin_headers, valid_lesson_payload, ap
     assert response.json()["overwritten"] is True
 
 
-def test_upload_lesson_validation_failure(client, admin_headers, api_prefix):
+def test_upload_lesson_validation_failure(client, admin_headers, api_prefix, storage_backend):
     # Missing required identity field
     payload = {
         "content": {"title": "Broken"},
@@ -59,7 +59,7 @@ def test_upload_lesson_validation_failure(client, admin_headers, api_prefix):
 
 # Admin Auth Enforcement
 
-def test_admin_requires_token(client, course_factory, api_prefix):
+def test_admin_requires_token(client, course_factory, api_prefix, storage_backend):
     response = client.get(
         f"{api_prefix}/admin/courses"
     )
@@ -69,7 +69,7 @@ def test_admin_requires_token(client, course_factory, api_prefix):
 
 # Course Binding
 
-def test_bind_lesson_to_course(client, admin_headers, valid_lesson_payload, api_prefix):
+def test_bind_lesson_to_course(client, admin_headers, valid_lesson_payload, api_prefix, storage_backend):
     payload = valid_lesson_payload
 
     client.post(
@@ -95,7 +95,7 @@ def test_bind_lesson_to_course(client, admin_headers, valid_lesson_payload, api_
     assert data["version"] == "0.1.0"
 
 
-def test_bind_replaces_existing_version(client, admin_headers, valid_lesson_payload, api_prefix):
+def test_bind_replaces_existing_version(client, admin_headers, valid_lesson_payload, api_prefix, storage_backend):
     lesson_v1 = valid_lesson_payload
 
     lesson_v2 = valid_lesson_payload
@@ -127,7 +127,7 @@ def test_bind_replaces_existing_version(client, admin_headers, valid_lesson_payl
     assert lessons["test"] == "0.2.0"
 
 
-def test_bind_nonexistent_lesson_fails(client, admin_headers, api_prefix):
+def test_bind_nonexistent_lesson_fails(client, admin_headers, api_prefix, storage_backend):
     response = client.post(
         f"{api_prefix}/admin/courses/CS101/lessons",
         json={"lesson_id": "ghost", "version": "0.1.0"},
@@ -139,7 +139,7 @@ def test_bind_nonexistent_lesson_fails(client, admin_headers, api_prefix):
 
 # Course Creation
 
-def test_create_course_success(client, admin_headers, valid_course_payload, api_prefix):
+def test_create_course_success(client, admin_headers, valid_course_payload, api_prefix, storage_backend):
     response = client.post(
         f"{api_prefix}/admin/courses",
         json=valid_course_payload,
@@ -153,7 +153,7 @@ def test_create_course_success(client, admin_headers, valid_course_payload, api_
     assert data["title"] == "Intro to AI"
 
 
-def test_create_course_duplicate_fails(client, admin_headers, valid_course_payload, api_prefix):
+def test_create_course_duplicate_fails(client, admin_headers, valid_course_payload, api_prefix, storage_backend):
     client.post(f"{api_prefix}/admin/courses", json=valid_course_payload, headers=admin_headers)
 
     response = client.post(
@@ -167,7 +167,7 @@ def test_create_course_duplicate_fails(client, admin_headers, valid_course_paylo
 
 # Get & List Courses
 
-def test_get_course(client, admin_headers, valid_course_payload, api_prefix):
+def test_get_course(client, admin_headers, valid_course_payload, api_prefix, storage_backend):
     client.post(f"{api_prefix}/admin/courses", json=valid_course_payload, headers=admin_headers)
 
     response = client.get(
@@ -179,7 +179,7 @@ def test_get_course(client, admin_headers, valid_course_payload, api_prefix):
     assert response.json()["course_id"] == "CS101"
 
 
-def test_list_courses(client, admin_headers, valid_course_payload, api_prefix):
+def test_list_courses(client, admin_headers, valid_course_payload, api_prefix, storage_backend):
     client.post(f"{api_prefix}/admin/courses", json=valid_course_payload, headers=admin_headers)
 
     response = client.get(f"{api_prefix}/admin/courses", headers=admin_headers)
@@ -193,7 +193,7 @@ def test_list_courses(client, admin_headers, valid_course_payload, api_prefix):
 
 # Update Course
 
-def test_update_course_preserves_lessons(client, admin_headers, valid_course_payload, api_prefix):
+def test_update_course_preserves_lessons(client, admin_headers, valid_course_payload, api_prefix, storage_backend):
     client.post(f"{api_prefix}/admin/courses", json=valid_course_payload, headers=admin_headers)
 
     # Bind fake lesson mapping manually for test
@@ -219,7 +219,7 @@ def test_update_course_preserves_lessons(client, admin_headers, valid_course_pay
 
 # Delete Course
 
-def test_delete_course(client, admin_headers, valid_course_payload, api_prefix):
+def test_delete_course(client, admin_headers, valid_course_payload, api_prefix, storage_backend):
     client.post(f"{api_prefix}/admin/courses", json=valid_course_payload, headers=admin_headers)
 
     delete_response = client.delete(
@@ -239,7 +239,7 @@ def test_delete_course(client, admin_headers, valid_course_payload, api_prefix):
 
 # Binding Behavior
 
-def test_binding_requires_existing_course(client, admin_headers, api_prefix):
+def test_binding_requires_existing_course(client, admin_headers, api_prefix, storage_backend):
     response = client.post(
         f"{api_prefix}/admin/courses/CS404/lessons",
         json={"lesson_id": "test", "version": "0.1.0"},
@@ -249,7 +249,7 @@ def test_binding_requires_existing_course(client, admin_headers, api_prefix):
     assert response.status_code == 404
 
 
-def test_binding_replaces_version(client, admin_headers, valid_course_payload, valid_lesson_payload, api_prefix):
+def test_binding_replaces_version(client, admin_headers, valid_course_payload, valid_lesson_payload, api_prefix, storage_backend):
     # Create course
     client.post(f"{api_prefix}/admin/courses", json=valid_course_payload, headers=admin_headers)
 

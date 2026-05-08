@@ -11,7 +11,7 @@ class ArtifactStorage(ABC):
     """Abstract storage contract for lesson artifacts and encrypted logs."""
 
     @abstractmethod
-    def save_lesson(self, lesson: Lesson) -> None:
+    async def save_lesson(self, lesson: Lesson) -> None:
         """Persist a lesson artifact.
 
         Args:
@@ -19,7 +19,7 @@ class ArtifactStorage(ABC):
         """
 
     @abstractmethod
-    def load_lesson(self, lesson_id: str, version: str) -> Optional[Lesson]:
+    async def load_lesson(self, lesson_id: str, version: str) -> Optional[Lesson]:
         """Load a lesson artifact by identifier and version.
 
         Args:
@@ -31,7 +31,7 @@ class ArtifactStorage(ABC):
         """
 
     @abstractmethod
-    def save_encrypted_log(self, instance_id: str, encrypted_blob: bytes) -> None:
+    async def save_encrypted_log(self, instance_id: str, encrypted_blob: bytes) -> None:
         """Persist an encrypted lesson log blob.
 
         Args:
@@ -40,7 +40,7 @@ class ArtifactStorage(ABC):
         """
 
     @abstractmethod
-    def load_encrypted_log(self, instance_id: str) -> Optional[bytes]:
+    async def load_encrypted_log(self, instance_id: str) -> Optional[bytes]:
         """Load an encrypted lesson log blob.
 
         Args:
@@ -50,12 +50,20 @@ class ArtifactStorage(ABC):
             Optional[bytes]: Stored encrypted bytes, or `None` if absent.
         """
 
+    @abstractmethod
+    async def health_check(self) -> bool:
+        """Report whether artifact storage is reachable.
+
+        Returns:
+            bool: `True` when the storage backend is ready for use.
+        """
+
 
 class SessionStorage(ABC):
     """Abstract storage contract for sessions and frozen inference configs."""
 
     @abstractmethod
-    def save_session(self, session: Session) -> None:
+    async def save_session(self, session: Session) -> None:
         """Persist the current session state.
 
         Args:
@@ -63,7 +71,7 @@ class SessionStorage(ABC):
         """
 
     @abstractmethod
-    def get_session(self, session_id: str) -> Optional[Session]:
+    async def get_session(self, session_id: str) -> Optional[Session]:
         """Load a session by id.
 
         Args:
@@ -74,7 +82,7 @@ class SessionStorage(ABC):
         """
 
     @abstractmethod
-    def delete_session(self, session_id: str) -> None:
+    async def delete_session(self, session_id: str) -> None:
         """Delete any persisted state associated with a session id.
 
         Args:
@@ -82,7 +90,11 @@ class SessionStorage(ABC):
         """
 
     @abstractmethod
-    def save_inference_config(self, session_id: str, config: InferenceConfig) -> None:
+    async def save_inference_config(
+        self,
+        session_id: str,
+        config: InferenceConfig,
+    ) -> None:
         """Persist the frozen inference config for a session.
 
         Args:
@@ -91,7 +103,7 @@ class SessionStorage(ABC):
         """
 
     @abstractmethod
-    def get_inference_config(self, session_id: str) -> Optional[InferenceConfig]:
+    async def get_inference_config(self, session_id: str) -> Optional[InferenceConfig]:
         """Load a session's inference config.
 
         Args:
@@ -102,11 +114,19 @@ class SessionStorage(ABC):
         """
 
     @abstractmethod
-    def list_sessions(self) -> List[Session]:
+    async def list_sessions(self) -> List[Session]:
         """Load every persisted session document.
 
         Returns:
             List[Session]: All persisted sessions.
+        """
+
+    @abstractmethod
+    async def health_check(self) -> bool:
+        """Report whether session storage is reachable.
+
+        Returns:
+            bool: `True` when the storage backend is ready for use.
         """
 
 
@@ -114,7 +134,7 @@ class CourseStorage(ABC):
     """Abstract storage contract for course metadata and lesson bindings."""
 
     @abstractmethod
-    def save_course(self, course: Course) -> None:
+    async def save_course(self, course: Course) -> None:
         """Persist a course document.
 
         Args:
@@ -122,7 +142,7 @@ class CourseStorage(ABC):
         """
 
     @abstractmethod
-    def get_course(self, course_id: str) -> Optional[Course]:
+    async def get_course(self, course_id: str) -> Optional[Course]:
         """Load a course by id.
 
         Args:
@@ -133,7 +153,7 @@ class CourseStorage(ABC):
         """
 
     @abstractmethod
-    def delete_course(self, course_id: str) -> None:
+    async def delete_course(self, course_id: str) -> None:
         """Delete a persisted course document.
 
         Args:
@@ -141,7 +161,7 @@ class CourseStorage(ABC):
         """
 
     @abstractmethod
-    def list_courses(self) -> List[Course]:
+    async def list_courses(self) -> List[Course]:
         """Load every persisted course document.
 
         Returns:
@@ -149,11 +169,24 @@ class CourseStorage(ABC):
         """
 
     @abstractmethod
-    def bind_lesson_to_course(self, course_id: str, lesson_id: str, version: str) -> None:
+    async def bind_lesson_to_course(
+        self,
+        course_id: str,
+        lesson_id: str,
+        version: str,
+    ) -> None:
         """Bind a lesson version into a course document.
 
         Args:
             course_id: Identifier of the course to update.
             lesson_id: Lesson identifier to bind.
             version: Lesson version to store.
+        """
+
+    @abstractmethod
+    async def health_check(self) -> bool:
+        """Report whether course storage is reachable.
+
+        Returns:
+            bool: `True` when the storage backend is ready for use.
         """

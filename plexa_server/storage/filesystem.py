@@ -50,7 +50,7 @@ class FileSystemArtifactStorage(ArtifactStorage):
         self.lessons_path.mkdir(parents=True, exist_ok=True)
         self.logs_path.mkdir(parents=True, exist_ok=True)
 
-    def save_lesson(self, lesson: Lesson) -> None:
+    async def save_lesson(self, lesson: Lesson) -> None:
         """Persist a lesson document under its lesson id and version.
 
         Args:
@@ -78,7 +78,7 @@ class FileSystemArtifactStorage(ArtifactStorage):
 
         temp_file.replace(lesson_file)
 
-    def load_lesson(self, lesson_id: str, version: str) -> Optional[Lesson]:
+    async def load_lesson(self, lesson_id: str, version: str) -> Optional[Lesson]:
         """Load a lesson version from disk.
 
         Args:
@@ -98,7 +98,7 @@ class FileSystemArtifactStorage(ArtifactStorage):
 
         return Lesson.model_validate(data)
 
-    def save_encrypted_log(self, instance_id: str, encrypted_blob: bytes) -> None:
+    async def save_encrypted_log(self, instance_id: str, encrypted_blob: bytes) -> None:
         """Persist an opaque encrypted log blob for a lesson instance.
 
         Args:
@@ -109,7 +109,7 @@ class FileSystemArtifactStorage(ArtifactStorage):
         with log_file.open("wb") as f:
             f.write(encrypted_blob)
 
-    def load_encrypted_log(self, instance_id: str) -> Optional[bytes]:
+    async def load_encrypted_log(self, instance_id: str) -> Optional[bytes]:
         """Load an encrypted log blob.
 
         Args:
@@ -125,6 +125,14 @@ class FileSystemArtifactStorage(ArtifactStorage):
 
         with log_file.open("rb") as f:
             return f.read()
+
+    async def health_check(self) -> bool:
+        """Report whether the artifact filesystem paths are available.
+
+        Returns:
+            bool: `True` when the expected filesystem paths exist.
+        """
+        return self.base_path.exists() and self.lessons_path.exists() and self.logs_path.exists()
 
 
 class FileSystemSessionStorage(SessionStorage):
@@ -148,7 +156,7 @@ class FileSystemSessionStorage(SessionStorage):
         self.sessions_path.mkdir(parents=True, exist_ok=True)
         self.configs_path.mkdir(parents=True, exist_ok=True)
 
-    def save_session(self, session: Session) -> None:
+    async def save_session(self, session: Session) -> None:
         """Serialize and store a session document by session id.
 
         Args:
@@ -158,7 +166,7 @@ class FileSystemSessionStorage(SessionStorage):
         serialized = session.model_dump_json(indent=2)
         _atomic_write(path, serialized)
 
-    def get_session(self, session_id: str) -> Optional[Session]:
+    async def get_session(self, session_id: str) -> Optional[Session]:
         """Load a session document from disk.
 
         Args:
@@ -177,7 +185,7 @@ class FileSystemSessionStorage(SessionStorage):
 
         return Session.model_validate(data)
 
-    def delete_session(self, session_id: str) -> None:
+    async def delete_session(self, session_id: str) -> None:
         """Delete a session document and its persisted inference config.
 
         Args:
@@ -189,7 +197,7 @@ class FileSystemSessionStorage(SessionStorage):
         config_path = self.configs_path / f"{session_id}.json"
         config_path.unlink(missing_ok=True)
 
-    def save_inference_config(
+    async def save_inference_config(
         self,
         session_id: str,
         config: InferenceConfig,
@@ -204,7 +212,7 @@ class FileSystemSessionStorage(SessionStorage):
         serialized = config.model_dump_json(indent=2)
         _atomic_write(path, serialized)
 
-    def get_inference_config(
+    async def get_inference_config(
         self,
         session_id: str,
     ) -> Optional[InferenceConfig]:
@@ -226,7 +234,7 @@ class FileSystemSessionStorage(SessionStorage):
 
         return InferenceConfig.model_validate(data)
 
-    def list_sessions(self) -> List[Session]:
+    async def list_sessions(self) -> List[Session]:
         """Load and return every persisted session document.
 
         Returns:
@@ -240,6 +248,14 @@ class FileSystemSessionStorage(SessionStorage):
                 results.append(Session.model_validate(data))
 
         return results
+
+    async def health_check(self) -> bool:
+        """Report whether the session filesystem paths are available.
+
+        Returns:
+            bool: `True` when the expected filesystem paths exist.
+        """
+        return self.base_path.exists() and self.sessions_path.exists() and self.configs_path.exists()
 
 
 class FileSystemCourseStorage(CourseStorage):
@@ -272,7 +288,7 @@ class FileSystemCourseStorage(CourseStorage):
         """
         return self.courses_path / f"{course_id}.json"
 
-    def save_course(self, course: Course) -> None:
+    async def save_course(self, course: Course) -> None:
         """Persist a course document using its course id as the filename.
 
         Args:
@@ -282,7 +298,7 @@ class FileSystemCourseStorage(CourseStorage):
         serialized = course.model_dump_json(indent=2)
         _atomic_write(path, serialized)
 
-    def get_course(self, course_id: str) -> Optional[Course]:
+    async def get_course(self, course_id: str) -> Optional[Course]:
         """Load a course document from disk.
 
         Args:
@@ -301,7 +317,7 @@ class FileSystemCourseStorage(CourseStorage):
 
         return Course.model_validate(data)
 
-    def delete_course(self, course_id: str) -> None:
+    async def delete_course(self, course_id: str) -> None:
         """Delete a persisted course document if it exists.
 
         Args:
@@ -310,7 +326,7 @@ class FileSystemCourseStorage(CourseStorage):
         path = self._course_path(course_id)
         path.unlink(missing_ok=True)
 
-    def list_courses(self) -> List[Course]:
+    async def list_courses(self) -> List[Course]:
         """Load and return every persisted course document.
 
         Returns:
@@ -328,7 +344,7 @@ class FileSystemCourseStorage(CourseStorage):
 
         return results
 
-    def bind_lesson_to_course(self, course_id: str, lesson_id: str, version: str) -> None:
+    async def bind_lesson_to_course(self, course_id: str, lesson_id: str, version: str) -> None:
         """Bind or replace a lesson version in a course document.
 
         Args:
@@ -357,3 +373,11 @@ class FileSystemCourseStorage(CourseStorage):
 
         with open(course_path, "w") as f:
             json.dump(course_data, f, indent=2)
+
+    async def health_check(self) -> bool:
+        """Report whether the course filesystem path is available.
+
+        Returns:
+            bool: `True` when the expected filesystem path exists.
+        """
+        return self.base_path.exists() and self.courses_path.exists()

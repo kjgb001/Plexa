@@ -4,12 +4,12 @@ from plexa_server.storage.filesystem import FileSystemArtifactStorage
 from plexa_server.models.lesson import Lesson, LessonIdentity
 
 
-def test_app_builds(client, api_prefix):
+def test_app_builds(client, api_prefix, storage_backend):
     response = client.get("api/health")
     assert response.status_code == 200
 
 
-def test_create_session_success(client, lesson_factory, course_factory, api_prefix):
+def test_create_session_success(client, lesson_factory, course_factory, api_prefix, storage_backend):
     lesson = lesson_factory()
     lesson_id = lesson.identity.lesson_id
     lesson_version = lesson.identity.version
@@ -31,7 +31,7 @@ def test_create_session_success(client, lesson_factory, course_factory, api_pref
     assert data["session"]["is_active"] is True
 
 
-def test_send_message_success(client, session_factory, api_prefix):
+def test_send_message_success(client, session_factory, api_prefix, storage_backend):
     session_id, lesson_id, lesson_version = session_factory()
     course_id = "CS101"
 
@@ -49,7 +49,7 @@ def test_send_message_success(client, session_factory, api_prefix):
     assert data["session"]["turn_count"] >= 1
 
 
-def test_get_session(client, session_factory, api_prefix):
+def test_get_session(client, session_factory, api_prefix, storage_backend):
     session_id, lesson_id, lesson_version = session_factory()
     course_id = "CS101"
 
@@ -62,7 +62,7 @@ def test_get_session(client, session_factory, api_prefix):
     assert response.json()["session"]["session_id"] == session_id
 
 
-def test_list_sessions_for_lesson(client, session_factory, api_prefix):
+def test_list_sessions_for_lesson(client, session_factory, api_prefix, storage_backend):
     first_session_id, lesson_id, lesson_version = session_factory()
     second_session_id, _, _ = session_factory()
     session_factory(user_id="Alice")
@@ -84,7 +84,7 @@ def test_list_sessions_for_lesson(client, session_factory, api_prefix):
     assert all(session["user_id"] == "tester" for session in sessions)
 
 
-def test_close_session(client, session_factory, api_prefix):
+def test_close_session(client, session_factory, api_prefix, storage_backend):
     session_id, lesson_id, lesson_version = session_factory()
     course_id = "CS101"
 
@@ -97,7 +97,7 @@ def test_close_session(client, session_factory, api_prefix):
     assert response.json()["is_active"] is False
 
 
-def test_delete_session(client, session_factory, api_prefix):
+def test_delete_session(client, session_factory, api_prefix, storage_backend):
     session_id, lesson_id, lesson_version = session_factory()
     course_id = "CS101"
 
@@ -120,7 +120,7 @@ def test_delete_session(client, session_factory, api_prefix):
     assert get_response.status_code == 404
 
 
-def test_create_session_lesson_not_found(client, api_prefix):
+def test_create_session_lesson_not_found(client, api_prefix, storage_backend):
     course_id = "CS101"
     lesson_id = "does_not_exist"
     lesson_version = "0.1.0"
@@ -133,7 +133,7 @@ def test_create_session_lesson_not_found(client, api_prefix):
     assert response.status_code == 404
 
 
-def test_get_session_not_found(client, lesson_factory, api_prefix):
+def test_get_session_not_found(client, lesson_factory, api_prefix, storage_backend):
     course_id = "CS101"
     lesson = lesson_factory()
     lesson_id = lesson.identity.lesson_id
@@ -146,7 +146,7 @@ def test_get_session_not_found(client, lesson_factory, api_prefix):
     assert response.status_code == 404
 
 
-def test_missing_user_header_returns_401(client, lesson_factory, api_prefix):
+def test_missing_user_header_returns_401(client, lesson_factory, api_prefix, storage_backend):
     lesson = lesson_factory()
     lesson_id = lesson.identity.lesson_id
     lesson_version = lesson.identity.version
@@ -160,7 +160,7 @@ def test_missing_user_header_returns_401(client, lesson_factory, api_prefix):
     assert response.status_code == 401
 
 
-def test_user_cannot_access_other_users_session(client, session_factory, lesson_factory, api_prefix):
+def test_user_cannot_access_other_users_session(client, session_factory, lesson_factory, api_prefix, storage_backend):
     session_id, lesson_id, lesson_version = session_factory(user_id="Alice")
     lesson = lesson_factory()
     lesson_id = lesson.identity.lesson_id
@@ -175,19 +175,19 @@ def test_user_cannot_access_other_users_session(client, session_factory, lesson_
     assert response.status_code == 404
 
 
-def test_health_alive(client):
+def test_health_alive(client, storage_backend):
     r = client.get("/api/health")
     assert r.status_code == 200
     assert r.json()["status"] == "alive"
 
 
-def test_ready_success(client):
+def test_ready_success(client, storage_backend):
     r = client.get("/api/ready")
     assert r.status_code == 200
     assert r.json()["status"] == "ready"
 
 
-def test_course_creation_sets_owner(client, admin_headers, valid_course_payload, api_prefix):
+def test_course_creation_sets_owner(client, admin_headers, valid_course_payload, api_prefix, storage_backend):
     payload = valid_course_payload
     payload["owner_id"] = "Dr. Test"
 
@@ -205,7 +205,7 @@ def test_course_creation_sets_owner(client, admin_headers, valid_course_payload,
     assert data["pending_requests"] == []
 
 
-def test_discoverable_courses_visible(client, course_factory, api_prefix):
+def test_discoverable_courses_visible(client, course_factory, api_prefix, storage_backend):
     course_id = course_factory()
 
     response = client.get(f"{api_prefix}/courses", headers={"X-User-Id": "tester"})
@@ -216,7 +216,7 @@ def test_discoverable_courses_visible(client, course_factory, api_prefix):
     assert any(c["course_id"] == f"{course_id}" for c in courses)
 
 
-def test_invite_only_hidden_from_listing(client, admin_headers, valid_course_payload, api_prefix):
+def test_invite_only_hidden_from_listing(client, admin_headers, valid_course_payload, api_prefix, storage_backend):
     payload = valid_course_payload
     payload["discoverable"] = False
     course_id = payload["course_id"]
@@ -230,7 +230,7 @@ def test_invite_only_hidden_from_listing(client, admin_headers, valid_course_pay
     assert all(c["course_id"] != f"{course_id}" for c in courses)
 
 
-def test_enrollment_request_flow(client, course_factory, api_prefix):
+def test_enrollment_request_flow(client, course_factory, api_prefix, storage_backend):
     course_id = course_factory()
 
     response = client.post(
@@ -251,7 +251,7 @@ def test_enrollment_request_flow(client, course_factory, api_prefix):
     assert "testina" in requests.json()["pending_requests"]
 
 
-def test_approval_moves_user_to_enrolled(client, course_factory, api_prefix):
+def test_approval_moves_user_to_enrolled(client, course_factory, api_prefix, storage_backend):
     course_id = course_factory()
 
     client.post(
@@ -277,7 +277,7 @@ def test_approval_moves_user_to_enrolled(client, course_factory, api_prefix):
     assert "testina" in course.json()["enrolled_users"]
 
 
-def test_non_enrolled_cannot_access_course(client, admin_headers, valid_course_payload, api_prefix):
+def test_non_enrolled_cannot_access_course(client, admin_headers, valid_course_payload, api_prefix, storage_backend):
     valid_course_payload["discoverable"] = False
     course_id = valid_course_payload["course_id"]
 
@@ -296,7 +296,8 @@ def test_session_creation_requires_enrollment(
     admin_headers,
     course_factory,
     lesson_factory,
-    api_prefix
+    api_prefix,
+    storage_backend,
 ):
     course_id = course_factory()
     lesson = lesson_factory()
@@ -326,7 +327,8 @@ def test_session_creation_after_enrollment(
     admin_headers,
     course_factory,
     lesson_factory,
-    api_prefix
+    api_prefix,
+    storage_backend,
 ):
     course_id = course_factory()
     lesson = lesson_factory()
@@ -358,7 +360,7 @@ def test_session_creation_after_enrollment(
     assert response.status_code == 201
 
 
-def test_lesson_list(client, course_factory, lesson_factory, api_prefix, admin_headers):
+def test_lesson_list(client, course_factory, lesson_factory, api_prefix, admin_headers, storage_backend):
     course_id = course_factory()
     lesson_factory()
 

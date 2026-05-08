@@ -43,7 +43,7 @@ def require_course_id(
     return course_id
     
 
-def get_owned_session(session_manager, session_id: str, user_id: str):
+async def get_owned_session(session_manager, session_id: str, user_id: str):
     """Return a session only when it exists and belongs to the caller.
 
     Args:
@@ -59,7 +59,7 @@ def get_owned_session(session_manager, session_id: str, user_id: str):
             user.
     """
     try:
-        session = session_manager.get_session(session_id)
+        session = await session_manager.get_session(session_id)
     except SessionNotFoundError:
         raise HTTPException(status_code=404, detail="Session not found")
 

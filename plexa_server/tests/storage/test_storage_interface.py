@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 
 from plexa_server.storage.filesystem import (
@@ -13,6 +14,10 @@ from plexa_server.storage.storage_interface import (
 )
 from plexa_server.inference.base import InferenceConfig
 from plexa_server.models.session import Session
+
+
+def run(coro):
+    return asyncio.run(coro)
 
 
 def test_storage_interfaces_are_abstract():
@@ -45,7 +50,7 @@ def test_in_memory_storage_implements_session_storage():
 def test_in_memory_session_storage_lists_sessions():
     storage = InMemoryStorage()
 
-    assert storage.list_sessions() == []
+    assert run(storage.list_sessions()) == []
 
 
 def test_in_memory_session_storage_delete_clears_session_and_config():
@@ -66,9 +71,9 @@ def test_in_memory_session_storage_delete_clears_session_and_config():
         "temperature": 0.0,
     })
 
-    storage.save_session(session)
-    storage.save_inference_config(session.session_id, config)
-    storage.delete_session(session.session_id)
+    run(storage.save_session(session))
+    run(storage.save_inference_config(session.session_id, config))
+    run(storage.delete_session(session.session_id))
 
-    assert storage.get_session(session.session_id) is None
-    assert storage.get_inference_config(session.session_id) is None
+    assert run(storage.get_session(session.session_id)) is None
+    assert run(storage.get_inference_config(session.session_id)) is None

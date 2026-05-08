@@ -2,11 +2,12 @@ from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
 
 from plexa_server.inference.base import InferenceError
+from plexa_server.storage.storage_interface import ArtifactStorage, SessionStorage
 
 
 def get_health_router(
-    session_storage,
-    artifact_storage,
+    session_storage: SessionStorage,
+    artifact_storage: ArtifactStorage,
     inference_backend,
 ) -> APIRouter:
     """Create liveness and readiness endpoints for the server process.
@@ -23,7 +24,7 @@ def get_health_router(
     router = APIRouter(prefix="/api", tags=["health"])
 
     @router.get("/health")
-    def health():
+    async def health():
         """Report that the API process is running.
 
         Returns:
@@ -32,7 +33,7 @@ def get_health_router(
         return {"status": "alive"}
 
     @router.get("/ready")
-    def ready():
+    async def ready():
         """Report dependency readiness for storage and inference services.
 
         Returns:
@@ -46,11 +47,10 @@ def get_health_router(
         }
 
         try:
-            # basic filesystem checks
-            if not artifact_storage.base_path.exists():
+            if not await artifact_storage.health_check():
                 dependencies["artifact_storage"] = "missing"
 
-            if not session_storage.base_path.exists():
+            if not await session_storage.health_check():
                 dependencies["session_storage"] = "missing"
 
             inference_backend.health_check()

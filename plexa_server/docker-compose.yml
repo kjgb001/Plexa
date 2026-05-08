@@ -1,0 +1,15 @@
+services:
+    postgres:
+      image: postgres:17
+      container_name: plexa-postgres
+      restart: unless-stopped
+      environment:
+        POSTGRES_DB: plexa
+        POSTGRES_USER: plexa
+        POSTGRES_PASSWORD: plexa_dev_password
+      ports:
+        - "5432:5432"
+      volumes:
+        - plexa_postgres_data:/var/lib/postgresql/data
+volumes:
+    plexa_postgres_data:

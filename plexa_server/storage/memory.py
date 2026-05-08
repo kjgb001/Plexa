@@ -20,7 +20,7 @@ class InMemoryStorage(SessionStorage):
         self._sessions: Dict[str, Session] = {}
         self._inference_configs: Dict[str, InferenceConfig] = {}
 
-    def save_session(self, session: Session) -> None:
+    async def save_session(self, session: Session) -> None:
         """Store or replace a session in memory.
 
         Args:
@@ -28,7 +28,7 @@ class InMemoryStorage(SessionStorage):
         """
         self._sessions[session.session_id] = session
 
-    def get_session(self, session_id: str) -> Optional[Session]:
+    async def get_session(self, session_id: str) -> Optional[Session]:
         """Return a stored session by id.
 
         Args:
@@ -39,7 +39,7 @@ class InMemoryStorage(SessionStorage):
         """
         return self._sessions.get(session_id)
 
-    def delete_session(self, session_id: str) -> None:
+    async def delete_session(self, session_id: str) -> None:
         """Remove a stored session if present.
 
         Args:
@@ -48,7 +48,7 @@ class InMemoryStorage(SessionStorage):
         self._sessions.pop(session_id, None)
         self._inference_configs.pop(session_id, None)
 
-    def save_inference_config(
+    async def save_inference_config(
         self,
         session_id: str,
         config: InferenceConfig,
@@ -61,7 +61,7 @@ class InMemoryStorage(SessionStorage):
         """
         self._inference_configs[session_id] = config
 
-    def get_inference_config(
+    async def get_inference_config(
         self,
         session_id: str,
     ) -> Optional[InferenceConfig]:
@@ -75,10 +75,18 @@ class InMemoryStorage(SessionStorage):
         """
         return self._inference_configs.get(session_id)
 
-    def list_sessions(self) -> List[Session]:
+    async def list_sessions(self) -> List[Session]:
         """Return all stored sessions.
 
         Returns:
             List[Session]: Sessions currently held in memory.
         """
         return list(self._sessions.values())
+
+    async def health_check(self) -> bool:
+        """Report whether the in-memory storage backend is available.
+
+        Returns:
+            bool: Always `True` for in-memory storage.
+        """
+        return True

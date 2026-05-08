@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 
@@ -13,6 +14,10 @@ from plexa_server.models.session import Session
 from plexa_server.models.course import Course
 from plexa_server.inference.base import InferenceConfig
 from plexa_server.tests.fixtures import make_valid_lesson_payload
+
+
+def run(coro):
+    return asyncio.run(coro)
 
 
 def make_valid_session(session_id: str = "s1"):
@@ -45,11 +50,11 @@ def test_artifact_storage_lesson_roundtrip(tmp_path: Path):
 
     lesson = Lesson.model_validate(make_valid_lesson_payload())
 
-    storage.save_lesson(lesson)
-    loaded = storage.load_lesson(
+    run(storage.save_lesson(lesson))
+    loaded = run(storage.load_lesson(
         lesson.identity.lesson_id,
         lesson.identity.version,
-    )
+    ))
 
     assert loaded is not None
     assert loaded.identity.lesson_id == lesson.identity.lesson_id
@@ -60,9 +65,9 @@ def test_artifact_storage_log_roundtrip(tmp_path: Path):
     storage = FileSystemArtifactStorage(tmp_path)
 
     blob = b"encrypted-data"
-    storage.save_encrypted_log("abc", blob)
+    run(storage.save_encrypted_log("abc", blob))
 
-    loaded = storage.load_encrypted_log("abc")
+    loaded = run(storage.load_encrypted_log("abc"))
 
     assert loaded == blob
 
@@ -72,8 +77,8 @@ def test_session_storage_roundtrip(tmp_path: Path):
 
     session = make_valid_session()
 
-    storage.save_session(session)
-    loaded = storage.get_session(session.session_id)
+    run(storage.save_session(session))
+    loaded = run(storage.get_session(session.session_id))
 
     assert loaded is not None
     assert loaded.session_id == session.session_id
@@ -86,12 +91,12 @@ def test_session_storage_delete(tmp_path: Path):
     session = make_valid_session()
     config = make_valid_inference_config()
 
-    storage.save_session(session)
-    storage.save_inference_config(session.session_id, config)
-    storage.delete_session(session.session_id)
+    run(storage.save_session(session))
+    run(storage.save_inference_config(session.session_id, config))
+    run(storage.delete_session(session.session_id))
 
-    assert storage.get_session(session.session_id) is None
-    assert storage.get_inference_config(session.session_id) is None
+    assert run(storage.get_session(session.session_id)) is None
+    assert run(storage.get_inference_config(session.session_id)) is None
 
 
 def test_session_storage_inference_config_roundtrip(tmp_path: Path):
@@ -99,8 +104,8 @@ def test_session_storage_inference_config_roundtrip(tmp_path: Path):
 
     config = make_valid_inference_config()
 
-    storage.save_inference_config("s1", config)
-    loaded = storage.get_inference_config("s1")
+    run(storage.save_inference_config("s1", config))
+    loaded = run(storage.get_inference_config("s1"))
 
     assert loaded is not None
     assert loaded.model == config.model
@@ -109,10 +114,10 @@ def test_session_storage_inference_config_roundtrip(tmp_path: Path):
 def test_session_storage_list_sessions(tmp_path: Path):
     storage = FileSystemSessionStorage(tmp_path)
 
-    storage.save_session(make_valid_session("s1"))
-    storage.save_session(make_valid_session("s2"))
+    run(storage.save_session(make_valid_session("s1")))
+    run(storage.save_session(make_valid_session("s2")))
 
-    sessions = storage.list_sessions()
+    sessions = run(storage.list_sessions())
     session_ids = {session.session_id for session in sessions}
 
     assert session_ids == {"s1", "s2"}
@@ -123,8 +128,8 @@ def test_course_storage_roundtrip(tmp_path: Path, valid_course_payload):
 
     course = make_valid_course(valid_course_payload)
 
-    storage.save_course(course)
-    loaded = storage.get_course(course.course_id)
+    run(storage.save_course(course))
+    loaded = run(storage.get_course(course.course_id))
 
     assert loaded is not None
     assert loaded.course_id == course.course_id
@@ -136,10 +141,10 @@ def test_course_storage_delete(tmp_path: Path, valid_course_payload):
 
     course = make_valid_course(valid_course_payload)
 
-    storage.save_course(course)
-    storage.delete_course(course.course_id)
+    run(storage.save_course(course))
+    run(storage.delete_course(course.course_id))
 
-    assert storage.get_course(course.course_id) is None
+    assert run(storage.get_course(course.course_id)) is None
 
 
 def test_course_storage_list(tmp_path: Path, valid_course_payload):
@@ -153,10 +158,10 @@ def test_course_storage_list(tmp_path: Path, valid_course_payload):
         "lessons": {},
     })
 
-    storage.save_course(c1)
-    storage.save_course(c2)
+    run(storage.save_course(c1))
+    run(storage.save_course(c2))
 
-    courses = storage.list_courses()
+    courses = run(storage.list_courses())
 
     ids = {c.course_id for c in courses}
 

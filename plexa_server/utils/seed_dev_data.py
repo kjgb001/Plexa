@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 from plexa_server.storage.filesystem import (
@@ -18,7 +19,7 @@ from plexa_server.tests.fixtures import (
 
 DATA_PATH = get_data_dir_path()
 
-def seed_course(lessons, course_title, course_desc, course_storage: CourseStorage):
+async def seed_course(lessons, course_title, course_desc, course_storage: CourseStorage):
     """Create a fixture-backed course and bind the supplied lesson version.
 
     Args:
@@ -36,10 +37,10 @@ def seed_course(lessons, course_title, course_desc, course_storage: CourseStorag
     for lesson in lessons:
         payload["lessons"][lesson.identity.lesson_id] = lesson.identity.version
     course = Course.model_validate(payload)
-    course_storage.save_course(course)
+    await course_storage.save_course(course)
 
 
-def seed_lesson(lesson_id, lesson_version, artifact_storage: ArtifactStorage):
+async def seed_lesson(lesson_id, lesson_version, artifact_storage: ArtifactStorage):
     """Create and persist the fixture lesson, returning its id and version.
 
     Args:
@@ -56,12 +57,12 @@ def seed_lesson(lesson_id, lesson_version, artifact_storage: ArtifactStorage):
         payload["identity"]["version"] = lesson_version
     lesson = Lesson.model_validate(payload)
 
-    artifact_storage.save_lesson(lesson)
+    await artifact_storage.save_lesson(lesson)
 
     return lesson
 
 
-def main():
+async def main():
     """Seed the repository data directory with one lesson and one course."""
     
     artifact_storage = FileSystemArtifactStorage(DATA_PATH)
@@ -75,17 +76,17 @@ def main():
     lesson_data = {"default": "default", "The Danger of Hallucinations": "0.1.0",
         "The Power of Prompt Engineering": "0.3.0", "Managing Context Decay": "0.2.0"}
     for l in lesson_data.items():
-        lessons.append(seed_lesson(l[0], l[1], artifact_storage))
-    seed_course(lessons, course_titles[0], course_descs[0], course_storage)
+        lessons.append(await seed_lesson(l[0], l[1], artifact_storage))
+    await seed_course(lessons, course_titles[0], course_descs[0], course_storage)
 
     lessons = []
     lesson_data = {"Prompt Engineering for Data Viz": "0.2.0", "LLM Assisted Data Evaluation": "0.4.0"}
     for l in lesson_data.items():
-        lessons.append(seed_lesson(l[0], l[1], artifact_storage))
-    seed_course(lessons, course_titles[1], course_descs[1], course_storage)
+        lessons.append(await seed_lesson(l[0], l[1], artifact_storage))
+    await seed_course(lessons, course_titles[1], course_descs[1], course_storage)
 
     print("Seed data created.")
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

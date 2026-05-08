@@ -1,18 +1,15 @@
 from __future__ import annotations
 
-import threading
-from typing import Dict, List
+from typing import List
 from datetime import datetime, UTC
 from uuid import uuid4
 
 from plexa_server.models.session import Session
 from plexa_server.models.message import Message
 from plexa_server.models.lesson import Lesson
-from plexa_server.models.course import Course
 from plexa_server.inference.base import (
-    InferenceBackend, 
-    InferenceConfig, 
-    InferenceError
+    InferenceBackend,
+    InferenceError,
 )
 from plexa_server.core.lessons import (
     validate_lesson_runtime,
@@ -61,7 +58,7 @@ class SessionManager:
         self._inference = inference_backend
         self._lock_manager = LockManager()
 
-    def create_session(
+    async def create_session(
         self,
         lesson: Lesson,
         user_id: str,
@@ -113,12 +110,12 @@ class SessionManager:
             is_active=True,
         )
 
-        self._storage.save_session(session)
-        self._storage.save_inference_config(session_id, inference_config)
+        await self._storage.save_session(session)
+        await self._storage.save_inference_config(session_id, inference_config)
 
         return session
 
-    def get_session(self, session_id: str) -> Session:
+    async def get_session(self, session_id: str) -> Session:
         """Load a session by id.
 
         Args:
@@ -130,12 +127,12 @@ class SessionManager:
         Raises:
             SessionNotFoundError: If no session exists for the given id.
         """
-        session = self._storage.get_session(session_id)
+        session = await self._storage.get_session(session_id)
         if session is None:
             raise SessionNotFoundError(session_id)
         return session
 
-    def list_sessions(
+    async def list_sessions(
         self,
         user_id: str,
         course_id: str,
@@ -155,7 +152,7 @@ class SessionManager:
         """
         sessions = [
             session
-            for session in self._storage.list_sessions()
+            for session in await self._storage.list_sessions()
             if session.user_id == user_id
             and session.course_id == course_id
             and session.lesson_id == lesson_id
@@ -164,7 +161,7 @@ class SessionManager:
 
         return sorted(sessions, key=lambda session: session.created_at, reverse=True)
 
-    def close_session(self, session_id: str) -> None:
+    async def close_session(self, session_id: str) -> None:
         """Mark a session inactive and persist the closure timestamp.
 
         Args:
@@ -176,16 +173,16 @@ class SessionManager:
         lock = self._lock_manager.get_lock(session_id)
 
         with lock:
-            session = self.get_session(session_id)
+            session = await self.get_session(session_id)
             if not session.is_active:
                 return
 
             session.is_active = False
             session.closed_at = datetime.now(UTC)
-            self._storage.save_session(session)
+            await self._storage.save_session(session)
             self._lock_manager.release_lock(session_id)
 
-    def delete_session(self, session_id: str) -> None:
+    async def delete_session(self, session_id: str) -> None:
         """Delete a persisted session and its associated inference config.
 
         Args:
@@ -197,11 +194,11 @@ class SessionManager:
         lock = self._lock_manager.get_lock(session_id)
 
         with lock:
-            self.get_session(session_id)
-            self._storage.delete_session(session_id)
+            await self.get_session(session_id)
+            await self._storage.delete_session(session_id)
             self._lock_manager.release_lock(session_id)
 
-    def submit_user_message(
+    async def submit_user_message(
         self,
         session_id: str,
         message_id: str,
@@ -227,7 +224,7 @@ class SessionManager:
         lock = self._lock_manager.get_lock(session_id)
 
         with lock:
-            session = self.get_session(session_id)
+            session = await self.get_session(session_id)
 
             if not session.is_active:
                 raise SessionClosedError(session_id)
@@ -235,7 +232,7 @@ class SessionManager:
             if session.turn_count >= session.max_turns:
                 raise TurnLimitExceededError(session_id)
 
-            inference_config = self._storage.get_inference_config(session_id)
+            inference_config = await self._storage.get_inference_config(session_id)
 
             user_message = Message(
                 message_id=message_id,
@@ -274,6 +271,6 @@ class SessionManager:
                 session.is_active = False
                 session.closed_at = datetime.now(UTC)
 
-            self._storage.save_session(session)
+            await self._storage.save_session(session)
 
             return assistant_message

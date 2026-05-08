@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,7 +6,7 @@ from plexa_server.core.sessions import SessionManager
 from plexa_server.storage.filesystem import (
     FileSystemSessionStorage,
     FileSystemArtifactStorage,
-    FileSystemCourseStorage
+    FileSystemCourseStorage,
 )
 from plexa_server.storage.storage_interface import (
     ArtifactStorage,
@@ -29,23 +28,48 @@ API_VERSION = "v1"
 def build_app(
     inference_backend,
     data_dir: Path | str = DATA_PATH,
+    artifact_storage: ArtifactStorage | None = None,
+    session_storage: SessionStorage | None = None,
+    course_storage: CourseStorage | None = None,
 ) -> FastAPI:
     """Assemble the FastAPI application and its storage-backed dependencies.
 
     Args:
         inference_backend: Inference backend instance to inject into the app.
         data_dir: Base directory used for filesystem-backed persistence.
+        artifact_storage: Optional prebuilt artifact storage implementation.
+        session_storage: Optional prebuilt session storage implementation.
+        course_storage: Optional prebuilt course storage implementation.
 
     Returns:
         FastAPI: Configured application instance with all routers mounted.
     """
     data_path = Path(data_dir)
 
-    # Infrastructure wiring (composition root)
-    artifact_storage: ArtifactStorage = FileSystemArtifactStorage(data_path)
-    session_storage: SessionStorage = FileSystemSessionStorage(data_path)
-    course_storage: CourseStorage = FileSystemCourseStorage(data_path)
-    inference_backend = inference_backend
+    if artifact_storage is None or session_storage is None or course_storage is None:
+        from plexa_server.db.config import get_database_config
+
+        database_config = get_database_config()
+        use_database = database_config.is_configured and data_path == DATA_PATH
+        if use_database:
+            from plexa_server.db.session import create_session_factory
+            from plexa_server.storage.postgres import (
+                PostgresArtifactStorage,
+                PostgresCourseStorage,
+                PostgresSessionStorage,
+            )
+
+            session_factory = create_session_factory(
+                database_config.resolved_async_url(),
+                echo=database_config.echo,
+            )
+            artifact_storage = PostgresArtifactStorage(session_factory)
+            session_storage = PostgresSessionStorage(session_factory)
+            course_storage = PostgresCourseStorage(session_factory)
+        else:
+            artifact_storage = FileSystemArtifactStorage(data_path)
+            session_storage = FileSystemSessionStorage(data_path)
+            course_storage = FileSystemCourseStorage(data_path)
 
     session_manager = SessionManager(
         storage=session_storage,

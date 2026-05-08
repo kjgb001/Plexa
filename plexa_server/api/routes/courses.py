@@ -21,7 +21,7 @@ def get_course_router(
     router = APIRouter(prefix="/courses", tags=["courses"])
 
     @router.get("")
-    def list_discoverable_courses(
+    async def list_discoverable_courses(
         user_id: str = Depends(require_user_id)
     ):
         """List courses that are currently marked discoverable.
@@ -32,7 +32,7 @@ def get_course_router(
         Returns:
             dict: Mapping containing discoverable course documents.
         """
-        courses = course_storage.list_courses()
+        courses = await course_storage.list_courses()
 
         visible = [
             c for c in courses
@@ -42,7 +42,7 @@ def get_course_router(
         return {"courses": visible}
 
     @router.get("/{course_id}")
-    def get_course(
+    async def get_course(
         course_id: str,
         user_id: str = Depends(require_user_id)
     ):
@@ -59,7 +59,7 @@ def get_course_router(
             HTTPException: If the course does not exist or is not visible to
                 the caller.
         """
-        course = course_storage.get_course(course_id)
+        course = await course_storage.get_course(course_id)
 
         if course is None:
             raise HTTPException(status_code=404, detail="Course not found")
@@ -75,7 +75,7 @@ def get_course_router(
 
 
     @router.get("/{course_id}/lessons")
-    def get_course_lessons(
+    async def get_course_lessons(
         course_id: str,
         user_id: str = Depends(require_user_id)
     ) -> CourseLessonsResponse:
@@ -92,7 +92,7 @@ def get_course_router(
             HTTPException: If the course does not exist or is not visible to
                 the caller.
         """
-        course = course_storage.get_course(course_id)
+        course = await course_storage.get_course(course_id)
 
         if (
             course is None
@@ -105,12 +105,14 @@ def get_course_router(
         else:
             lessons = []
             for lesson_id, lesson_version in course.lessons.items():
-                lessons.append(artifact_storage.load_lesson(lesson_id, lesson_version))
+                lesson = await artifact_storage.load_lesson(lesson_id, lesson_version)
+                if lesson is not None:
+                    lessons.append(lesson)
             return CourseLessonsResponse(lessons=lessons)
         
 
     @router.post("/{course_id}/enroll")
-    def request_enrollment(
+    async def request_enrollment(
         course_id: str,
         user_id: str = Depends(require_user_id)
     ):
@@ -126,7 +128,7 @@ def get_course_router(
         Raises:
             HTTPException: If the course does not exist or is not discoverable.
         """
-        course = course_storage.get_course(course_id)
+        course = await course_storage.get_course(course_id)
 
         if course is None or not course.discoverable:
             raise HTTPException(status_code=404, detail="Course not found")
@@ -136,13 +138,13 @@ def get_course_router(
 
         if user_id not in course.pending_requests:
             course.pending_requests.append(user_id)
-            course_storage.save_course(course)
+            await course_storage.save_course(course)
 
         return {"status": "pending"}
 
 
     @router.get("/{course_id}/requests")
-    def view_requests(
+    async def view_requests(
         course_id: str,
         user_id: str = Depends(require_user_id)
     ):
@@ -159,7 +161,7 @@ def get_course_router(
             HTTPException: If the course does not exist or the caller is not
                 the owner.
         """
-        course = course_storage.get_course(course_id)
+        course = await course_storage.get_course(course_id)
 
         if course is None or user_id != course.owner_id:
             raise HTTPException(status_code=404, detail="Course not found")
@@ -168,7 +170,7 @@ def get_course_router(
 
 
     @router.post("/{course_id}/approve")
-    def approve_student(
+    async def approve_student(
         course_id: str,
         payload: dict,
         user_id: str = Depends(require_user_id)
@@ -189,7 +191,7 @@ def get_course_router(
         """
         target_user = payload.get("user_id")
 
-        course = course_storage.get_course(course_id)
+        course = await course_storage.get_course(course_id)
 
         if (
             course is None
@@ -204,13 +206,13 @@ def get_course_router(
             if target_user not in course.enrolled_users:
                 course.enrolled_users.append(target_user)
 
-            course_storage.save_course(course)
+            await course_storage.save_course(course)
 
         return {"status": "approved"}
 
 
     @router.post("/{course_id}/remove")
-    def remove_student(
+    async def remove_student(
         course_id: str,
         payload: dict,
         user_id: str = Depends(require_user_id)
@@ -231,7 +233,7 @@ def get_course_router(
         """
         target_user = payload.get("user_id")
 
-        course = course_storage.get_course(course_id)
+        course = await course_storage.get_course(course_id)
 
         if (
             course is None
@@ -242,7 +244,7 @@ def get_course_router(
 
         if target_user in course.enrolled_users:
             course.enrolled_users.remove(target_user)
-            course_storage.save_course(course)
+            await course_storage.save_course(course)
 
         return {"status": "removed"}
 

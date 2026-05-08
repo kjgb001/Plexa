@@ -73,7 +73,7 @@ def get_sessions_router(
         response_model=CreateSessionResponse,
         status_code=status.HTTP_201_CREATED,
     )
-    def create_session(
+    async def create_session(
         course_id: str,
         lesson_id: str,
         lesson_version: str,
@@ -94,7 +94,7 @@ def get_sessions_router(
             HTTPException: If the lesson does not exist, the course does not
                 exist, or the caller is not allowed to create a session.
         """
-        lesson = artifact_storage.load_lesson(
+        lesson = await artifact_storage.load_lesson(
             lesson_id=lesson_id,
             version=lesson_version,
         )
@@ -105,7 +105,7 @@ def get_sessions_router(
                 detail="Lesson not found",
             )
 
-        course = course_storage.get_course(course_id)
+        course = await course_storage.get_course(course_id)
         if course is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -117,7 +117,7 @@ def get_sessions_router(
                 detail="Course not found."
             )
 
-        session = session_manager.create_session(
+        session = await session_manager.create_session(
             lesson=lesson,
             user_id=user_id,
             course_id=course_id
@@ -135,7 +135,7 @@ def get_sessions_router(
         "/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions",
         response_model=ListSessionsResponse,
     )
-    def list_sessions(
+    async def list_sessions(
         course_id: str,
         lesson_id: str,
         lesson_version: str,
@@ -156,7 +156,7 @@ def get_sessions_router(
             HTTPException: If the lesson does not exist, the course does not
                 exist, or the caller is not allowed to view sessions for it.
         """
-        lesson = artifact_storage.load_lesson(
+        lesson = await artifact_storage.load_lesson(
             lesson_id=lesson_id,
             version=lesson_version,
         )
@@ -167,7 +167,7 @@ def get_sessions_router(
                 detail="Lesson not found",
             )
 
-        course = course_storage.get_course(course_id)
+        course = await course_storage.get_course(course_id)
         if course is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -179,7 +179,7 @@ def get_sessions_router(
                 detail="Course not found."
             )
 
-        sessions = session_manager.list_sessions(
+        sessions = await session_manager.list_sessions(
             user_id=user_id,
             course_id=course_id,
             lesson_id=lesson_id,
@@ -197,7 +197,7 @@ def get_sessions_router(
         "/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}/messages",
         response_model=SendMessageResponse,
     )
-    def send_message(
+    async def send_message(
         session_id: str,
         course_id: str,
         lesson_id: str,
@@ -223,16 +223,16 @@ def get_sessions_router(
         message_id = request.message_id or str(uuid4())
 
         try:
-            session = get_owned_session(session_manager, session_id, user_id)
+            session = await get_owned_session(session_manager, session_id, user_id)
             check_session_path(session, course_id, lesson_id, lesson_version)
 
-            assistant_message = session_manager.submit_user_message(
+            assistant_message = await session_manager.submit_user_message(
                 session_id=session_id,
                 message_id=message_id,
                 content=request.content,
             )
 
-            session = session_manager.get_session(session_id)
+            session = await session_manager.get_session(session_id)
 
             return SendMessageResponse(
                 assistant_message=assistant_message,
@@ -255,7 +255,7 @@ def get_sessions_router(
         "/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}",
         response_model=CreateSessionResponse,
     )
-    def get_session(
+    async def get_session(
         session_id: str,
         course_id: str,
         lesson_id: str,
@@ -277,7 +277,7 @@ def get_sessions_router(
                 session does not exist.
         """
         try:
-            session = get_owned_session(session_manager, session_id, user_id)
+            session = await get_owned_session(session_manager, session_id, user_id)
             check_session_path(session, course_id, lesson_id, lesson_version)
 
             return CreateSessionResponse(
@@ -295,7 +295,7 @@ def get_sessions_router(
         "/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}/close",
         response_model=SessionResponse,
     )
-    def close_session(
+    async def close_session(
         session_id: str,
         course_id: str,
         lesson_id: str,
@@ -319,11 +319,11 @@ def get_sessions_router(
                 session is already closed.
         """
         try:
-            session = get_owned_session(session_manager, session_id, user_id)
+            session = await get_owned_session(session_manager, session_id, user_id)
             check_session_path(session, course_id, lesson_id, lesson_version)
 
-            session_manager.close_session(session_id)
-            session = session_manager.get_session(session_id)
+            await session_manager.close_session(session_id)
+            session = await session_manager.get_session(session_id)
             return SessionResponse.from_session(session)
 
         except SessionClosedError:
@@ -336,7 +336,7 @@ def get_sessions_router(
         "/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}/delete",
         response_model=DeleteSessionResponse,
     )
-    def delete_session(
+    async def delete_session(
         session_id: str,
         course_id: str,
         lesson_id: str,
@@ -359,10 +359,10 @@ def get_sessions_router(
             HTTPException: If the caller does not own the session or the
                 session does not exist.
         """
-        session = get_owned_session(session_manager, session_id, user_id)
+        session = await get_owned_session(session_manager, session_id, user_id)
         check_session_path(session, course_id, lesson_id, lesson_version)
 
-        session_manager.delete_session(session_id)
+        await session_manager.delete_session(session_id)
 
         return DeleteSessionResponse(
             status="deleted",

@@ -1,14 +1,10 @@
-from fastapi import APIRouter, Header, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from pathlib import Path
-import os
-import json
 
 from plexa_server.models.lesson import Lesson
 from plexa_server.models.course import Course
 from plexa_server.auth.admin import require_admin_token
-from plexa_server.auth.user import require_user_id
 from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage
 
 
@@ -33,7 +29,7 @@ def get_admin_router(
     # Upload Lesson
 
     @router.post("/lessons")
-    def upload_lesson(
+    async def upload_lesson(
         lesson_payload: dict,
         _: str = Depends(require_admin_token),
     ):
@@ -59,14 +55,14 @@ def get_admin_router(
                 },
             )
 
-        existing = artifact_storage.load_lesson(
+        existing = await artifact_storage.load_lesson(
             lesson.identity.lesson_id,
             lesson.identity.version,
         )
 
         overwritten = existing is not None
 
-        artifact_storage.save_lesson(lesson)
+        await artifact_storage.save_lesson(lesson)
 
         return {
             "status": "ok",
@@ -79,7 +75,7 @@ def get_admin_router(
     # Get Lesson
 
     @router.get("/lessons/{lesson_id}/{version}")
-    def get_lesson(
+    async def get_lesson(
         lesson_id: str,
         version: str,
         _: str = Depends(require_admin_token),
@@ -97,7 +93,7 @@ def get_admin_router(
         Raises:
             HTTPException: If the requested lesson does not exist.
         """
-        lesson = artifact_storage.load_lesson(lesson_id, version)
+        lesson = await artifact_storage.load_lesson(lesson_id, version)
 
         if lesson is None:
             raise HTTPException(
@@ -111,7 +107,7 @@ def get_admin_router(
     # Create Course
 
     @router.post("/courses")
-    def create_course(
+    async def create_course(
         payload: Course,
         _: str = Depends(require_admin_token),
     ):
@@ -127,7 +123,7 @@ def get_admin_router(
         Raises:
             HTTPException: If a course with the same id already exists.
         """
-        existing = course_storage.get_course(payload.course_id)
+        existing = await course_storage.get_course(payload.course_id)
 
         if existing is not None:
             raise HTTPException(
@@ -135,14 +131,14 @@ def get_admin_router(
                 detail="Course already exists",
             )
 
-        course_storage.save_course(payload)
+        await course_storage.save_course(payload)
         return payload
 
 
     # Get Course
 
     @router.get("/courses/{course_id}")
-    def get_course(
+    async def get_course(
         course_id: str,
         _: str = Depends(require_admin_token),
     ):
@@ -158,7 +154,7 @@ def get_admin_router(
         Raises:
             HTTPException: If the requested course does not exist.
         """
-        course = course_storage.get_course(course_id)
+        course = await course_storage.get_course(course_id)
 
         if course is None:
             raise HTTPException(
@@ -172,7 +168,7 @@ def get_admin_router(
     # List Courses
 
     @router.get("/courses")
-    def list_courses(
+    async def list_courses(
         _: str = Depends(require_admin_token),
     ):
         """List all persisted courses for administrative inspection.
@@ -183,14 +179,14 @@ def get_admin_router(
         Returns:
             dict: Mapping containing all persisted courses.
         """
-        courses = course_storage.list_courses()
+        courses = await course_storage.list_courses()
         return {"courses": courses}
 
 
     # Update Course (metadata only)
 
     @router.put("/courses/{course_id}")
-    def update_course(
+    async def update_course(
         course_id: str,
         payload: Course,
         _: str = Depends(require_admin_token),
@@ -208,7 +204,7 @@ def get_admin_router(
         Raises:
             HTTPException: If the requested course does not exist.
         """
-        existing = course_storage.get_course(course_id)
+        existing = await course_storage.get_course(course_id)
 
         if existing is None:
             raise HTTPException(
@@ -219,14 +215,14 @@ def get_admin_router(
         # Preserve lesson bindings
         payload.lessons = existing.lessons
 
-        course_storage.save_course(payload)
+        await course_storage.save_course(payload)
         return payload
 
 
     # Delete Course
 
     @router.delete("/courses/{course_id}")
-    def delete_course(
+    async def delete_course(
         course_id: str,
         _: str = Depends(require_admin_token),
     ):
@@ -242,7 +238,7 @@ def get_admin_router(
         Raises:
             HTTPException: If the requested course does not exist.
         """
-        existing = course_storage.get_course(course_id)
+        existing = await course_storage.get_course(course_id)
 
         if existing is None:
             raise HTTPException(
@@ -250,7 +246,7 @@ def get_admin_router(
                 detail="Course not found",
             )
 
-        course_storage.delete_course(course_id)
+        await course_storage.delete_course(course_id)
 
         return {
             "status": "deleted",
@@ -261,7 +257,7 @@ def get_admin_router(
     # Bind Lesson to Course
 
     @router.post("/courses/{course_id}/lessons")
-    def bind_lesson(
+    async def bind_lesson(
         course_id: str,
         payload: dict,
         _: str = Depends(require_admin_token),
@@ -293,14 +289,24 @@ def get_admin_router(
                 },
             )
 
-        lesson = artifact_storage.load_lesson(lesson_id, version)
+        lesson = await artifact_storage.load_lesson(lesson_id, version)
         if lesson is None:
             raise HTTPException(
                 status_code=404,
                 detail="Lesson not found",
             )
 
-        course_storage.bind_lesson_to_course(course_id, lesson_id, version)
+        course = await course_storage.get_course(course_id)
+        if course is None:
+            course = Course(
+                course_id=course_id,
+                title=course_id,
+                owner_id="system",
+                lessons={lesson_id: version},
+            )
+            await course_storage.save_course(course)
+        else:
+            await course_storage.bind_lesson_to_course(course_id, lesson_id, version)
 
         return {
             "status": "ok",
@@ -313,7 +319,7 @@ def get_admin_router(
     # Get Course Lessons
 
     @router.get("/courses/{course_id}/lessons")
-    def get_course_lessons(
+    async def get_course_lessons(
         course_id: str,
         _: str = Depends(require_admin_token),
     ):
@@ -329,20 +335,12 @@ def get_admin_router(
         Raises:
             HTTPException: If the requested course does not exist.
         """
-        course_path = (
-            artifact_storage.base_path
-            / "configs"
-            / "courses"
-            / f"{course_id}.json"
-        )
-
-        if not course_path.exists():
+        course = await course_storage.get_course(course_id)
+        if course is None:
             raise HTTPException(
                 status_code=404,
                 detail="Course not found",
             )
-
-        with open(course_path, "r") as f:
-            return json.load(f)
+        return course.model_dump(mode="json")
 
     return router

@@ -1,36 +1,33 @@
+import asyncio
 import pytest
-import os
-
-from plexa_server.storage.filesystem import FileSystemSessionStorage
 from plexa_server.core.sessions import SessionManager, SessionClosedError
-from plexa_server.utils.lock_manager import LockManager
 from plexa_server.models.lesson import Lesson
 from plexa_server.inference.stub import StubInference
 
 from plexa_server.tests.fixtures import make_valid_lesson_payload
 
 
-def test_full_lesson_lifecycle_with_stub(tmp_path):
-    storage = FileSystemSessionStorage(tmp_path)
+def run(coro):
+    return asyncio.run(coro)
+
+
+def test_full_lesson_lifecycle_with_stub(setup_manager, storage_backend):
     inference = StubInference()
     course_id = "CS101"
 
-    manager = SessionManager(
-        storage=storage,
-        inference_backend=inference,
-    )
+    manager, storage = setup_manager(inference_backend=inference)
 
     lesson = Lesson.model_validate(make_valid_lesson_payload())
 
     # Create session
-    manager.create_session(
+    run(manager.create_session(
         session_id="s1",
         lesson=lesson,
         user_id="user-1",
         course_id=course_id
-    )
+    ))
 
-    session = storage.get_session("s1")
+    session = run(storage.get_session("s1"))
 
     # Initial system injection
     assert len(session.messages) == 1
@@ -39,9 +36,9 @@ def test_full_lesson_lifecycle_with_stub(tmp_path):
     assert session.is_active is True
 
     # First turn
-    manager.submit_user_message("s1", "m1", "Hello world")
+    run(manager.submit_user_message("s1", "m1", "Hello world"))
 
-    session = storage.get_session("s1")
+    session = run(storage.get_session("s1"))
 
     assert session.turn_count == 1
     assert len(session.messages) == 3  # system + user + assistant
@@ -50,9 +47,9 @@ def test_full_lesson_lifecycle_with_stub(tmp_path):
     assert session.is_active is True
 
     # Second turn (should close session)
-    manager.submit_user_message("s1", "m2", "Second message")
+    run(manager.submit_user_message("s1", "m2", "Second message"))
 
-    session = storage.get_session("s1")
+    session = run(storage.get_session("s1"))
 
     assert session.turn_count == 2
     assert session.is_active is False
@@ -60,7 +57,7 @@ def test_full_lesson_lifecycle_with_stub(tmp_path):
 
     # Further submission should fail
     with pytest.raises(SessionClosedError):
-        manager.submit_user_message("s1", "m3", "Should fail")
+        run(manager.submit_user_message("s1", "m3", "Should fail"))
 
     # Verify final transcript shape
     roles = [m.role for m in session.messages]
@@ -74,39 +71,35 @@ def test_full_lesson_lifecycle_with_stub(tmp_path):
     ]
 
 
-def test_manual_close_and_reload_persists_state(tmp_path):
-    storage = FileSystemSessionStorage(tmp_path)
+def test_manual_close_and_reload_persists_state(setup_manager, storage_backend):
     inference = StubInference()
     course_id = "CS101"
 
-    manager = SessionManager(
-        storage=storage,
-        inference_backend=inference,
-    )
+    manager, storage = setup_manager(inference_backend=inference)
 
     lesson = Lesson.model_validate(make_valid_lesson_payload())
 
     assert lesson.constraints.turn_limit == 2
 
     # Create session
-    manager.create_session(
+    run(manager.create_session(
         session_id="s2",
         lesson=lesson,
         user_id="user-1",
         course_id=course_id
-    )
+    ))
 
     # First turn
-    manager.submit_user_message("s2", "m1", "First message")
+    run(manager.submit_user_message("s2", "m1", "First message"))
 
-    session = storage.get_session("s2")
+    session = run(storage.get_session("s2"))
     assert session.turn_count == 1
     assert session.is_active is True
 
     # Manually close session
-    manager.close_session("s2")
+    run(manager.close_session("s2"))
 
-    session = storage.get_session("s2")
+    session = run(storage.get_session("s2"))
     assert session.is_active is False
     assert session.turn_count == 1
 
@@ -117,7 +110,7 @@ def test_manual_close_and_reload_persists_state(tmp_path):
     )
 
     # Reload session from disk
-    session = storage.get_session("s2")
+    session = run(storage.get_session("s2"))
 
     assert session is not None
     assert session.is_active is False
@@ -125,21 +118,21 @@ def test_manual_close_and_reload_persists_state(tmp_path):
 
     # Attempt to send another message after reload
     with pytest.raises(SessionClosedError):
-        manager.submit_user_message("s2", "m2", "Should still fail")
+        run(manager.submit_user_message("s2", "m2", "Should still fail"))
 
     # Now test automatic deactivation on the SAME session lifecycle
     # Create a new session to reach turn limit
-    manager.create_session(
+    run(manager.create_session(
         session_id="s3",
         lesson=lesson,
         user_id="user-1",
         course_id=course_id
-    )
+    ))
 
-    manager.submit_user_message("s3", "m1", "First")
-    manager.submit_user_message("s3", "m2", "Second")
+    run(manager.submit_user_message("s3", "m1", "First"))
+    run(manager.submit_user_message("s3", "m2", "Second"))
 
-    session = storage.get_session("s3")
+    session = run(storage.get_session("s3"))
 
     assert session.turn_count == lesson.constraints.turn_limit
     assert session.is_active is False
@@ -150,12 +143,10 @@ def test_manual_close_and_reload_persists_state(tmp_path):
         inference_backend=inference,
     )
 
-    session = storage.get_session("s3")
+    session = run(storage.get_session("s3"))
 
     assert session.turn_count == lesson.constraints.turn_limit
     assert session.is_active is False
 
     with pytest.raises(SessionClosedError):
-        manager.submit_user_message("s3", "m3", "Exceeds limit")
-
-
+        run(manager.submit_user_message("s3", "m3", "Exceeds limit"))
