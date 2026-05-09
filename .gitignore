@@ -9,6 +9,9 @@ __pycache__/
 .env
 .venv/
 
+plexa_server/.env
+plexa_client/src/.env
+
 docs/build/
 
 .impeccable.md
