@@ -112,7 +112,7 @@ def get_sessions_router(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Course not found."
             )
-        if identity.user_id not in course.enrolled_users and identity.user_id != course.owner_id:
+        if identity.user_id not in course.enrolled_users and not course.has_instructor_access(identity.user_id):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Course not found."
@@ -174,7 +174,10 @@ def get_sessions_router(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Course not found."
             )
-        if identity.user_id not in course.enrolled_users and identity.user_id != course.owner_id:
+        if (
+            identity.user_id not in course.enrolled_users
+            and not course.has_instructor_access(identity.user_id)
+        ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Course not found."

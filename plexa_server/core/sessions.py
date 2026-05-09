@@ -16,6 +16,7 @@ from plexa_server.core.lessons import (
     build_initial_messages,
     freeze_inference_config,
 )
+from plexa_server.core.encrypted_logs import EncryptedLogService
 from plexa_server.storage.storage_interface import SessionStorage
 from plexa_server.utils.lock_manager import LockManager
 
@@ -46,16 +47,24 @@ class SessionManager:
     - Deterministic ordering
     """
 
-    def __init__(self, storage: SessionStorage, inference_backend: InferenceBackend):
+    def __init__(
+        self,
+        storage: SessionStorage,
+        inference_backend: InferenceBackend,
+        encrypted_log_service: EncryptedLogService | None = None,
+    ):
         """Initialize the session manager.
 
         Args:
             storage: Storage backend used to persist sessions and inference
                 configs.
             inference_backend: Backend used to generate assistant responses.
+            encrypted_log_service: Optional service used to persist encrypted
+                session log snapshots.
         """
         self._storage = storage
         self._inference = inference_backend
+        self._encrypted_logs = encrypted_log_service
         self._lock_manager = LockManager()
 
     async def create_session(
@@ -112,6 +121,7 @@ class SessionManager:
 
         await self._storage.save_session(session)
         await self._storage.save_inference_config(session_id, inference_config)
+        await self._persist_encrypted_log(session, inference_config, event_type="created")
 
         return session
 
@@ -180,6 +190,8 @@ class SessionManager:
             session.is_active = False
             session.closed_at = datetime.now(UTC)
             await self._storage.save_session(session)
+            inference_config = await self._storage.get_inference_config(session_id)
+            await self._persist_encrypted_log(session, inference_config, event_type="closed")
             self._lock_manager.release_lock(session_id)
 
     async def delete_session(self, session_id: str) -> None:
@@ -194,8 +206,10 @@ class SessionManager:
         lock = self._lock_manager.get_lock(session_id)
 
         with lock:
-            await self.get_session(session_id)
+            session = await self.get_session(session_id)
             await self._storage.delete_session(session_id)
+            if self._encrypted_logs is not None:
+                await self._encrypted_logs.delete_session_log(session.session_id)
             self._lock_manager.release_lock(session_id)
 
     async def submit_user_message(
@@ -272,5 +286,23 @@ class SessionManager:
                 session.closed_at = datetime.now(UTC)
 
             await self._storage.save_session(session)
+            await self._persist_encrypted_log(session, inference_config, event_type="message_commit")
 
             return assistant_message
+
+    async def _persist_encrypted_log(
+        self,
+        session: Session,
+        inference_config,
+        event_type,
+    ) -> None:
+        """Persist the encrypted log snapshot when logging is configured.
+
+        Args:
+            session: Session state snapshot to log.
+            inference_config: Frozen inference config associated with the session.
+            event_type: Lifecycle event that produced the current snapshot.
+        """
+        if self._encrypted_logs is None:
+            return
+        await self._encrypted_logs.persist_session_log(session, inference_config, event_type=event_type)

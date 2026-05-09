@@ -14,6 +14,7 @@ def test_valid_course_parses(valid_course_payload):
     assert course.title == "Intro to AI"
     assert isinstance(course.created_at, datetime)
     assert course.lessons == {}
+    assert course.instructor_ids == ["ignored"]
 
 
 # Missing Required Field
@@ -52,3 +53,16 @@ def test_lessons_must_be_mapping(valid_course_payload):
 
     with pytest.raises(ValidationError):
         Course.model_validate(broken)
+
+
+def test_owner_is_added_to_instructor_ids():
+    course = Course.model_validate(
+        {
+            "course_id": "CS101",
+            "title": "Intro to AI",
+            "owner_id": "owner-1",
+            "instructor_ids": ["assistant-1", "owner-1", "assistant-1"],
+        }
+    )
+
+    assert course.instructor_ids == ["owner-1", "assistant-1"]

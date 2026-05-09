@@ -7,6 +7,7 @@ from fastapi import HTTPException, Request
 
 from plexa_server.auth.identity import UserIdentity
 from plexa_server.core.sessions import SessionNotFoundError
+from plexa_server.models.course import Course
 
 
 def get_request_identity(request: Request) -> UserIdentity:
@@ -106,6 +107,12 @@ def ensure_course_owner(course_owner_id: str, identity: UserIdentity) -> None:
         HTTPException: If the caller is not the course owner.
     """
     if identity.user_id != course_owner_id:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+
+def ensure_course_instructor(course: Course, identity: UserIdentity) -> None:
+    """Require that the caller is an authorized instructor for the course."""
+    if not course.has_instructor_access(identity.user_id):
         raise HTTPException(status_code=404, detail="Course not found")
 
 

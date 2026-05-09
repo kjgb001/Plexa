@@ -201,6 +201,7 @@ def test_course_creation_sets_owner(client, admin_headers, valid_course_payload,
     data = response.json()
 
     assert data["owner_id"] == "Dr. Test"
+    assert data["instructor_ids"] == ["Dr. Test"]
     assert data["enrolled_users"] == ["tester", "Alice", "Bob"]
     assert data["pending_requests"] == []
 
@@ -380,3 +381,143 @@ def test_lesson_list(client, course_factory, lesson_factory, api_prefix, admin_h
 
     assert response.status_code == 200
     assert response.json()["lessons"][0]["identity"]["lesson_id"] == "test"
+
+
+def test_owner_can_add_and_remove_parallel_instructor(client, course_factory, api_prefix, storage_backend):
+    course_id = course_factory()
+
+    add_response = client.post(
+        f"{api_prefix}/courses/{course_id}/instructors",
+        json={"user_id": "assistant-1"},
+        headers={"X-User-Id": "ignored"},
+    )
+
+    assert add_response.status_code == 200
+    assert add_response.json()["owner_id"] == "ignored"
+    assert add_response.json()["instructor_ids"] == ["ignored", "assistant-1"]
+
+    list_response = client.get(
+        f"{api_prefix}/courses/{course_id}/instructors",
+        headers={"X-User-Id": "assistant-1"},
+    )
+
+    assert list_response.status_code == 200
+    assert list_response.json()["instructor_ids"] == ["ignored", "assistant-1"]
+
+    remove_response = client.delete(
+        f"{api_prefix}/courses/{course_id}/instructors/assistant-1",
+        headers={"X-User-Id": "ignored"},
+    )
+
+    assert remove_response.status_code == 200
+    assert remove_response.json()["instructor_ids"] == ["ignored"]
+
+
+def test_owner_cannot_be_removed_from_instructor_list(client, course_factory, api_prefix, storage_backend):
+    course_id = course_factory()
+
+    response = client.delete(
+        f"{api_prefix}/courses/{course_id}/instructors/ignored",
+        headers={"X-User-Id": "ignored"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Owner cannot be removed from instructor list"
+
+
+def test_instructor_log_access_boundary(client, session_factory, api_prefix, storage_backend):
+    session_id, lesson_id, lesson_version = session_factory()
+    course_id = "CS101"
+
+    client.post(
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}/messages",
+        json={"content": "Loggable turn"},
+        headers={"X-User-Id": "tester"},
+    )
+
+    client.post(
+        f"{api_prefix}/courses/{course_id}/instructors",
+        json={"user_id": "assistant-1"},
+        headers={"X-User-Id": "ignored"},
+    )
+
+    owner_logs = client.get(
+        f"{api_prefix}/courses/{course_id}/logs",
+        headers={"X-User-Id": "ignored"},
+    )
+    assert owner_logs.status_code == 200
+    assert len(owner_logs.json()["logs"]) == 1
+    assert owner_logs.json()["logs"][0]["instance_id"] == session_id
+
+    assistant_logs = client.get(
+        f"{api_prefix}/courses/{course_id}/logs",
+        headers={"X-User-Id": "assistant-1"},
+    )
+    assert assistant_logs.status_code == 200
+    assert len(assistant_logs.json()["logs"]) == 1
+
+    assistant_log = client.get(
+        f"{api_prefix}/courses/{course_id}/logs/{session_id}",
+        headers={"X-User-Id": "assistant-1"},
+    )
+    assert assistant_log.status_code == 200
+    assert assistant_log.json()["session"]["session_id"] == session_id
+
+    learner_log_list = client.get(
+        f"{api_prefix}/courses/{course_id}/logs",
+        headers={"X-User-Id": "tester"},
+    )
+    assert learner_log_list.status_code == 404
+
+    outsider_log = client.get(
+        f"{api_prefix}/courses/{course_id}/logs/{session_id}",
+        headers={"X-User-Id": "outsider"},
+    )
+    assert outsider_log.status_code == 404
+
+
+def test_parallel_instructor_can_create_own_session_but_list_only_their_own(
+    client,
+    course_factory,
+    lesson_factory,
+    api_prefix,
+    admin_headers,
+    storage_backend,
+):
+    course_id = course_factory()
+    lesson = lesson_factory()
+    lesson_id = lesson.identity.lesson_id
+    lesson_version = lesson.identity.version
+
+    client.post(
+        f"{api_prefix}/admin/courses/{course_id}/lessons",
+        json={"lesson_id": lesson_id, "version": lesson_version},
+        headers=admin_headers,
+    )
+    client.post(
+        f"{api_prefix}/courses/{course_id}/instructors",
+        json={"user_id": "assistant-1"},
+        headers={"X-User-Id": "ignored"},
+    )
+    learner_response = client.post(
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions",
+        headers={"X-User-Id": "tester"},
+    )
+    assert learner_response.status_code == 201
+
+    instructor_response = client.post(
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions",
+        headers={"X-User-Id": "assistant-1"},
+    )
+    assert instructor_response.status_code == 201
+    instructor_session_id = instructor_response.json()["session"]["session_id"]
+    assert instructor_response.json()["session"]["user_id"] == "assistant-1"
+
+    listed = client.get(
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions",
+        headers={"X-User-Id": "assistant-1"},
+    )
+    assert listed.status_code == 200
+    sessions = listed.json()["sessions"]
+    assert [session["session_id"] for session in sessions] == [instructor_session_id]
+    assert all(session["user_id"] == "assistant-1" for session in sessions)

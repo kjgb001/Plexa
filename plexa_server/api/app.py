@@ -19,6 +19,7 @@ from plexa_server.api.routes.health import get_health_router
 from plexa_server.api.routes.admin import get_admin_router
 from plexa_server.api.routes.courses import get_course_router
 from plexa_server.auth.middleware import auth_identity_middleware
+from plexa_server.core.encrypted_logs import EncryptedLogService
 from plexa_server.utils.filesystem_data_dir import get_data_dir_path
 
 
@@ -72,9 +73,11 @@ def build_app(
             session_storage = FileSystemSessionStorage(data_path)
             course_storage = FileSystemCourseStorage(data_path)
 
+    encrypted_log_service = EncryptedLogService.from_env(artifact_storage, course_storage)
     session_manager = SessionManager(
         storage=session_storage,
         inference_backend=inference_backend,
+        encrypted_log_service=encrypted_log_service,
     )
 
     # FastAPI app
@@ -92,7 +95,8 @@ def build_app(
     api_router.include_router(
         get_course_router(
             course_storage=course_storage,
-            artifact_storage=artifact_storage
+            artifact_storage=artifact_storage,
+            encrypted_log_service=encrypted_log_service,
         )
     )
     api_router.include_router(

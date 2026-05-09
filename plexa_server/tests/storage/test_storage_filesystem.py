@@ -12,6 +12,7 @@ from plexa_server.storage.filesystem import (
 from plexa_server.models.lesson import Lesson
 from plexa_server.models.session import Session
 from plexa_server.models.course import Course
+from plexa_server.models.encrypted_log import EncryptedLogMetadata
 from plexa_server.inference.base import InferenceConfig
 from plexa_server.tests.fixtures import make_valid_lesson_payload
 
@@ -65,11 +66,51 @@ def test_artifact_storage_log_roundtrip(tmp_path: Path):
     storage = FileSystemArtifactStorage(tmp_path)
 
     blob = b"encrypted-data"
-    run(storage.save_encrypted_log("abc", blob))
+    metadata = EncryptedLogMetadata(
+        instance_id="abc",
+        user_id="tester",
+        course_id="CS101",
+        lesson_id="lesson-1",
+        lesson_version="0.1.0",
+        course_owner_id="owner-1",
+        authorized_instructor_ids=["owner-1", "assistant-1"],
+        created_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:00Z",
+        turn_count=0,
+        is_active=True,
+        log_version=1,
+        artifact_sha256="abc",
+        last_event_type="created",
+        last_event_at="2026-01-01T00:00:00Z",
+        key_id="server-managed:v1",
+    )
+    run(storage.save_encrypted_log("abc", blob, metadata=metadata))
 
     loaded = run(storage.load_encrypted_log("abc"))
+    loaded_metadata = run(storage.load_encrypted_log_metadata("abc"))
 
     assert loaded == blob
+    assert loaded_metadata is not None
+    assert loaded_metadata.course_id == "CS101"
+    assert loaded_metadata.authorized_instructor_ids == ["owner-1", "assistant-1"]
+    listed = run(storage.list_encrypted_log_metadata(course_id="CS101", owner_id="owner-1"))
+    assert len(listed) == 1
+    assert listed[0].instance_id == "abc"
+    listed_for_instructor = run(
+        storage.list_encrypted_log_metadata(course_id="CS101", instructor_id="assistant-1")
+    )
+    assert len(listed_for_instructor) == 1
+    assert listed_for_instructor[0].instance_id == "abc"
+
+
+def test_artifact_storage_log_delete(tmp_path: Path):
+    storage = FileSystemArtifactStorage(tmp_path)
+
+    run(storage.save_encrypted_log("abc", b"encrypted-data"))
+    run(storage.delete_encrypted_log("abc"))
+
+    assert run(storage.load_encrypted_log("abc")) is None
+    assert run(storage.load_encrypted_log_metadata("abc")) is None
 
 
 def test_session_storage_roundtrip(tmp_path: Path):
@@ -134,6 +175,7 @@ def test_course_storage_roundtrip(tmp_path: Path, valid_course_payload):
     assert loaded is not None
     assert loaded.course_id == course.course_id
     assert loaded.title == course.title
+    assert loaded.instructor_ids == [course.owner_id]
 
 
 def test_course_storage_delete(tmp_path: Path, valid_course_payload):

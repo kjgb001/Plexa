@@ -51,6 +51,10 @@ class CourseRecord(Base):
         back_populates="course",
         cascade="all, delete-orphan",
     )
+    instructors: Mapped[list[CourseInstructorRecord]] = relationship(
+        back_populates="course",
+        cascade="all, delete-orphan",
+    )
     pending_requests: Mapped[list[CoursePendingRequestRecord]] = relationship(
         back_populates="course",
         cascade="all, delete-orphan",
@@ -86,6 +90,20 @@ class CoursePendingRequestRecord(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
     course: Mapped[CourseRecord] = relationship(back_populates="pending_requests")
+    user: Mapped[UserRecord] = relationship()
+
+
+class CourseInstructorRecord(Base):
+    """Authorized instructor join row between a user and a course."""
+
+    __tablename__ = "course_instructors"
+    __table_args__ = (UniqueConstraint("course_id", "user_id", name="uq_course_instructor"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    course_id: Mapped[int] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
+    course: Mapped[CourseRecord] = relationship(back_populates="instructors")
     user: Mapped[UserRecord] = relationship()
 
 
@@ -180,11 +198,26 @@ class MessageRecord(Base):
 
 
 class EncryptedLogRecord(Base):
-    """Opaque encrypted log payload."""
+    """Encrypted session log artifact plus plaintext lookup metadata."""
 
     __tablename__ = "encrypted_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     instance_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    user_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    course_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    lesson_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    lesson_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    course_owner_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    authorized_instructor_ids: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    turn_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_active: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    log_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    artifact_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_event_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_event_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    key_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     encrypted_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)

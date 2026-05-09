@@ -8,6 +8,7 @@ from plexa_server.models.lesson import Lesson
 from plexa_server.models.session import Session
 from plexa_server.models.course import Course
 from plexa_server.inference.base import InferenceConfig
+from plexa_server.models.encrypted_log import EncryptedLogMetadata
 from plexa_server.storage.storage_interface import (
     ArtifactStorage,
     CourseStorage,
@@ -98,16 +99,25 @@ class FileSystemArtifactStorage(ArtifactStorage):
 
         return Lesson.model_validate(data)
 
-    async def save_encrypted_log(self, instance_id: str, encrypted_blob: bytes) -> None:
-        """Persist an opaque encrypted log blob for a lesson instance.
+    async def save_encrypted_log(
+        self,
+        instance_id: str,
+        encrypted_blob: bytes,
+        metadata: EncryptedLogMetadata | None = None,
+    ) -> None:
+        """Persist an opaque encrypted log blob and optional plaintext metadata.
 
         Args:
             instance_id: Identifier used as the log filename stem.
             encrypted_blob: Encrypted bytes to store without inspection.
+            metadata: Optional plaintext metadata describing the artifact.
         """
         log_file = self.logs_path / f"{instance_id}.log"
         with log_file.open("wb") as f:
             f.write(encrypted_blob)
+        if metadata is not None:
+            metadata_file = self.logs_path / f"{instance_id}.meta.json"
+            _atomic_write(metadata_file, metadata.model_dump_json(indent=2))
 
     async def load_encrypted_log(self, instance_id: str) -> Optional[bytes]:
         """Load an encrypted log blob.
@@ -125,6 +135,75 @@ class FileSystemArtifactStorage(ArtifactStorage):
 
         with log_file.open("rb") as f:
             return f.read()
+
+    async def load_encrypted_log_metadata(self, instance_id: str) -> Optional[EncryptedLogMetadata]:
+        """Load plaintext metadata describing an encrypted log blob.
+
+        Args:
+            instance_id: Identifier used as the log filename stem.
+
+        Returns:
+            Optional[EncryptedLogMetadata]: Stored metadata, or `None` if absent.
+        """
+        metadata_file = self.logs_path / f"{instance_id}.meta.json"
+        if not metadata_file.exists():
+            return None
+
+        with metadata_file.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        return EncryptedLogMetadata.model_validate(data)
+
+    async def list_encrypted_log_metadata(
+        self,
+        course_id: str | None = None,
+        lesson_id: str | None = None,
+        lesson_version: str | None = None,
+        owner_id: str | None = None,
+        instructor_id: str | None = None,
+        user_id: str | None = None,
+    ) -> list[EncryptedLogMetadata]:
+        """List plaintext metadata for encrypted session logs.
+
+        Args:
+            course_id: Optional course filter.
+            lesson_id: Optional lesson filter.
+            lesson_version: Optional lesson version filter.
+            owner_id: Optional course owner filter.
+            instructor_id: Optional authorized instructor filter.
+            user_id: Optional student/user filter.
+
+        Returns:
+            list[EncryptedLogMetadata]: Matching metadata records.
+        """
+        results: list[EncryptedLogMetadata] = []
+        for metadata_file in self.logs_path.glob("*.meta.json"):
+            with metadata_file.open("r", encoding="utf-8") as f:
+                metadata = EncryptedLogMetadata.model_validate(json.load(f))
+            if course_id is not None and metadata.course_id != course_id:
+                continue
+            if lesson_id is not None and metadata.lesson_id != lesson_id:
+                continue
+            if lesson_version is not None and metadata.lesson_version != lesson_version:
+                continue
+            if owner_id is not None and metadata.course_owner_id != owner_id:
+                continue
+            if instructor_id is not None and instructor_id not in metadata.authorized_instructor_ids:
+                continue
+            if user_id is not None and metadata.user_id != user_id:
+                continue
+            results.append(metadata)
+        return results
+
+    async def delete_encrypted_log(self, instance_id: str) -> None:
+        """Delete a stored encrypted log blob.
+
+        Args:
+            instance_id: Identifier used as the log filename stem.
+        """
+        log_file = self.logs_path / f"{instance_id}.log"
+        log_file.unlink(missing_ok=True)
+        metadata_file = self.logs_path / f"{instance_id}.meta.json"
+        metadata_file.unlink(missing_ok=True)
 
     async def health_check(self) -> bool:
         """Report whether the artifact filesystem paths are available.

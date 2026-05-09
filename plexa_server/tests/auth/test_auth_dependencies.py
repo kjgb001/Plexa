@@ -5,6 +5,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from plexa_server.auth.dependencies import (
+    ensure_course_instructor,
     ensure_course_owner,
     ensure_enrolled_or_owner,
     get_owned_session,
@@ -13,6 +14,7 @@ from plexa_server.auth.dependencies import (
 )
 from plexa_server.auth.identity import UserIdentity
 from plexa_server.auth.middleware import auth_identity_middleware
+from plexa_server.models.course import Course
 from plexa_server.core.sessions import SessionNotFoundError
 from plexa_server.models.session import Session
 from plexa_server.tests.fixtures import make_valid_lesson_payload
@@ -173,6 +175,38 @@ def test_ensure_course_owner_rejects_non_owner():
 
     with pytest.raises(HTTPException) as exc_info:
         ensure_course_owner("owner-1", identity)
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Course not found"
+
+
+def test_ensure_course_instructor_allows_authorized_instructor():
+    course = Course.model_validate(
+        {
+            "course_id": "CS101",
+            "title": "Intro",
+            "owner_id": "owner-1",
+            "instructor_ids": ["owner-1", "assistant-1"],
+        }
+    )
+    identity = UserIdentity(user_id="assistant-1", roles={"user"}, auth_type="dev_header")
+
+    ensure_course_instructor(course, identity)
+
+
+def test_ensure_course_instructor_rejects_non_instructor():
+    course = Course.model_validate(
+        {
+            "course_id": "CS101",
+            "title": "Intro",
+            "owner_id": "owner-1",
+            "instructor_ids": ["owner-1", "assistant-1"],
+        }
+    )
+    identity = UserIdentity(user_id="student-1", roles={"user"}, auth_type="dev_header")
+
+    with pytest.raises(HTTPException) as exc_info:
+        ensure_course_instructor(course, identity)
 
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Course not found"

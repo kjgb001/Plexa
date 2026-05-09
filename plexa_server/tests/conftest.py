@@ -240,6 +240,7 @@ def setup_manager(session_storage, artifact_storage, course_storage):
             "title": "Intro to AI",
             "description": "Session manager backend test course",
             "owner_id": "test-owner",
+            "instructor_ids": ["test-owner"],
             "enrolled_users": ["user-1"],
             "discoverable": True,
             "lessons": {

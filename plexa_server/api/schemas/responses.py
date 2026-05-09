@@ -48,6 +48,41 @@ class CourseLessonsResponse(BaseModel):
     lessons: List[Lesson]
 
 
+class CourseInstructorsResponse(BaseModel):
+    """Response payload returned when listing or mutating course instructors."""
+
+    owner_id: str
+    instructor_ids: List[str]
+
+
+class EncryptedLogMetadataResponse(BaseModel):
+    """API projection of plaintext encrypted-log metadata."""
+
+    instance_id: str
+    user_id: str
+    course_id: str
+    lesson_id: str
+    lesson_version: str
+    course_owner_id: str
+    authorized_instructor_ids: List[str]
+    created_at: datetime
+    updated_at: datetime
+    closed_at: datetime | None
+    turn_count: int
+    is_active: bool
+    log_version: int
+    artifact_sha256: str
+    last_event_type: str
+    last_event_at: datetime
+    key_id: str
+
+
+class EncryptedLogListResponse(BaseModel):
+    """Response payload returned when listing course encrypted logs."""
+
+    logs: List[EncryptedLogMetadataResponse]
+
+
 class CreateSessionResponse(BaseModel):
     """Response payload for session creation and session fetch endpoints."""
 

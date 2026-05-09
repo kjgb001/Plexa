@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from plexa_server.db.models import (
     CourseEnrollmentRecord,
+    CourseInstructorRecord,
     CourseLessonRecord,
     CoursePendingRequestRecord,
     CourseRecord,
@@ -18,6 +19,7 @@ from plexa_server.db.models import (
     UserRecord,
 )
 from plexa_server.inference.base import InferenceConfig
+from plexa_server.models.encrypted_log import EncryptedLogMetadata
 from plexa_server.models.course import Course
 from plexa_server.models.lesson import Lesson
 from plexa_server.models.message import Message
@@ -101,6 +103,7 @@ def _course_from_record(record: CourseRecord) -> Course:
         instructor=record.instructor,
         term=record.term,
         owner_id=record.owner.external_user_id,
+        instructor_ids=[instructor.user.external_user_id for instructor in record.instructors],
         discoverable=record.discoverable,
         enrolled_users=[enrollment.user.external_user_id for enrollment in record.enrollments],
         pending_requests=[request.user.external_user_id for request in record.pending_requests],
@@ -259,12 +262,18 @@ class PostgresArtifactStorage(PostgresStorageMixin, ArtifactStorage):
                 return None
             return Lesson.model_validate(record.payload)
 
-    async def save_encrypted_log(self, instance_id: str, encrypted_blob: bytes) -> None:
+    async def save_encrypted_log(
+        self,
+        instance_id: str,
+        encrypted_blob: bytes,
+        metadata: EncryptedLogMetadata | None = None,
+    ) -> None:
         """Persist an encrypted lesson log blob.
 
         Args:
             instance_id: Identifier for the encrypted log.
             encrypted_blob: Opaque encrypted bytes to store.
+            metadata: Optional plaintext metadata describing the artifact.
         """
         async with self._session_factory() as session:
             result = await session.execute(
@@ -276,6 +285,23 @@ class PostgresArtifactStorage(PostgresStorageMixin, ArtifactStorage):
                 session.add(record)
             else:
                 record.encrypted_blob = encrypted_blob
+            if metadata is not None:
+                record.user_id = metadata.user_id
+                record.course_id = metadata.course_id
+                record.lesson_id = metadata.lesson_id
+                record.lesson_version = metadata.lesson_version
+                record.course_owner_id = metadata.course_owner_id
+                record.authorized_instructor_ids = metadata.authorized_instructor_ids
+                record.updated_at = metadata.updated_at
+                record.closed_at = metadata.closed_at
+                record.turn_count = metadata.turn_count
+                record.is_active = metadata.is_active
+                record.log_version = metadata.log_version
+                record.artifact_sha256 = metadata.artifact_sha256
+                record.last_event_type = metadata.last_event_type
+                record.last_event_at = metadata.last_event_at
+                record.key_id = metadata.key_id
+                record.created_at = metadata.created_at
             await session.commit()
 
     async def load_encrypted_log(self, instance_id: str) -> Optional[bytes]:
@@ -293,6 +319,120 @@ class PostgresArtifactStorage(PostgresStorageMixin, ArtifactStorage):
             )
             record = result.scalar_one_or_none()
             return None if record is None else record.encrypted_blob
+
+    async def load_encrypted_log_metadata(self, instance_id: str) -> Optional[EncryptedLogMetadata]:
+        """Load plaintext metadata describing an encrypted log blob.
+
+        Args:
+            instance_id: Identifier for the encrypted log.
+
+        Returns:
+            Optional[EncryptedLogMetadata]: Stored metadata, or `None` if absent.
+        """
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(EncryptedLogRecord).where(EncryptedLogRecord.instance_id == instance_id)
+            )
+            record = result.scalar_one_or_none()
+            if record is None or record.user_id is None or record.course_id is None or record.lesson_id is None or record.lesson_version is None or record.course_owner_id is None or record.authorized_instructor_ids is None or record.updated_at is None or record.turn_count is None or record.is_active is None or record.log_version is None or record.artifact_sha256 is None or record.last_event_type is None or record.last_event_at is None or record.key_id is None:
+                return None
+            return EncryptedLogMetadata(
+                instance_id=record.instance_id,
+                user_id=record.user_id,
+                course_id=record.course_id,
+                lesson_id=record.lesson_id,
+                lesson_version=record.lesson_version,
+                course_owner_id=record.course_owner_id,
+                authorized_instructor_ids=record.authorized_instructor_ids,
+                created_at=record.created_at,
+                updated_at=record.updated_at,
+                closed_at=record.closed_at,
+                turn_count=record.turn_count,
+                is_active=record.is_active,
+                log_version=record.log_version,
+                artifact_sha256=record.artifact_sha256,
+                last_event_type=record.last_event_type,
+                last_event_at=record.last_event_at,
+                key_id=record.key_id,
+            )
+
+    async def list_encrypted_log_metadata(
+        self,
+        course_id: str | None = None,
+        lesson_id: str | None = None,
+        lesson_version: str | None = None,
+        owner_id: str | None = None,
+        instructor_id: str | None = None,
+        user_id: str | None = None,
+    ) -> list[EncryptedLogMetadata]:
+        """List plaintext metadata for encrypted session logs.
+
+        Args:
+            course_id: Optional course filter.
+            lesson_id: Optional lesson filter.
+            lesson_version: Optional lesson version filter.
+            owner_id: Optional course owner filter.
+            instructor_id: Optional authorized instructor filter.
+            user_id: Optional student/user filter.
+
+        Returns:
+            list[EncryptedLogMetadata]: Matching metadata records.
+        """
+        async with self._session_factory() as session:
+            stmt = select(EncryptedLogRecord)
+            if course_id is not None:
+                stmt = stmt.where(EncryptedLogRecord.course_id == course_id)
+            if lesson_id is not None:
+                stmt = stmt.where(EncryptedLogRecord.lesson_id == lesson_id)
+            if lesson_version is not None:
+                stmt = stmt.where(EncryptedLogRecord.lesson_version == lesson_version)
+            if owner_id is not None:
+                stmt = stmt.where(EncryptedLogRecord.course_owner_id == owner_id)
+            if instructor_id is not None:
+                stmt = stmt.where(EncryptedLogRecord.authorized_instructor_ids.contains([instructor_id]))
+            if user_id is not None:
+                stmt = stmt.where(EncryptedLogRecord.user_id == user_id)
+
+            result = await session.execute(stmt)
+            records = result.scalars().all()
+            metadata: list[EncryptedLogMetadata] = []
+            for record in records:
+                if record.user_id is None or record.course_id is None or record.lesson_id is None or record.lesson_version is None or record.course_owner_id is None or record.authorized_instructor_ids is None or record.updated_at is None or record.turn_count is None or record.is_active is None or record.log_version is None or record.artifact_sha256 is None or record.last_event_type is None or record.last_event_at is None or record.key_id is None:
+                    continue
+                metadata.append(
+                    EncryptedLogMetadata(
+                        instance_id=record.instance_id,
+                        user_id=record.user_id,
+                        course_id=record.course_id,
+                        lesson_id=record.lesson_id,
+                        lesson_version=record.lesson_version,
+                        course_owner_id=record.course_owner_id,
+                        authorized_instructor_ids=record.authorized_instructor_ids,
+                        created_at=record.created_at,
+                        updated_at=record.updated_at,
+                        closed_at=record.closed_at,
+                        turn_count=record.turn_count,
+                        is_active=record.is_active,
+                        log_version=record.log_version,
+                        artifact_sha256=record.artifact_sha256,
+                        last_event_type=record.last_event_type,
+                        last_event_at=record.last_event_at,
+                        key_id=record.key_id,
+                    )
+                )
+            return metadata
+
+    async def delete_encrypted_log(self, instance_id: str) -> None:
+        """Delete an encrypted lesson log blob.
+
+        Args:
+            instance_id: Identifier for the encrypted log.
+        """
+        async with self._session_factory() as session:
+            await session.execute(
+                delete(EncryptedLogRecord).where(EncryptedLogRecord.instance_id == instance_id)
+            )
+            await session.commit()
 
     async def health_check(self) -> bool:
         """Report whether artifact storage is reachable.
@@ -325,6 +465,7 @@ class PostgresCourseStorage(PostgresStorageMixin, CourseStorage):
             .options(
                 selectinload(CourseRecord.owner),
                 selectinload(CourseRecord.enrollments).selectinload(CourseEnrollmentRecord.user),
+                selectinload(CourseRecord.instructors).selectinload(CourseInstructorRecord.user),
                 selectinload(CourseRecord.pending_requests).selectinload(CoursePendingRequestRecord.user),
                 selectinload(CourseRecord.lesson_bindings).selectinload(CourseLessonRecord.lesson),
             )
@@ -348,6 +489,7 @@ class PostgresCourseStorage(PostgresStorageMixin, CourseStorage):
                     course_id=course.course_id,
                     owner=owner,
                     enrollments=[],
+                    instructors=[],
                     pending_requests=[],
                     lesson_bindings=[],
                 )
@@ -370,6 +512,11 @@ class PostgresCourseStorage(PostgresStorageMixin, CourseStorage):
                     )
                 )
                 await session.execute(
+                    delete(CourseInstructorRecord).where(
+                        CourseInstructorRecord.course_id == record.id
+                    )
+                )
+                await session.execute(
                     delete(CoursePendingRequestRecord).where(
                         CoursePendingRequestRecord.course_id == record.id
                     )
@@ -381,12 +528,17 @@ class PostgresCourseStorage(PostgresStorageMixin, CourseStorage):
                 )
                 await session.flush()
                 record.enrollments = []
+                record.instructors = []
                 record.pending_requests = []
                 record.lesson_bindings = []
 
             for user_id in course.enrolled_users:
                 user = await self._get_or_create_user(session, user_id)
                 record.enrollments.append(CourseEnrollmentRecord(user=user))
+
+            for user_id in course.instructor_ids:
+                user = await self._get_or_create_user(session, user_id)
+                record.instructors.append(CourseInstructorRecord(user=user))
 
             for user_id in course.pending_requests:
                 user = await self._get_or_create_user(session, user_id)
@@ -439,6 +591,7 @@ class PostgresCourseStorage(PostgresStorageMixin, CourseStorage):
                 select(CourseRecord).options(
                     selectinload(CourseRecord.owner),
                     selectinload(CourseRecord.enrollments).selectinload(CourseEnrollmentRecord.user),
+                    selectinload(CourseRecord.instructors).selectinload(CourseInstructorRecord.user),
                     selectinload(CourseRecord.pending_requests).selectinload(CoursePendingRequestRecord.user),
                     selectinload(CourseRecord.lesson_bindings).selectinload(CourseLessonRecord.lesson),
                 )

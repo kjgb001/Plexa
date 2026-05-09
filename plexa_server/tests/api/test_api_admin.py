@@ -151,6 +151,7 @@ def test_create_course_success(client, admin_headers, valid_course_payload, api_
 
     assert data["course_id"] == "CS101"
     assert data["title"] == "Intro to AI"
+    assert data["instructor_ids"] == ["ignored"]
 
 
 def test_create_course_duplicate_fails(client, admin_headers, valid_course_payload, api_prefix, storage_backend):

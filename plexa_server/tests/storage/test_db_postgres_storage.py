@@ -2,6 +2,7 @@ import asyncio
 import pytest
 
 from plexa_server.inference.base import InferenceConfig
+from plexa_server.models.encrypted_log import EncryptedLogMetadata
 from plexa_server.models.course import Course
 from plexa_server.models.lesson import Lesson
 from plexa_server.models.message import Message
@@ -62,6 +63,7 @@ def test_postgres_roundtrip_for_core_models(
     loaded_course = run(course_storage.get_course(course.course_id))
     assert loaded_course is not None
     assert loaded_course.lessons[lesson.identity.lesson_id] == lesson.identity.version
+    assert loaded_course.instructor_ids == [course.owner_id]
 
     session = Session(
         session_id="postgres-session-1",
@@ -95,3 +97,46 @@ def test_postgres_roundtrip_for_core_models(
     assert loaded_session.messages[0].content == "Hello from postgres test."
     assert loaded_config is not None
     assert loaded_config.model == "stub-model"
+
+
+def test_postgres_encrypted_log_roundtrip(
+    artifact_storage,
+    storage_backend,
+):
+    metadata = EncryptedLogMetadata(
+        instance_id="postgres-log-1",
+        user_id="tester",
+        course_id="CS101",
+        lesson_id="lesson-1",
+        lesson_version="0.1.0",
+        course_owner_id="owner-1",
+        authorized_instructor_ids=["owner-1", "assistant-1"],
+        created_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:00Z",
+        turn_count=0,
+        is_active=True,
+        log_version=1,
+        artifact_sha256="abc",
+        last_event_type="created",
+        last_event_at="2026-01-01T00:00:00Z",
+        key_id="server-managed:v1",
+    )
+    run(artifact_storage.save_encrypted_log("postgres-log-1", b"opaque-encrypted-data", metadata=metadata))
+
+    loaded = run(artifact_storage.load_encrypted_log("postgres-log-1"))
+    loaded_metadata = run(artifact_storage.load_encrypted_log_metadata("postgres-log-1"))
+    assert loaded == b"opaque-encrypted-data"
+    assert loaded_metadata is not None
+    assert loaded_metadata.course_owner_id == "owner-1"
+    assert loaded_metadata.authorized_instructor_ids == ["owner-1", "assistant-1"]
+    listed = run(artifact_storage.list_encrypted_log_metadata(course_id="CS101", owner_id="owner-1"))
+    assert len(listed) == 1
+    assert listed[0].instance_id == "postgres-log-1"
+    listed_for_instructor = run(
+        artifact_storage.list_encrypted_log_metadata(course_id="CS101", instructor_id="assistant-1")
+    )
+    assert len(listed_for_instructor) == 1
+
+    run(artifact_storage.delete_encrypted_log("postgres-log-1"))
+    assert run(artifact_storage.load_encrypted_log("postgres-log-1")) is None
+    assert run(artifact_storage.load_encrypted_log_metadata("postgres-log-1")) is None

@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional
 
 from plexa_server.inference.base import InferenceConfig
+from plexa_server.models.encrypted_log import EncryptedLogMetadata
 from plexa_server.models.course import Course
 from plexa_server.models.lesson import Lesson
 from plexa_server.models.session import Session
@@ -31,12 +32,18 @@ class ArtifactStorage(ABC):
         """
 
     @abstractmethod
-    async def save_encrypted_log(self, instance_id: str, encrypted_blob: bytes) -> None:
+    async def save_encrypted_log(
+        self,
+        instance_id: str,
+        encrypted_blob: bytes,
+        metadata: EncryptedLogMetadata | None = None,
+    ) -> None:
         """Persist an encrypted lesson log blob.
 
         Args:
             instance_id: Identifier for the encrypted log.
             encrypted_blob: Opaque encrypted bytes to store.
+            metadata: Optional plaintext metadata describing the artifact.
         """
 
     @abstractmethod
@@ -48,6 +55,49 @@ class ArtifactStorage(ABC):
 
         Returns:
             Optional[bytes]: Stored encrypted bytes, or `None` if absent.
+        """
+
+    @abstractmethod
+    async def load_encrypted_log_metadata(self, instance_id: str) -> Optional[EncryptedLogMetadata]:
+        """Load plaintext metadata describing an encrypted lesson log blob.
+
+        Args:
+            instance_id: Identifier for the encrypted log.
+
+        Returns:
+            Optional[EncryptedLogMetadata]: Stored metadata, or `None` if absent.
+        """
+
+    @abstractmethod
+    async def list_encrypted_log_metadata(
+        self,
+        course_id: str | None = None,
+        lesson_id: str | None = None,
+        lesson_version: str | None = None,
+        owner_id: str | None = None,
+        instructor_id: str | None = None,
+        user_id: str | None = None,
+    ) -> list[EncryptedLogMetadata]:
+        """List plaintext metadata for encrypted session logs.
+
+        Args:
+            course_id: Optional course filter.
+            lesson_id: Optional lesson filter.
+            lesson_version: Optional lesson version filter.
+            owner_id: Optional course owner filter.
+            instructor_id: Optional authorized instructor filter.
+            user_id: Optional student/user filter.
+
+        Returns:
+            list[EncryptedLogMetadata]: Matching metadata records.
+        """
+
+    @abstractmethod
+    async def delete_encrypted_log(self, instance_id: str) -> None:
+        """Delete an encrypted lesson log blob.
+
+        Args:
+            instance_id: Identifier for the encrypted log.
         """
 
     @abstractmethod
