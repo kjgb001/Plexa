@@ -6,9 +6,11 @@ __pycache__/
 
 *uml.txt
 
+.env
 .venv/
 
 docs/build/
 
 .impeccable.md
 AGENTS.md
+
