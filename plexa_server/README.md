@@ -23,7 +23,7 @@ plexa_server/
 ├── auth/        # Auth helpers and request ownership checks
 ├── core/        # Session and lesson runtime logic
 ├── data/        # Legacy filesystem-backed development data
-├── db/          # Database config, models, sessions, bootstrap
+├── db/          # Database config, models, sessions, and DB bootstrap helpers
 ├── inference/   # Inference abstraction and stub backend
 ├── models/      # Pydantic domain models
 ├── storage/     # Filesystem and Postgres storage implementations
@@ -79,11 +79,14 @@ Important variables:
 - `PLEXA_TEST_DATABASE_SYNC_URL`
 - `PLEXA_TEST_STORAGE_BACKEND`
 
-## Database Bootstrap
+## Bootstrap
 
-The database bootstrap entrypoint is [db/bootstrap.py](/home/kellan/projects/school/plexa/plexa_server/db/bootstrap.py).
+The application bootstrap entrypoint is [bootstrap.py](/home/kellan/projects/school/plexa/plexa_server/bootstrap.py).
 
 It can:
+- create `plexa_server/.env` when missing
+- populate missing local defaults without overwriting existing values
+- generate and persist the encrypted log key once
 - wait for Postgres
 - create the development and test databases
 - run Alembic migrations
@@ -92,26 +95,28 @@ It can:
 Initialize both development and test databases:
 
 ```bash
-python -m plexa_server.db.bootstrap --init-dev --init-test
+python -m plexa_server.bootstrap --init-dev --init-test
 ```
 
 Initialize both and import the filesystem dataset into each:
 
 ```bash
-python -m plexa_server.db.bootstrap --init-dev --init-test --import-filesystem
+python -m plexa_server.bootstrap --init-dev --init-test --import-filesystem
 ```
 
 Initialize only the development database:
 
 ```bash
-python -m plexa_server.db.bootstrap --init-dev
+python -m plexa_server.bootstrap --init-dev
 ```
 
 Initialize only the test database:
 
 ```bash
-python -m plexa_server.db.bootstrap --init-test
+python -m plexa_server.bootstrap --init-test
 ```
+
+The lower-level Postgres-specific helpers remain in [db/bootstrap.py](/home/kellan/projects/school/plexa/plexa_server/db/bootstrap.py), but the intended user-facing entrypoint is the top-level bootstrap module.
 
 ## Migrations
 
