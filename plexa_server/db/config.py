@@ -27,6 +27,16 @@ def _load_env_file() -> None:
             os.environ[key] = value
 
 
+def load_server_env_file() -> None:
+    """Load the server-local `.env` file into the process environment.
+
+    Existing environment variables are preserved. This is the public entry
+    point for other subsystems that need the same env-loading behavior as the
+    database configuration layer.
+    """
+    _load_env_file()
+
+
 @dataclass(frozen=True)
 class DatabaseConfig:
     """Database connection settings resolved from the environment."""
