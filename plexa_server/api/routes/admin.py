@@ -4,7 +4,8 @@ from pydantic import ValidationError
 
 from plexa_server.models.lesson import Lesson
 from plexa_server.models.course import Course
-from plexa_server.auth.admin import require_admin_token
+from plexa_server.auth.dependencies import require_admin
+from plexa_server.auth.identity import UserIdentity
 from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage
 
 
@@ -31,7 +32,7 @@ def get_admin_router(
     @router.post("/lessons")
     async def upload_lesson(
         lesson_payload: dict,
-        _: str = Depends(require_admin_token),
+        _: UserIdentity = Depends(require_admin),
     ):
         """Validate and persist a lesson payload, noting whether it overwrote an existing version.
 
@@ -78,7 +79,7 @@ def get_admin_router(
     async def get_lesson(
         lesson_id: str,
         version: str,
-        _: str = Depends(require_admin_token),
+        _: UserIdentity = Depends(require_admin),
     ):
         """Return a stored lesson artifact by lesson id and version.
 
@@ -109,7 +110,7 @@ def get_admin_router(
     @router.post("/courses")
     async def create_course(
         payload: Course,
-        _: str = Depends(require_admin_token),
+        _: UserIdentity = Depends(require_admin),
     ):
         """Persist a new course document if the course id is unused.
 
@@ -140,7 +141,7 @@ def get_admin_router(
     @router.get("/courses/{course_id}")
     async def get_course(
         course_id: str,
-        _: str = Depends(require_admin_token),
+        _: UserIdentity = Depends(require_admin),
     ):
         """Return a stored course document for administrative access.
 
@@ -169,7 +170,7 @@ def get_admin_router(
 
     @router.get("/courses")
     async def list_courses(
-        _: str = Depends(require_admin_token),
+        _: UserIdentity = Depends(require_admin),
     ):
         """List all persisted courses for administrative inspection.
 
@@ -189,7 +190,7 @@ def get_admin_router(
     async def update_course(
         course_id: str,
         payload: Course,
-        _: str = Depends(require_admin_token),
+        _: UserIdentity = Depends(require_admin),
     ):
         """Replace course metadata while preserving existing lesson bindings.
 
@@ -224,7 +225,7 @@ def get_admin_router(
     @router.delete("/courses/{course_id}")
     async def delete_course(
         course_id: str,
-        _: str = Depends(require_admin_token),
+        _: UserIdentity = Depends(require_admin),
     ):
         """Delete a persisted course document.
 
@@ -260,7 +261,7 @@ def get_admin_router(
     async def bind_lesson(
         course_id: str,
         payload: dict,
-        _: str = Depends(require_admin_token),
+        _: UserIdentity = Depends(require_admin),
     ):
         """Bind or replace a lesson version in the course's lesson mapping.
 
@@ -321,7 +322,7 @@ def get_admin_router(
     @router.get("/courses/{course_id}/lessons")
     async def get_course_lessons(
         course_id: str,
-        _: str = Depends(require_admin_token),
+        _: UserIdentity = Depends(require_admin),
     ):
         """Return the raw persisted lesson bindings for a course.
 

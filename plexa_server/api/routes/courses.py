@@ -1,6 +1,11 @@
 from fastapi import APIRouter, HTTPException, Depends
 
-from plexa_server.auth.user import require_user_id
+from plexa_server.auth.dependencies import (
+    ensure_course_owner,
+    ensure_enrolled_or_owner,
+    require_identity,
+)
+from plexa_server.auth.identity import UserIdentity
 from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage
 from plexa_server.api.schemas.responses import CourseLessonsResponse
 
@@ -22,7 +27,7 @@ def get_course_router(
 
     @router.get("")
     async def list_discoverable_courses(
-        user_id: str = Depends(require_user_id)
+        _: UserIdentity = Depends(require_identity)
     ):
         """List courses that are currently marked discoverable.
 
@@ -44,7 +49,7 @@ def get_course_router(
     @router.get("/{course_id}")
     async def get_course(
         course_id: str,
-        user_id: str = Depends(require_user_id)
+        identity: UserIdentity = Depends(require_identity)
     ):
         """Return course metadata when the caller is allowed to view it.
 
@@ -66,8 +71,8 @@ def get_course_router(
 
         if (
             course.discoverable
-            or user_id == course.owner_id
-            or user_id in course.enrolled_users
+            or identity.user_id == course.owner_id
+            or identity.user_id in course.enrolled_users
         ):
             return course
 
@@ -77,7 +82,7 @@ def get_course_router(
     @router.get("/{course_id}/lessons")
     async def get_course_lessons(
         course_id: str,
-        user_id: str = Depends(require_user_id)
+        identity: UserIdentity = Depends(require_identity)
     ) -> CourseLessonsResponse:
         """Return lesson documents for a course visible to the caller.
 
@@ -94,27 +99,22 @@ def get_course_router(
         """
         course = await course_storage.get_course(course_id)
 
-        if (
-            course is None
-            or not course.discoverable
-            or user_id not in course.enrolled_users
-            and user_id != course.owner_id
-        ):
+        if course is None or not course.discoverable:
             raise HTTPException(status_code=404, detail="Course not found")
-        
-        else:
-            lessons = []
-            for lesson_id, lesson_version in course.lessons.items():
-                lesson = await artifact_storage.load_lesson(lesson_id, lesson_version)
-                if lesson is not None:
-                    lessons.append(lesson)
-            return CourseLessonsResponse(lessons=lessons)
+        ensure_enrolled_or_owner(course.owner_id, course.enrolled_users, identity)
+
+        lessons = []
+        for lesson_id, lesson_version in course.lessons.items():
+            lesson = await artifact_storage.load_lesson(lesson_id, lesson_version)
+            if lesson is not None:
+                lessons.append(lesson)
+        return CourseLessonsResponse(lessons=lessons)
         
 
     @router.post("/{course_id}/enroll")
     async def request_enrollment(
         course_id: str,
-        user_id: str = Depends(require_user_id)
+        identity: UserIdentity = Depends(require_identity)
     ):
         """Queue the caller for enrollment in a discoverable course.
 
@@ -133,11 +133,11 @@ def get_course_router(
         if course is None or not course.discoverable:
             raise HTTPException(status_code=404, detail="Course not found")
 
-        if user_id in course.enrolled_users:
+        if identity.user_id in course.enrolled_users:
             return {"status": "already_enrolled"}
 
-        if user_id not in course.pending_requests:
-            course.pending_requests.append(user_id)
+        if identity.user_id not in course.pending_requests:
+            course.pending_requests.append(identity.user_id)
             await course_storage.save_course(course)
 
         return {"status": "pending"}
@@ -146,7 +146,7 @@ def get_course_router(
     @router.get("/{course_id}/requests")
     async def view_requests(
         course_id: str,
-        user_id: str = Depends(require_user_id)
+        identity: UserIdentity = Depends(require_identity)
     ):
         """Return pending enrollment requests for a course owner.
 
@@ -163,8 +163,9 @@ def get_course_router(
         """
         course = await course_storage.get_course(course_id)
 
-        if course is None or user_id != course.owner_id:
+        if course is None:
             raise HTTPException(status_code=404, detail="Course not found")
+        ensure_course_owner(course.owner_id, identity)
 
         return {"pending_requests": course.pending_requests}
 
@@ -173,7 +174,7 @@ def get_course_router(
     async def approve_student(
         course_id: str,
         payload: dict,
-        user_id: str = Depends(require_user_id)
+        identity: UserIdentity = Depends(require_identity)
     ):
         """Approve a pending learner and move them into the enrolled list.
 
@@ -193,12 +194,9 @@ def get_course_router(
 
         course = await course_storage.get_course(course_id)
 
-        if (
-            course is None
-            or user_id != course.owner_id
-            or target_user is None
-        ):
+        if course is None or target_user is None:
             raise HTTPException(status_code=404, detail="Course not found")
+        ensure_course_owner(course.owner_id, identity)
 
         if target_user in course.pending_requests:
             course.pending_requests.remove(target_user)
@@ -215,7 +213,7 @@ def get_course_router(
     async def remove_student(
         course_id: str,
         payload: dict,
-        user_id: str = Depends(require_user_id)
+        identity: UserIdentity = Depends(require_identity)
     ):
         """Remove an enrolled learner from a course.
 
@@ -235,12 +233,9 @@ def get_course_router(
 
         course = await course_storage.get_course(course_id)
 
-        if (
-            course is None
-            or user_id != course.owner_id
-            or target_user is None
-        ):
+        if course is None or target_user is None:
             raise HTTPException(status_code=404, detail="Course not found")
+        ensure_course_owner(course.owner_id, identity)
 
         if target_user in course.enrolled_users:
             course.enrolled_users.remove(target_user)

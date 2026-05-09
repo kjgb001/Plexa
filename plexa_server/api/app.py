@@ -18,6 +18,7 @@ from plexa_server.api.routes.sessions import get_sessions_router
 from plexa_server.api.routes.health import get_health_router
 from plexa_server.api.routes.admin import get_admin_router
 from plexa_server.api.routes.courses import get_course_router
+from plexa_server.auth.middleware import auth_identity_middleware
 from plexa_server.utils.filesystem_data_dir import get_data_dir_path
 
 
@@ -78,6 +79,7 @@ def build_app(
 
     # FastAPI app
     app = FastAPI(title="Plexa Server", version=APP_VERSION)
+    app.middleware("http")(auth_identity_middleware)
     api_router = APIRouter(prefix=f"/api/{API_VERSION}")
 
     api_router.include_router(

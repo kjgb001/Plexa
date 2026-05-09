@@ -2,155 +2,130 @@
 
 **Plexa** is a lesson-centric AI orchestration system for higher education.
 
-It is not a chatbot, and it is not a general-purpose AI wrapper. Plexa is a **pedagogical runtime**: a system for executing structured lessons with AI under explicit constraints, logging policies, and instructor intent.
+It is not a chatbot, and it is not a general-purpose AI wrapper. Plexa is a **pedagogical runtime**: a system for executing structured lessons with AI under explicit constraints, session controls, and instructor intent.
 
 The core idea is simple:
 
-> **Students don’t “chat with an AI.”  
-> They execute a lesson.**
+> **Students do not just chat with an AI.**  
+> **They execute a lesson.**
 
-Everything in Plexa flows from that premise.
+Everything in Plexa follows from that premise.
 
----
+## What Plexa Is
 
-## What Plexa Is (and Is Not)
-
-### Plexa *is*:
 - A lesson execution engine
-- A policy and constraint enforcer
-- A bridge between instructor intent and AI behavior
-- A privacy-preserving logging system for educational analysis
-- A backend-agnostic orchestration layer for AI inference
+- A policy and constraint enforcement layer
+- A bridge between instructor intent and model behavior
+- A structured session runtime for educational AI workflows
+- A system designed to keep inference, storage, and application concerns separated
 
-### Plexa is *not*:
-- A generic chat UI
+## What Plexa Is Not
+
+- A generic chat app
 - A prompt playground
-- A grading or surveillance tool
+- A grading or surveillance system
 - A replacement for instructors
-- A SaaS product designed around lock-in
+- A thin wrapper around whatever model API is fashionable this month
 
----
+## Repository Structure
 
-## Architectural Philosophy
+This repository is a development monorepo with multiple packages:
 
-Plexa is designed around **discipline, separation of concerns, and explicit contracts**.
-
-Key principles:
-
-- **Lesson-first**: all interactions are scoped to a lesson artifact
-- **Policy over freedom**: AI behavior is constrained by design, not hope
-- **Server blindness**: sensitive data is encrypted at rest and unreadable without instructor authorization
-- **Backend abstraction**: inference engines are swappable
-- **Local-first development**: stubs enable laptop-only iteration
-- **Institution-friendly**: deployable on university infrastructure, auditable, and ethically aligned
-
----
-
-## Repository Structure (Monorepo)
-
-This repository is a **development monorepo** containing multiple independently deployable packages.
-
-```
+```text
 plexa/
+├── README.md
 ├── pyproject.toml
 ├── conftest.py
-├── README.md
-│
-├── plexa_server/ # Lesson runtime & policy engine
-├── plexa_client/ # Student-facing UI (web / desktop)
-├── plexa_author/ # Instructor lesson authoring tool
+├── docs/
+├── plexa_server/
+├── plexa_client/
+└── plexa_author/
 ```
 
+### Package Overview
 
-Each package is designed to be built and distributed independently in production.
+- [plexa_server/README.md](/home/kellan/projects/school/plexa/plexa_server/README.md)
+  The main implemented backend package. It contains the FastAPI server, lesson/session runtime, storage abstractions, PostgreSQL integration, Alembic migrations, bootstrap tooling, and the backend-aware test suite.
 
----
+- [plexa_author/README.md](/home/kellan/projects/school/plexa/plexa_author/README.md)
+  A Python/Tkinter lesson authoring tool for producing structured lesson artifacts offline.
 
-## Plexa-Server (Core)
+- [plexa_client/README.md](/home/kellan/projects/school/plexa/plexa_client/README.md)
+  Currently still close to a Vite/React scaffold rather than a documented production-ready client application.
 
-The server is the semantic heart of Plexa.
+## Current State Of The Codebase
 
-Responsibilities:
-- Validate lesson artifacts
-- Enforce lesson constraints and policies
-- Manage session lifecycle
-- Orchestrate AI inference via abstract interfaces
-- Encrypt and persist interaction logs
-- Remain agnostic to UI and identity providers
+The server is the most mature part of the repository.
 
-The server does **not** render UI and does **not** allow free-form chats outside lesson context.
+What is implemented in `plexa_server` now:
+- lesson, course, session, and message domain models
+- FastAPI routes for runtime and admin flows
+- storage abstractions with both filesystem and PostgreSQL implementations
+- PostgreSQL integration using SQLAlchemy, Alembic, and `asyncpg`
+- database bootstrap and legacy filesystem import tooling
+- backend-aware pytest support for `filesystem`, `postgres`, and `both`
 
----
+The server is no longer just a schema experiment or runtime sketch. It has a working persistence layer, migration path, and testable backend selection model.
 
-## Lessons as First-Class Artifacts
+The client and authoring sides are not at the same maturity level:
+- `plexa_author` is a concrete utility package
+- `plexa_client` still needs README and product-level cleanup to match the server’s current state
 
-Lessons are structured JSON artifacts that encode:
+## Architectural Direction
 
-- identity and provenance
-- pedagogical intent
-- execution parameters
-- constraints and limits
-- reflection and logging policies
+Plexa is designed around explicit contracts and separation of concerns.
 
-They are:
-- authored externally
-- validated on upload
-- immutable during execution
-- reusable across courses and terms
+Current architectural principles reflected in the code:
+- **Lesson-first runtime**: sessions are created from structured lesson artifacts
+- **Backend abstraction**: storage and inference are hidden behind interfaces
+- **PostgreSQL as primary persistence**: the server now supports full relational persistence
+- **Filesystem retained as legacy/test backend**: useful for migration support and comparative testing
+- **Mostly async server path**: runtime persistence and request handling are aligned with the async database stack
 
-The server treats lessons as **authoritative inputs**, not user prompts.  
+## Development Workflow
 
-Plexa-Author can be used to easily create lessons.
+Most active development currently happens in `plexa_server`.
 
----
+For local server work:
+1. create and activate a virtual environment
+2. start the Postgres container from `plexa_server/docker-compose.yml`
+3. bootstrap the development and test databases
+4. run tests through `python -m pytest`
 
-## Privacy and Ethics
+The detailed server workflow is documented in:
+- [plexa_server/README.md](/home/kellan/projects/school/plexa/plexa_server/README.md)
 
-Plexa is designed to minimize institutional risk and maximize student trust.
+## Testing
 
-Key guarantees:
-- All session logs are encrypted at rest
-- Encryption keys are bound to lesson ownership
-- Only the owning instructor(s) can decrypt logs
-- The server cannot read student interactions by default
-- Logging behavior is explicitly defined per lesson
+The repository root has a pytest hook in [conftest.py](/home/kellan/projects/school/plexa/conftest.py) that:
+- loads `plexa_server/.env`
+- registers the `--storage-backend` option early enough for root-level test runs
 
-Plexa operates as infrastructure, not a data custodian.
+Supported backend test modes:
+- `filesystem`
+- `postgres`
+- `both`
 
----
+Typical examples:
 
-## Development Status
-
-Plexa is under active development as an academic independent study project.
-
-Current focus:
-- Server-side lesson schema validation
-- Session execution pipeline
-- Inference abstraction layer
-- Instructor upload and management APIs
-- Stub-based development workflow
-
-The architecture is intentionally over-specified early to support long-term stability.
-
----
-
-## License and Philosophy
-
-Plexa is open-source and community-led by design.
-
-The goal is not to monetize classroom dependency, but to:
-- provide institutions with ethical AI tooling
-- empower instructors to shape AI use intentionally
-- teach students how to engage critically and effectively with AI systems
-
-[License](LICENSE) MIT License
-
----
+```bash
+python -m pytest -q plexa_server/tests
+python -m pytest -q plexa_server/tests --storage-backend=postgres
+python -m pytest -q plexa_server/tests --storage-backend=both
+```
 
 ## Status
 
-This project is pre-release and evolving rapidly. Interfaces may change.
+This project is still pre-release, but the server architecture is no longer just aspirational.
 
-That said, architectural principles are considered **stable**.
+The important distinction now is:
+- the **server runtime and persistence path are real and tested**
+- the **rest of the monorepo is still catching up in polish and completeness**
 
-Contributions, discussion, and critique are welcome; especially from educators, researchers, and students thinking seriously about AI in the classroom.
+That is the current truth of the codebase, and the README should reflect that.
+
+## License
+
+Plexa is open-source.
+
+See [LICENSE](/home/kellan/projects/school/plexa/LICENSE).

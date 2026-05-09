@@ -17,7 +17,8 @@ from plexa_server.api.schemas.responses import (
     SendMessageResponse,
 )
 
-from plexa_server.auth.user import require_user_id, get_owned_session
+from plexa_server.auth.dependencies import get_owned_session, require_identity
+from plexa_server.auth.identity import UserIdentity
 from plexa_server.core.sessions import SessionManager
 from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage
 
@@ -77,7 +78,7 @@ def get_sessions_router(
         course_id: str,
         lesson_id: str,
         lesson_version: str,
-        user_id: str = Depends(require_user_id)
+        identity: UserIdentity = Depends(require_identity)
     ) -> CreateSessionResponse:
         """Create a new lesson session for an enrolled user.
 
@@ -111,7 +112,7 @@ def get_sessions_router(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Course not found."
             )
-        if user_id not in course.enrolled_users and user_id != course.owner_id:
+        if identity.user_id not in course.enrolled_users and identity.user_id != course.owner_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Course not found."
@@ -119,7 +120,7 @@ def get_sessions_router(
 
         session = await session_manager.create_session(
             lesson=lesson,
-            user_id=user_id,
+            user_id=identity.user_id,
             course_id=course_id
         )
 
@@ -139,7 +140,7 @@ def get_sessions_router(
         course_id: str,
         lesson_id: str,
         lesson_version: str,
-        user_id: str = Depends(require_user_id)
+        identity: UserIdentity = Depends(require_identity)
     ) -> ListSessionsResponse:
         """Return the caller's sessions for a specific course lesson version.
 
@@ -173,14 +174,14 @@ def get_sessions_router(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Course not found."
             )
-        if user_id not in course.enrolled_users and user_id != course.owner_id:
+        if identity.user_id not in course.enrolled_users and identity.user_id != course.owner_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Course not found."
             )
 
         sessions = await session_manager.list_sessions(
-            user_id=user_id,
+            user_id=identity.user_id,
             course_id=course_id,
             lesson_id=lesson_id,
             lesson_version=lesson_version,
@@ -203,7 +204,7 @@ def get_sessions_router(
         lesson_id: str,
         lesson_version: str,
         request: SendMessageRequest,
-        user_id: str = Depends(require_user_id)
+        identity: UserIdentity = Depends(require_identity)
     ) -> SendMessageResponse:
         """Append a user message to a session and return the assistant reply.
 
@@ -223,7 +224,7 @@ def get_sessions_router(
         message_id = request.message_id or str(uuid4())
 
         try:
-            session = await get_owned_session(session_manager, session_id, user_id)
+            session = await get_owned_session(session_manager, session_id, identity)
             check_session_path(session, course_id, lesson_id, lesson_version)
 
             assistant_message = await session_manager.submit_user_message(
@@ -260,7 +261,7 @@ def get_sessions_router(
         course_id: str,
         lesson_id: str,
         lesson_version: str,
-        user_id: str = Depends(require_user_id)
+        identity: UserIdentity = Depends(require_identity)
     ) -> CreateSessionResponse:
         """Return the full transcript for a session owned by the caller.
 
@@ -277,7 +278,7 @@ def get_sessions_router(
                 session does not exist.
         """
         try:
-            session = await get_owned_session(session_manager, session_id, user_id)
+            session = await get_owned_session(session_manager, session_id, identity)
             check_session_path(session, course_id, lesson_id, lesson_version)
 
             return CreateSessionResponse(
@@ -300,7 +301,7 @@ def get_sessions_router(
         course_id: str,
         lesson_id: str,
         lesson_version: str,
-        user_id: str = Depends(require_user_id)
+        identity: UserIdentity = Depends(require_identity)
     ) -> SessionResponse:
         """Close an owned session and return its updated summary.
 
@@ -319,7 +320,7 @@ def get_sessions_router(
                 session is already closed.
         """
         try:
-            session = await get_owned_session(session_manager, session_id, user_id)
+            session = await get_owned_session(session_manager, session_id, identity)
             check_session_path(session, course_id, lesson_id, lesson_version)
 
             await session_manager.close_session(session_id)
@@ -341,7 +342,7 @@ def get_sessions_router(
         course_id: str,
         lesson_id: str,
         lesson_version: str,
-        user_id: str = Depends(require_user_id)
+        identity: UserIdentity = Depends(require_identity)
     ) -> DeleteSessionResponse:
         """Delete an owned session and its persisted inference config.
 
@@ -359,7 +360,7 @@ def get_sessions_router(
             HTTPException: If the caller does not own the session or the
                 session does not exist.
         """
-        session = await get_owned_session(session_manager, session_id, user_id)
+        session = await get_owned_session(session_manager, session_id, identity)
         check_session_path(session, course_id, lesson_id, lesson_version)
 
         await session_manager.delete_session(session_id)
