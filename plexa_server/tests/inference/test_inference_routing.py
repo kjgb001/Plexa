@@ -88,10 +88,10 @@ def test_router_rejects_unknown_profile_without_default_backend():
 def test_single_backend_router_allows_direct_profile_passthrough():
     router = create_single_backend_router(StubInference())
 
-    resolved = router.resolve(InferenceConfig(profile="kl3m_safe", temperature=0.4))
+    resolved = router.resolve(InferenceConfig(profile="reasoning", temperature=0.4))
 
     assert resolved.backend_id == "stub"
-    assert resolved.model == "kl3m_safe"
+    assert resolved.model == "reasoning"
     assert resolved.temperature == 0.4
 
 

@@ -1,6 +1,37 @@
 from plexa_server.models.lesson import Lesson
 
 
+SEEDED_LESSON_SPECS = {
+    "default": {"version": "default", "profile": "default"},
+    "The Danger of Hallucinations": {"version": "0.1.0", "profile": "reasoning"},
+    "The Power of Prompt Engineering": {"version": "0.3.0", "profile": "default"},
+    "Managing Context Decay": {"version": "0.2.0", "profile": "reasoning"},
+    "Prompt Engineering for Data Viz": {"version": "0.2.0", "profile": "fast"},
+    "LLM Assisted Data Evaluation": {"version": "0.4.0", "profile": "reasoning"},
+}
+
+SEEDED_COURSE_SPECS = [
+    {
+        "course_title": "default",
+        "course_description": "default",
+        "lesson_ids": [
+            "default",
+            "The Danger of Hallucinations",
+            "The Power of Prompt Engineering",
+            "Managing Context Decay",
+        ],
+    },
+    {
+        "course_title": "Data Visualization",
+        "course_description": "Using AI for accelerated visualization",
+        "lesson_ids": [
+            "Prompt Engineering for Data Viz",
+            "LLM Assisted Data Evaluation",
+        ],
+    },
+]
+
+
 def valid_course():
     return {
         "course_id": "CS101",
@@ -65,7 +96,7 @@ def make_valid_lesson_payload() -> Lesson:
         },
         "execution": {
             "system_prompt": "You are a careful tutor. If uncertain, say so.",
-            "profile": "kl3m_safe",
+            "profile": "reasoning",
             "parameters": {
                 "temperature": 0.4,
                 "top_p": 0.9,
@@ -87,3 +118,19 @@ def make_valid_lesson_payload() -> Lesson:
             ]
         },
     }
+
+
+def make_seeded_lesson_payload(lesson_id: str, lesson_version: str) -> dict:
+    """Return a seeded lesson payload for the supplied lesson identifier."""
+    payload = valid_lesson()
+    if lesson_id != "default":
+        payload["identity"]["lesson_id"] = lesson_id
+        payload["identity"]["title"] = lesson_id
+    if lesson_version != "default":
+        payload["identity"]["version"] = lesson_version
+
+    payload["execution"]["profile"] = SEEDED_LESSON_SPECS.get(
+        lesson_id,
+        {"profile": "default"},
+    )["profile"]
+    return payload

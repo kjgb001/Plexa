@@ -10,7 +10,7 @@ def test_valid_lesson_parses():
 
     assert lesson.identity.title == "Calibration Under Uncertainty"
     assert lesson.intent.behavioral_focus == "calibration"
-    assert lesson.execution.profile == "kl3m_safe"
+    assert lesson.execution.profile == "reasoning"
     assert lesson.constraints.input_mode == "text"
     assert len(lesson.reflection.reflection_prompts) == 2
 
@@ -22,7 +22,7 @@ def test_legacy_model_profile_alias_still_parses():
 
     lesson = Lesson.model_validate(payload)
 
-    assert lesson.execution.profile == "kl3m_safe"
+    assert lesson.execution.profile == "reasoning"
 
 
 def test_missing_required_field_fails():

@@ -1,32 +1,84 @@
+import argparse
 import asyncio
 from pathlib import Path
 
-from plexa_server.storage.filesystem import (
-    FileSystemArtifactStorage,
-    FileSystemCourseStorage,
-)
-from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage
-
-from plexa_server.models.lesson import Lesson
+from plexa_server.db.config import get_named_database_config, load_server_env_file
+from plexa_server.db.session import create_session_factory
 from plexa_server.models.course import Course
+from plexa_server.models.lesson import Lesson
+from plexa_server.storage.filesystem import FileSystemArtifactStorage, FileSystemCourseStorage
+from plexa_server.storage.postgres import PostgresArtifactStorage, PostgresCourseStorage
+from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage
+from plexa_server.tests.fixtures import valid_course, valid_lesson
 from plexa_server.utils.filesystem_data_dir import get_data_dir_path
-
-from plexa_server.tests.fixtures import (
-    valid_course,
-    valid_lesson
-)
 
 
 DATA_PATH = get_data_dir_path()
 
-async def seed_course(lessons, course_title, course_desc, course_storage: CourseStorage):
-    """Create a fixture-backed course and bind the supplied lesson version.
+LESSON_PROFILES = {
+    "default": "default",
+    "The Danger of Hallucinations": "default",
+    "The Power of Prompt Engineering": "default",
+    "Managing Context Decay": "reasoning",
+    "Prompt Engineering for Data Viz": "fast",
+    "LLM Assisted Data Evaluation": "reasoning",
+}
 
-    Args:
-        lesson_id: Lesson identifier to bind into the seeded course.
-        lesson_version: Lesson version to bind into the seeded course.
-        course_storage: Storage backend used to persist the seeded course.
-    """
+COURSE_SPECS = [
+    {
+        "course_title": "default",
+        "course_description": "default",
+        "lessons": {
+            "default": "default",
+            "The Danger of Hallucinations": "0.1.0",
+            "The Power of Prompt Engineering": "0.3.0",
+            "Managing Context Decay": "0.2.0",
+        },
+    },
+    {
+        "course_title": "Data Visualization",
+        "course_description": "Using AI for accelerated visualization",
+        "lessons": {
+            "Prompt Engineering for Data Viz": "0.2.0",
+            "LLM Assisted Data Evaluation": "0.4.0",
+        },
+    },
+]
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse the seed CLI arguments."""
+    parser = argparse.ArgumentParser(description="Seed Plexa development lesson and course data.")
+    parser.add_argument(
+        "--target",
+        choices=["filesystem", "dev", "test"],
+        default="dev",
+        help="Persistence target to seed. Defaults to the development database.",
+    )
+    return parser.parse_args()
+
+
+def _build_storage(target: str) -> tuple[ArtifactStorage, CourseStorage]:
+    """Build the artifact/course storages for the requested target."""
+    if target == "filesystem":
+        return FileSystemArtifactStorage(DATA_PATH), FileSystemCourseStorage(DATA_PATH)
+
+    load_server_env_file()
+    database_config = get_named_database_config(target)
+    session_factory = create_session_factory(
+        database_config.resolved_async_url(),
+        echo=database_config.echo,
+    )
+    return PostgresArtifactStorage(session_factory), PostgresCourseStorage(session_factory)
+
+
+async def seed_course(
+    lessons: list[Lesson],
+    course_title: str,
+    course_desc: str,
+    course_storage: CourseStorage,
+) -> None:
+    """Create a fixture-backed course and bind the supplied lesson versions."""
     payload = valid_course()
     if course_title != "default":
         payload["course_id"] = course_title
@@ -36,56 +88,51 @@ async def seed_course(lessons, course_title, course_desc, course_storage: Course
 
     for lesson in lessons:
         payload["lessons"][lesson.identity.lesson_id] = lesson.identity.version
+
     course = Course.model_validate(payload)
     await course_storage.save_course(course)
 
 
-async def seed_lesson(lesson_id, lesson_version, artifact_storage: ArtifactStorage):
-    """Create and persist the fixture lesson, returning its id and version.
-
-    Args:
-        artifact_storage: Storage backend used to persist the seeded lesson.
-
-    Returns:
-        tuple[str, str]: Seeded lesson id and version.
-    """
+async def seed_lesson(
+    lesson_id: str,
+    lesson_version: str,
+    artifact_storage: ArtifactStorage,
+) -> Lesson:
+    """Create and persist a seeded lesson with an explicit inference profile."""
     payload = valid_lesson()
     if lesson_id != "default":
         payload["identity"]["lesson_id"] = lesson_id
         payload["identity"]["title"] = lesson_id
     if lesson_version != "default":
         payload["identity"]["version"] = lesson_version
+
+    payload["execution"]["profile"] = LESSON_PROFILES.get(lesson_id, "default")
     lesson = Lesson.model_validate(payload)
-
     await artifact_storage.save_lesson(lesson)
-
     return lesson
 
 
-async def main():
-    """Seed the repository data directory with one lesson and one course."""
-    
-    artifact_storage = FileSystemArtifactStorage(DATA_PATH)
-    course_storage = FileSystemCourseStorage(DATA_PATH)
+async def seed_target(target: str) -> None:
+    """Seed the requested storage target with example lessons and courses."""
+    artifact_storage, course_storage = _build_storage(target)
 
-    courses = {"default": "default", "Data Visualization": "Using AI for accelerated visualization"}
-    course_titles = list(courses.keys())
-    course_descs = list(courses.values())
+    for course_spec in COURSE_SPECS:
+        lessons: list[Lesson] = []
+        for lesson_id, lesson_version in course_spec["lessons"].items():
+            lessons.append(await seed_lesson(lesson_id, lesson_version, artifact_storage))
+        await seed_course(
+            lessons=lessons,
+            course_title=course_spec["course_title"],
+            course_desc=course_spec["course_description"],
+            course_storage=course_storage,
+        )
 
-    lessons = []
-    lesson_data = {"default": "default", "The Danger of Hallucinations": "0.1.0",
-        "The Power of Prompt Engineering": "0.3.0", "Managing Context Decay": "0.2.0"}
-    for l in lesson_data.items():
-        lessons.append(await seed_lesson(l[0], l[1], artifact_storage))
-    await seed_course(lessons, course_titles[0], course_descs[0], course_storage)
 
-    lessons = []
-    lesson_data = {"Prompt Engineering for Data Viz": "0.2.0", "LLM Assisted Data Evaluation": "0.4.0"}
-    for l in lesson_data.items():
-        lessons.append(await seed_lesson(l[0], l[1], artifact_storage))
-    await seed_course(lessons, course_titles[1], course_descs[1], course_storage)
-
-    print("Seed data created.")
+async def main() -> None:
+    """Seed the requested target with development lesson and course data."""
+    args = parse_args()
+    await seed_target(args.target)
+    print(f"Seed data created for target: {args.target}")
 
 
 if __name__ == "__main__":

@@ -104,7 +104,6 @@ The generated inference defaults are meant to be edited locally as needed. By de
   - `default -> ollama-local / llama3.1`
   - `fast -> ollama-local / qwen2.5:7b`
   - `reasoning -> vllm-local / deepseek-r1-distill-qwen-7b`
-  - `kl3m_safe -> ollama-local / llama3.1`
 
 Initialize both development and test databases:
 

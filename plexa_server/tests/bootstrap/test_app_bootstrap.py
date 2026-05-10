@@ -29,7 +29,7 @@ def test_ensure_env_defaults_generates_file_with_missing_defaults(tmp_path, monk
     assert '"ollama-local"' in resolved["PLEXA_INFERENCE_BACKENDS"]
     assert '"vllm-local"' in resolved["PLEXA_INFERENCE_BACKENDS"]
     assert '"default"' in resolved["PLEXA_INFERENCE_PROFILES"]
-    assert '"kl3m_safe"' in resolved["PLEXA_INFERENCE_PROFILES"]
+    assert '"reasoning"' in resolved["PLEXA_INFERENCE_PROFILES"]
     env_text = env_path.read_text(encoding="utf-8")
     assert "PLEXA_DATABASE_URL=" in env_text
     assert "PLEXA_TEST_DATABASE_URL=" in env_text
