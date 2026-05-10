@@ -11,6 +11,7 @@ from plexa_server.inference.base import (
     InferenceBackend,
     InferenceError,
 )
+from plexa_server.inference.routing import InferenceRouter, create_single_backend_router
 from plexa_server.core.lessons import (
     validate_lesson_runtime,
     build_initial_messages,
@@ -50,7 +51,8 @@ class SessionManager:
     def __init__(
         self,
         storage: SessionStorage,
-        inference_backend: InferenceBackend,
+        inference_router: InferenceRouter | None = None,
+        inference_backend: InferenceBackend | None = None,
         encrypted_log_service: EncryptedLogService | None = None,
     ):
         """Initialize the session manager.
@@ -58,12 +60,20 @@ class SessionManager:
         Args:
             storage: Storage backend used to persist sessions and inference
                 configs.
-            inference_backend: Backend used to generate assistant responses.
+            inference_router: Router used to resolve lesson profiles into
+                concrete backend calls.
+            inference_backend: Legacy single backend used to generate assistant
+                responses when no router is supplied.
             encrypted_log_service: Optional service used to persist encrypted
                 session log snapshots.
         """
         self._storage = storage
-        self._inference = inference_backend
+        if inference_router is not None:
+            self._inference = inference_router
+        elif inference_backend is not None:
+            self._inference = create_single_backend_router(inference_backend)
+        else:
+            raise ValueError("SessionManager requires an inference router or backend.")
         self._encrypted_logs = encrypted_log_service
         self._lock_manager = LockManager()
 
@@ -260,7 +270,7 @@ class SessionManager:
             candidate_messages: List[Message] = session.messages + [user_message]
 
             try:
-                result = self._inference.generate(
+                result = await self._inference.generate(
                     messages=candidate_messages,
                     config=inference_config,
                 )

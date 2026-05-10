@@ -13,10 +13,17 @@ from plexa_server.inference.base import (
 
 
 def test_inference_config_is_frozen():
-    config = InferenceConfig(model="test-model", temperature=0.5)
+    config = InferenceConfig(profile="test-profile", temperature=0.5)
 
     with pytest.raises(ValidationError):
-        config.model = "another-model"
+        config.profile = "another-profile"
+
+
+def test_inference_config_accepts_legacy_model_alias():
+    config = InferenceConfig(model="legacy-profile")
+
+    assert config.profile == "legacy-profile"
+    assert config.model == "legacy-profile"
 
 
 def test_inference_result_creation():

@@ -17,18 +17,24 @@ def test_ensure_env_defaults_generates_file_with_missing_defaults(tmp_path, monk
     monkeypatch.delenv("PLEXA_TEST_DATABASE_URL", raising=False)
     monkeypatch.delenv("PLEXA_TEST_DATABASE_SYNC_URL", raising=False)
     monkeypatch.delenv("PLEXA_TEST_STORAGE_BACKEND", raising=False)
-    monkeypatch.delenv("PLEXA_INFERENCE_BACKEND", raising=False)
+    monkeypatch.delenv("PLEXA_INFERENCE_BACKENDS", raising=False)
+    monkeypatch.delenv("PLEXA_INFERENCE_PROFILES", raising=False)
+    monkeypatch.delenv("PLEXA_INFERENCE_REQUIRED_BACKENDS", raising=False)
 
     resolved = ensure_env_defaults(env_path)
 
     assert resolved["PLEXA_DATABASE_URL"].startswith("postgresql+asyncpg://")
     assert resolved["PLEXA_TEST_DATABASE_URL"].endswith("/plexa_test")
     assert resolved["PLEXA_TEST_STORAGE_BACKEND"] == "postgres"
-    assert resolved["PLEXA_INFERENCE_BACKEND"] == "stub"
+    assert '"ollama-local"' in resolved["PLEXA_INFERENCE_BACKENDS"]
+    assert '"vllm-local"' in resolved["PLEXA_INFERENCE_BACKENDS"]
+    assert '"default"' in resolved["PLEXA_INFERENCE_PROFILES"]
+    assert '"kl3m_safe"' in resolved["PLEXA_INFERENCE_PROFILES"]
     env_text = env_path.read_text(encoding="utf-8")
     assert "PLEXA_DATABASE_URL=" in env_text
     assert "PLEXA_TEST_DATABASE_URL=" in env_text
-    assert "PLEXA_INFERENCE_BACKEND=stub" in env_text
+    assert "PLEXA_INFERENCE_BACKENDS=" in env_text
+    assert "PLEXA_INFERENCE_PROFILES=" in env_text
 
 
 def test_ensure_env_defaults_preserves_existing_values(tmp_path, monkeypatch):
@@ -100,7 +106,9 @@ def test_init_dev_database_bootstraps_env_then_db(tmp_path, monkeypatch):
         "PLEXA_TEST_DATABASE_URL",
         "PLEXA_TEST_DATABASE_SYNC_URL",
         "PLEXA_TEST_STORAGE_BACKEND",
-        "PLEXA_INFERENCE_BACKEND",
+        "PLEXA_INFERENCE_BACKENDS",
+        "PLEXA_INFERENCE_PROFILES",
+        "PLEXA_INFERENCE_REQUIRED_BACKENDS",
         "PLEXA_LOG_ENCRYPTION_KEY",
     ):
         monkeypatch.delenv(key, raising=False)
@@ -122,6 +130,8 @@ def test_init_dev_database_bootstraps_env_then_db(tmp_path, monkeypatch):
     assert call_order == ["db", "import:dev"]
     env_text = env_path.read_text(encoding="utf-8")
     assert "PLEXA_DATABASE_URL=" in env_text
+    assert "PLEXA_INFERENCE_BACKENDS=" in env_text
+    assert "PLEXA_INFERENCE_PROFILES=" in env_text
     assert "PLEXA_LOG_ENCRYPTION_KEY=" in env_text
 
 
@@ -134,7 +144,9 @@ def test_init_test_database_bootstraps_env_then_db(tmp_path, monkeypatch):
         "PLEXA_TEST_DATABASE_URL",
         "PLEXA_TEST_DATABASE_SYNC_URL",
         "PLEXA_TEST_STORAGE_BACKEND",
-        "PLEXA_INFERENCE_BACKEND",
+        "PLEXA_INFERENCE_BACKENDS",
+        "PLEXA_INFERENCE_PROFILES",
+        "PLEXA_INFERENCE_REQUIRED_BACKENDS",
         "PLEXA_LOG_ENCRYPTION_KEY",
     ):
         monkeypatch.delenv(key, raising=False)
@@ -156,4 +168,6 @@ def test_init_test_database_bootstraps_env_then_db(tmp_path, monkeypatch):
     assert call_order == ["db"]
     env_text = env_path.read_text(encoding="utf-8")
     assert "PLEXA_TEST_DATABASE_URL=" in env_text
+    assert "PLEXA_INFERENCE_BACKENDS=" in env_text
+    assert "PLEXA_INFERENCE_PROFILES=" in env_text
     assert "PLEXA_LOG_ENCRYPTION_KEY=" in env_text

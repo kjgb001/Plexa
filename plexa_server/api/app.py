@@ -20,6 +20,8 @@ from plexa_server.api.routes.admin import get_admin_router
 from plexa_server.api.routes.courses import get_course_router
 from plexa_server.auth.middleware import auth_identity_middleware
 from plexa_server.core.encrypted_logs import EncryptedLogService
+from plexa_server.inference.base import InferenceBackend
+from plexa_server.inference.routing import InferenceRouter, create_single_backend_router
 from plexa_server.utils.filesystem_data_dir import get_data_dir_path
 
 
@@ -28,7 +30,9 @@ APP_VERSION = "0.1.0"
 API_VERSION = "v1"
 
 def build_app(
-    inference_backend,
+    inference_router: InferenceRouter | None = None,
+    inference_backend: InferenceBackend | None = None,
+    required_backend_ids: set[str] | None = None,
     data_dir: Path | str = DATA_PATH,
     artifact_storage: ArtifactStorage | None = None,
     session_storage: SessionStorage | None = None,
@@ -37,7 +41,11 @@ def build_app(
     """Assemble the FastAPI application and its storage-backed dependencies.
 
     Args:
-        inference_backend: Inference backend instance to inject into the app.
+        inference_router: Inference router instance to inject into the app.
+        inference_backend: Legacy single backend instance for compatibility
+            when no router is supplied.
+        required_backend_ids: Optional backend ids that must be healthy for
+            readiness checks.
         data_dir: Base directory used for filesystem-backed persistence.
         artifact_storage: Optional prebuilt artifact storage implementation.
         session_storage: Optional prebuilt session storage implementation.
@@ -47,6 +55,11 @@ def build_app(
         FastAPI: Configured application instance with all routers mounted.
     """
     data_path = Path(data_dir)
+
+    if inference_router is None:
+        if inference_backend is None:
+            raise ValueError("build_app requires an inference router or backend.")
+        inference_router = create_single_backend_router(inference_backend)
 
     if artifact_storage is None or session_storage is None or course_storage is None:
         from plexa_server.db.config import get_database_config
@@ -76,7 +89,7 @@ def build_app(
     encrypted_log_service = EncryptedLogService.from_env(artifact_storage, course_storage)
     session_manager = SessionManager(
         storage=session_storage,
-        inference_backend=inference_backend,
+        inference_router=inference_router,
         encrypted_log_service=encrypted_log_service,
     )
 
@@ -109,7 +122,8 @@ def build_app(
         get_health_router(
             session_storage=session_storage,
             artifact_storage=artifact_storage,
-            inference_backend=inference_backend,
+            inference_router=inference_router,
+            required_backend_ids=required_backend_ids,
         )
     )
     app.include_router(api_router)

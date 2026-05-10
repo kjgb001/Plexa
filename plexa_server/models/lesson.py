@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 from uuid import uuid4
 
 
@@ -49,7 +49,10 @@ class LessonExecution(BaseModel):
 
     system_prompt: str
     initial_assistant_message: Optional[str] = None
-    model_profile: str
+    profile: str = Field(
+        validation_alias=AliasChoices("profile", "model_profile"),
+        description="Server-resolved inference profile for lesson execution.",
+    )
     parameters: Optional[Dict[str, Any]] = None
     capabilities: Optional[LessonCapabilities] = None
 

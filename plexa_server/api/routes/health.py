@@ -1,21 +1,24 @@
 from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
 
-from plexa_server.inference.base import InferenceError
+from plexa_server.inference.routing import InferenceRouter
 from plexa_server.storage.storage_interface import ArtifactStorage, SessionStorage
 
 
 def get_health_router(
     session_storage: SessionStorage,
     artifact_storage: ArtifactStorage,
-    inference_backend,
+    inference_router: InferenceRouter,
+    required_backend_ids: set[str] | None = None,
 ) -> APIRouter:
     """Create liveness and readiness endpoints for the server process.
 
     Args:
         session_storage: Session storage dependency checked by readiness.
         artifact_storage: Artifact storage dependency checked by readiness.
-        inference_backend: Inference backend queried by readiness checks.
+        inference_router: Inference router queried by readiness checks.
+        required_backend_ids: Optional subset of backend ids that must be
+            healthy for readiness.
 
     Returns:
         APIRouter: Router exposing `/api/health` and `/api/ready`.
@@ -46,16 +49,14 @@ def get_health_router(
             "inference": "ok",
         }
 
-        try:
-            if not await artifact_storage.health_check():
-                dependencies["artifact_storage"] = "missing"
+        if not await artifact_storage.health_check():
+            dependencies["artifact_storage"] = "missing"
 
-            if not await session_storage.health_check():
-                dependencies["session_storage"] = "missing"
+        if not await session_storage.health_check():
+            dependencies["session_storage"] = "missing"
 
-            inference_backend.health_check()
-
-        except InferenceError:
+        inference_statuses = await inference_router.health_check(required_backend_ids)
+        if any(status is False for status in inference_statuses.values()):
             dependencies["inference"] = "unavailable"
 
         if any(v != "ok" for v in dependencies.values()):

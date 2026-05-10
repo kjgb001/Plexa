@@ -1,11 +1,13 @@
+import asyncio
+
 import pytest
 
 from plexa_server.inference.base import (
     InferenceBackendUnavailable,
-    InferenceConfig,
     InferenceMalformedResponse,
     InferenceRejected,
     InferenceTimeout,
+    ResolvedInferenceConfig,
 )
 from plexa_server.inference.openai_compatible import OpenAICompatibleInference
 from plexa_server.models.message import Message
@@ -42,48 +44,54 @@ class _FakeOpenAICompatibleInference(OpenAICompatibleInference):
 def test_openai_compatible_backend_name():
     backend = OpenAICompatibleInference(
         base_url="http://localhost:11434/v1",
-        default_model="llama3.1",
     )
     assert backend.name == "openai-compatible"
 
 
-def test_openai_compatible_resolves_default_model():
+def test_openai_compatible_uses_resolved_model():
     backend = _FakeOpenAICompatibleInference(
         base_url="http://localhost:11434/v1",
-        default_model="llama3.1",
         response={
             "choices": [{"message": {"content": "hello"}, "finish_reason": "stop"}],
             "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
         },
     )
 
-    config = InferenceConfig(model="default")
-    result = backend.generate([make_message("user", "hi")], config)
+    config = ResolvedInferenceConfig(
+        profile="default",
+        backend_id="openai-compatible",
+        backend_name="openai-compatible",
+        model="llama3.1",
+    )
+    result = asyncio.run(backend.generate([make_message("user", "hi")], config))
 
     assert backend.last_request["payload"]["model"] == "llama3.1"
     assert result.model == "llama3.1"
     assert result.content == "hello"
 
 
-def test_openai_compatible_applies_model_map_and_role_mapping():
+def test_openai_compatible_maps_roles_and_uses_concrete_model():
     backend = _FakeOpenAICompatibleInference(
         base_url="http://localhost:11434/v1",
-        default_model="llama3.1",
-        model_map={"fast": "qwen2.5:7b"},
         response={
             "choices": [{"message": {"content": "mapped"}, "finish_reason": "stop"}],
         },
     )
 
-    config = InferenceConfig(model="fast")
-    backend.generate(
+    config = ResolvedInferenceConfig(
+        profile="fast",
+        backend_id="openai-compatible",
+        backend_name="openai-compatible",
+        model="qwen2.5:7b",
+    )
+    asyncio.run(backend.generate(
         [
             make_message("system", "system"),
             make_message("instructor", "instructor guidance"),
             make_message("user", "hello"),
         ],
         config,
-    )
+    ))
 
     assert backend.last_request["payload"]["model"] == "qwen2.5:7b"
     assert backend.last_request["payload"]["messages"][1]["role"] == "system"
@@ -92,32 +100,26 @@ def test_openai_compatible_applies_model_map_and_role_mapping():
 def test_openai_compatible_uses_extra_without_overriding_core_fields():
     backend = _FakeOpenAICompatibleInference(
         base_url="http://localhost:11434/v1",
-        default_model="llama3.1",
         response={"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]},
     )
 
-    config = InferenceConfig(
-        model="default",
+    config = ResolvedInferenceConfig(
+        profile="default",
+        backend_id="openai-compatible",
+        backend_name="openai-compatible",
+        model="llama3.1",
         temperature=0.2,
         extra={"stream": False, "model": "should-not-win"},
     )
-    backend.generate([make_message("user", "hi")], config)
+    asyncio.run(backend.generate([make_message("user", "hi")], config))
 
     assert backend.last_request["payload"]["stream"] is False
     assert backend.last_request["payload"]["model"] == "llama3.1"
 
 
-def test_openai_compatible_rejects_default_without_configured_model():
-    backend = OpenAICompatibleInference(base_url="http://localhost:11434/v1")
-
-    with pytest.raises(InferenceRejected):
-        backend.generate([make_message("user", "hi")], InferenceConfig(model="default"))
-
-
 def test_openai_compatible_parses_text_content_list():
     backend = _FakeOpenAICompatibleInference(
         base_url="http://localhost:11434/v1",
-        default_model="llama3.1",
         response={
             "choices": [
                 {
@@ -133,40 +135,67 @@ def test_openai_compatible_parses_text_content_list():
         },
     )
 
-    result = backend.generate([make_message("user", "hi")], InferenceConfig(model="default"))
+    result = asyncio.run(
+        backend.generate(
+            [make_message("user", "hi")],
+            ResolvedInferenceConfig(
+                profile="default",
+                backend_id="openai-compatible",
+                backend_name="openai-compatible",
+                model="llama3.1",
+            ),
+        )
+    )
     assert result.content == "part one and two"
 
 
 def test_openai_compatible_raises_on_malformed_response():
     backend = _FakeOpenAICompatibleInference(
         base_url="http://localhost:11434/v1",
-        default_model="llama3.1",
         response={},
     )
 
     with pytest.raises(InferenceMalformedResponse):
-        backend.generate([make_message("user", "hi")], InferenceConfig(model="default"))
+        asyncio.run(
+            backend.generate(
+                [make_message("user", "hi")],
+                ResolvedInferenceConfig(
+                    profile="default",
+                    backend_id="openai-compatible",
+                    backend_name="openai-compatible",
+                    model="llama3.1",
+                ),
+            )
+        )
 
 
 def test_openai_compatible_propagates_timeout():
     backend = _FakeOpenAICompatibleInference(
         base_url="http://localhost:11434/v1",
-        default_model="llama3.1",
         error=InferenceTimeout("timed out"),
     )
 
     with pytest.raises(InferenceTimeout):
-        backend.generate([make_message("user", "hi")], InferenceConfig(model="default"))
+        asyncio.run(
+            backend.generate(
+                [make_message("user", "hi")],
+                ResolvedInferenceConfig(
+                    profile="default",
+                    backend_id="openai-compatible",
+                    backend_name="openai-compatible",
+                    model="llama3.1",
+                ),
+            )
+        )
 
 
 def test_openai_compatible_health_check_success():
     backend = _FakeOpenAICompatibleInference(
         base_url="http://localhost:11434/v1",
-        default_model="llama3.1",
         response={"data": []},
     )
 
-    assert backend.health_check() is True
+    assert asyncio.run(backend.health_check()) is True
     assert backend.last_request["method"] == "GET"
     assert backend.last_request["path"] == "/models"
 
@@ -183,8 +212,7 @@ def test_openai_compatible_health_check_success():
 def test_openai_compatible_health_check_failure(raised_error):
     backend = _FakeOpenAICompatibleInference(
         base_url="http://localhost:11434/v1",
-        default_model="llama3.1",
         error=raised_error,
     )
 
-    assert backend.health_check() is False
+    assert asyncio.run(backend.health_check()) is False

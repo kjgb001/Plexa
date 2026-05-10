@@ -26,9 +26,9 @@ def test_validate_fails_on_empty_system_prompt():
         validate_lesson_runtime(lesson)
 
 
-def test_validate_fails_on_empty_model_profile():
+def test_validate_fails_on_empty_inference_profile():
     lesson = Lesson.model_validate(make_valid_lesson_payload())
-    lesson.execution.model_profile = " "
+    lesson.execution.profile = " "
 
     with pytest.raises(LessonRuntimeError):
         validate_lesson_runtime(lesson)
@@ -72,7 +72,7 @@ def test_freeze_inference_config_maps_fields_correctly():
     config = freeze_inference_config(lesson)
 
     assert isinstance(config, InferenceConfig)
-    assert config.model == lesson.execution.model_profile
+    assert config.model == lesson.execution.profile
     assert config.temperature == 0.4
     assert config.top_p == 0.9
     assert config.timeout_s == 30.0  # default
@@ -84,6 +84,6 @@ def test_freeze_inference_config_handles_missing_parameters():
 
     config = freeze_inference_config(lesson)
 
-    assert config.model == lesson.execution.model_profile
+    assert config.model == lesson.execution.profile
     assert config.temperature is None
     assert config.top_p is None

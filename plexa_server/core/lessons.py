@@ -27,8 +27,8 @@ def validate_lesson_runtime(lesson: Lesson) -> None:
     if not lesson.execution.system_prompt.strip():
         raise LessonRuntimeError("System prompt cannot be empty.")
 
-    if not lesson.execution.model_profile.strip():
-        raise LessonRuntimeError("Model profile must be specified.")
+    if not lesson.execution.profile.strip():
+        raise LessonRuntimeError("Inference profile must be specified.")
 
     if lesson.constraints.turn_limit is not None:
         if lesson.constraints.turn_limit <= 0:
@@ -88,7 +88,7 @@ def freeze_inference_config(lesson: Lesson) -> InferenceConfig:
     params = lesson.execution.parameters or {}
 
     return InferenceConfig(
-        model=lesson.execution.model_profile,
+        model=lesson.execution.profile,
         temperature=params.get("temperature"),
         top_p=params.get("top_p"),
         max_tokens=params.get("max_tokens"),

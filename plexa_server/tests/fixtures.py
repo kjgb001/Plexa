@@ -30,7 +30,7 @@ def valid_lesson():
         },
         "execution": {
             "system_prompt": "You are a helpful assistant.",
-            "model_profile": "default",
+            "profile": "default",
         },
         "constraints": {
             "input_mode": "freeform",
@@ -65,7 +65,7 @@ def make_valid_lesson_payload() -> Lesson:
         },
         "execution": {
             "system_prompt": "You are a careful tutor. If uncertain, say so.",
-            "model_profile": "kl3m_safe",
+            "profile": "kl3m_safe",
             "parameters": {
                 "temperature": 0.4,
                 "top_p": 0.9,

@@ -210,7 +210,7 @@ def test_session_manager_persists_and_deletes_encrypted_logs(
     assert created_log is not None
     assert created_log["session"]["session_id"] == created.session_id
     assert created_log["session"]["messages"][0]["role"] == "system"
-    assert created_log["inference_config"]["model"] == lesson.execution.model_profile
+    assert created_log["inference_config"]["profile"] == lesson.execution.profile
 
     created_metadata = run(artifact_storage.load_encrypted_log_metadata("session-log-1"))
     assert created_metadata is not None

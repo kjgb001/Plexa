@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 from pathlib import Path
 
@@ -12,13 +13,44 @@ from plexa_server.utils.import_filesystem_to_postgres import import_filesystem_t
 
 
 SERVER_ENV_PATH = Path(__file__).resolve().parent / ".env"
+DEFAULT_INFERENCE_BACKENDS = {
+    "ollama-local": {
+        "type": "openai-compatible",
+        "base_url": "http://localhost:11434/v1",
+        "timeout_s": 30.0,
+    },
+    "vllm-local": {
+        "type": "openai-compatible",
+        "base_url": "http://localhost:8001/v1",
+        "timeout_s": 30.0,
+    },
+}
+DEFAULT_INFERENCE_PROFILES = {
+    "default": {
+        "backend_id": "ollama-local",
+        "model": "llama3.1",
+    },
+    "fast": {
+        "backend_id": "ollama-local",
+        "model": "qwen2.5:7b",
+    },
+    "reasoning": {
+        "backend_id": "vllm-local",
+        "model": "deepseek-r1-distill-qwen-7b",
+    },
+}
 DEFAULT_ENV_VALUES = {
     "PLEXA_DATABASE_URL": "postgresql+asyncpg://plexa:plexa_dev_password@localhost:5432/plexa",
     "PLEXA_DATABASE_SYNC_URL": "postgresql://plexa:plexa_dev_password@localhost:5432/plexa",
     "PLEXA_TEST_DATABASE_URL": "postgresql+asyncpg://plexa:plexa_dev_password@localhost:5432/plexa_test",
     "PLEXA_TEST_DATABASE_SYNC_URL": "postgresql://plexa:plexa_dev_password@localhost:5432/plexa_test",
     "PLEXA_TEST_STORAGE_BACKEND": "postgres",
-    "PLEXA_INFERENCE_BACKEND": "stub",
+    "PLEXA_INFERENCE_BACKENDS": json.dumps(DEFAULT_INFERENCE_BACKENDS, separators=(",", ":")),
+    "PLEXA_INFERENCE_PROFILES": json.dumps(DEFAULT_INFERENCE_PROFILES, separators=(",", ":")),
+    "PLEXA_INFERENCE_REQUIRED_BACKENDS": json.dumps(
+        sorted(DEFAULT_INFERENCE_BACKENDS.keys()),
+        separators=(",", ":"),
+    ),
 }
 
 

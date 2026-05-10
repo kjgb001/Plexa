@@ -1,20 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import socket
 import time
-from typing import Any, Dict, List
+from typing import Any, List
 from urllib import error, request
 
 from plexa_server.db.config import load_server_env_file
 from plexa_server.inference.base import (
     InferenceBackend,
     InferenceBackendUnavailable,
-    InferenceConfig,
     InferenceMalformedResponse,
     InferenceRejected,
     InferenceResult,
     InferenceTimeout,
+    ResolvedInferenceConfig,
     Usage,
 )
 
@@ -31,25 +32,18 @@ class OpenAICompatibleInference(InferenceBackend):
         self,
         base_url: str,
         api_key: str | None = None,
-        default_model: str | None = None,
         timeout_s: float = 30.0,
-        model_map: dict[str, str] | None = None,
     ) -> None:
         """Initialize the adapter.
 
         Args:
             base_url: Base OpenAI-compatible API URL, typically ending in `/v1`.
             api_key: Optional bearer token for the backend.
-            default_model: Fallback model name for lessons using the `default`
-                model profile.
             timeout_s: Default network timeout in seconds.
-            model_map: Optional profile-to-model mapping.
         """
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
-        self._default_model = default_model
         self._timeout_s = timeout_s
-        self._model_map = model_map or {}
 
     @property
     def name(self) -> str:
@@ -76,49 +70,17 @@ class OpenAICompatibleInference(InferenceBackend):
             raise ValueError("PLEXA_OPENAI_BASE_URL must be configured.")
 
         api_key = os.getenv("PLEXA_OPENAI_API_KEY")
-        default_model = os.getenv("PLEXA_OPENAI_DEFAULT_MODEL")
         timeout_s_raw = os.getenv("PLEXA_OPENAI_TIMEOUT_S", "30.0")
         try:
             timeout_s = float(timeout_s_raw)
         except ValueError as exc:
             raise ValueError("PLEXA_OPENAI_TIMEOUT_S must be a float.") from exc
 
-        model_map: dict[str, str] | None = None
-        model_map_raw = os.getenv("PLEXA_OPENAI_MODEL_MAP")
-        if model_map_raw:
-            try:
-                loaded = json.loads(model_map_raw)
-            except json.JSONDecodeError as exc:
-                raise ValueError("PLEXA_OPENAI_MODEL_MAP must be valid JSON.") from exc
-            if not isinstance(loaded, dict) or not all(
-                isinstance(key, str) and isinstance(value, str)
-                for key, value in loaded.items()
-            ):
-                raise ValueError("PLEXA_OPENAI_MODEL_MAP must be a JSON object of string pairs.")
-            model_map = loaded
-
         return cls(
             base_url=base_url,
             api_key=api_key,
-            default_model=default_model,
             timeout_s=timeout_s,
-            model_map=model_map,
         )
-
-    def _resolve_model(self, config: InferenceConfig) -> str:
-        """Resolve a lesson model profile into a backend model identifier."""
-        requested = config.model.strip()
-        if requested in self._model_map:
-            return self._model_map[requested]
-
-        if not requested or requested == "default":
-            if self._default_model:
-                return self._default_model
-            raise InferenceRejected(
-                "No concrete model is configured for the 'default' lesson profile."
-            )
-
-        return requested
 
     def _map_role(self, role: str) -> str:
         """Map Plexa roles into OpenAI-compatible chat roles."""
@@ -129,11 +91,11 @@ class OpenAICompatibleInference(InferenceBackend):
     def _build_payload(
         self,
         messages: List["Message"],
-        config: InferenceConfig,
+        config: ResolvedInferenceConfig,
     ) -> dict[str, Any]:
         """Build a chat completion request payload."""
         payload: dict[str, Any] = {
-            "model": self._resolve_model(config),
+            "model": config.model,
             "messages": [
                 {"role": self._map_role(message.role), "content": message.content}
                 for message in messages
@@ -231,12 +193,22 @@ class OpenAICompatibleInference(InferenceBackend):
                 return "".join(text_parts)
         raise InferenceMalformedResponse("Inference response did not contain assistant text content.")
 
-    def generate(self, messages: List["Message"], config: InferenceConfig) -> InferenceResult:
+    async def generate(
+        self,
+        messages: List["Message"],
+        config: ResolvedInferenceConfig,
+    ) -> InferenceResult:
         """Generate the next assistant reply from an OpenAI-compatible backend."""
         start = time.perf_counter()
         timeout_s = config.timeout_s if config.timeout_s is not None else self._timeout_s
         payload = self._build_payload(messages, config)
-        response_data = self._request_json("POST", "/chat/completions", payload, timeout_s)
+        response_data = await asyncio.to_thread(
+            self._request_json,
+            "POST",
+            "/chat/completions",
+            payload,
+            timeout_s,
+        )
 
         choices = response_data.get("choices")
         if not isinstance(choices, list) or not choices:
@@ -270,10 +242,11 @@ class OpenAICompatibleInference(InferenceBackend):
             latency_ms=latency_ms,
         )
 
-    def health_check(self) -> bool:
+    async def health_check(self) -> bool:
         """Check whether the backend appears reachable and responsive."""
         try:
-            response_data = self._request_json(
+            response_data = await asyncio.to_thread(
+                self._request_json,
                 "GET",
                 "/models",
                 None,

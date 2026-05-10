@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime, UTC
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 # Errors (normalized boundary)
@@ -33,6 +33,10 @@ class InferenceRejected(InferenceError):
     """Raised when the backend rejects the request (bad input, auth, etc.)."""
 
 
+class InferenceConfigurationError(InferenceError):
+    """Raised when inference profile or backend configuration is invalid."""
+
+
 # Core DTOs (backend-agnostic)
 
 FinishReason = Literal[
@@ -54,8 +58,12 @@ class InferenceConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    # Model routing / selection
-    model: str = Field(..., description="Backend model identifier/name.")
+    # Lesson/runtime profile selection
+    profile: str = Field(
+        ...,
+        validation_alias=AliasChoices("profile", "model"),
+        description="Server-resolved inference profile identifier.",
+    )
 
     # Sampling controls
     temperature: Optional[float] = Field(
@@ -90,6 +98,46 @@ class InferenceConfig(BaseModel):
         default_factory=dict,
         description="Backend-agnostic extra hints; adapters may ignore.",
     )
+
+    @property
+    def model(self) -> str:
+        """Compatibility alias for older code that still reads `config.model`."""
+        return self.profile
+
+
+class InferenceProfile(BaseModel):
+    """Server-side runtime profile mapping for lesson-selected inference."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str
+    backend_id: str
+    model: str
+    temperature: Optional[float] = Field(default=None, ge=0.0)
+    top_p: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    max_tokens: Optional[int] = Field(default=None, gt=0)
+    stop: Optional[List[str]] = None
+    timeout_s: Optional[float] = Field(default=None, gt=0.0)
+    seed: Optional[int] = None
+    extra: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ResolvedInferenceConfig(BaseModel):
+    """Concrete runtime configuration after profile resolution."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    profile: str
+    backend_id: str
+    backend_name: str
+    model: str
+    temperature: Optional[float] = Field(default=None, ge=0.0)
+    top_p: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    max_tokens: Optional[int] = Field(default=None, gt=0)
+    stop: Optional[List[str]] = None
+    timeout_s: Optional[float] = Field(default=None, gt=0.0)
+    seed: Optional[int] = None
+    extra: Dict[str, Any] = Field(default_factory=dict)
 
 
 class Usage(BaseModel):
@@ -140,12 +188,16 @@ class InferenceBackend(ABC):
         """Stable adapter name used for logging and debugging."""
 
     @abstractmethod
-    def generate(self, messages: List["Message"], config: InferenceConfig) -> InferenceResult:
+    async def generate(
+        self,
+        messages: List["Message"],
+        config: ResolvedInferenceConfig,
+    ) -> InferenceResult:
         """Generate the next assistant message.
 
         Args:
             messages: Canonical ordered message history to provide as context.
-            config: Frozen inference parameters (lesson-defined).
+            config: Concrete runtime config after profile resolution.
 
         Returns:
             InferenceResult containing assistant content and optional metadata.
@@ -154,7 +206,7 @@ class InferenceBackend(ABC):
             InferenceError: Any backend failure must be normalized to this family.
         """
 
-    def health_check(self) -> bool:
+    async def health_check(self) -> bool:
         """Best-effort backend readiness check.
 
         Default is optimistic (True). Real backends should override with a ping.

@@ -1,5 +1,7 @@
+import asyncio
+
 from plexa_server.inference.stub import StubInference
-from plexa_server.inference.base import InferenceConfig
+from plexa_server.inference.base import ResolvedInferenceConfig
 from plexa_server.models.message import Message
 
 from datetime import datetime, UTC
@@ -28,9 +30,14 @@ def test_stub_generate_basic_response():
         make_message("user", "Hello stub."),
     ]
 
-    config = InferenceConfig(model="stub-model")
+    config = ResolvedInferenceConfig(
+        profile="default",
+        backend_id="stub",
+        backend_name="stub",
+        model="stub-model",
+    )
 
-    result = backend.generate(messages, config)
+    result = asyncio.run(backend.generate(messages, config))
 
     assert "[STUB RESPONSE]" in result.content
     assert "Hello stub." in result.content
@@ -46,10 +53,15 @@ def test_stub_deterministic_output():
         make_message("user", "Consistency check."),
     ]
 
-    config = InferenceConfig(model="stub-model")
+    config = ResolvedInferenceConfig(
+        profile="default",
+        backend_id="stub",
+        backend_name="stub",
+        model="stub-model",
+    )
 
-    result1 = backend.generate(messages, config)
-    result2 = backend.generate(messages, config)
+    result1 = asyncio.run(backend.generate(messages, config))
+    result2 = asyncio.run(backend.generate(messages, config))
 
     assert result1.content == result2.content
 
@@ -61,13 +73,18 @@ def test_stub_handles_no_user_message():
         make_message("system", "System only."),
     ]
 
-    config = InferenceConfig(model="stub-model")
+    config = ResolvedInferenceConfig(
+        profile="default",
+        backend_id="stub",
+        backend_name="stub",
+        model="stub-model",
+    )
 
-    result = backend.generate(messages, config)
+    result = asyncio.run(backend.generate(messages, config))
 
     assert "<no user message found>" in result.content
 
 
 def test_stub_health_check():
     backend = StubInference()
-    assert backend.health_check() is True
+    assert asyncio.run(backend.health_check()) is True

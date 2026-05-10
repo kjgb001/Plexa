@@ -5,8 +5,8 @@ from typing import List
 
 from plexa_server.inference.base import (
     InferenceBackend,
-    InferenceConfig,
     InferenceResult,
+    ResolvedInferenceConfig,
     Usage,
 )
 
@@ -28,7 +28,11 @@ class StubInference(InferenceBackend):
         """
         return "stub"
 
-    def generate(self, messages: List["Message"], config: InferenceConfig) -> InferenceResult:
+    async def generate(
+        self,
+        messages: List["Message"],
+        config: ResolvedInferenceConfig,
+    ) -> InferenceResult:
         """Generate a deterministic assistant reply from the latest user message.
 
         Args:
@@ -75,7 +79,7 @@ class StubInference(InferenceBackend):
             latency_ms=latency_ms,
         )
 
-    def health_check(self) -> bool:
+    async def health_check(self) -> bool:
         """Report stub readiness for health and readiness checks.
 
         Returns:

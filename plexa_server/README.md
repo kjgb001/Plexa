@@ -78,6 +78,9 @@ Important variables:
 - `PLEXA_TEST_DATABASE_URL`
 - `PLEXA_TEST_DATABASE_SYNC_URL`
 - `PLEXA_TEST_STORAGE_BACKEND`
+- `PLEXA_INFERENCE_BACKENDS`
+- `PLEXA_INFERENCE_PROFILES`
+- `PLEXA_INFERENCE_REQUIRED_BACKENDS`
 
 ## Bootstrap
 
@@ -87,10 +90,21 @@ It can:
 - create `plexa_server/.env` when missing
 - populate missing local defaults without overwriting existing values
 - generate and persist the encrypted log key once
+- seed multi-backend inference defaults for local Ollama and vLLM targets
 - wait for Postgres
 - create the development and test databases
 - run Alembic migrations
 - optionally import the legacy filesystem dataset
+
+The generated inference defaults are meant to be edited locally as needed. By default bootstrap writes:
+- `PLEXA_INFERENCE_BACKENDS`
+  - `ollama-local -> http://localhost:11434/v1`
+  - `vllm-local -> http://localhost:8001/v1`
+- `PLEXA_INFERENCE_PROFILES`
+  - `default -> ollama-local / llama3.1`
+  - `fast -> ollama-local / qwen2.5:7b`
+  - `reasoning -> vllm-local / deepseek-r1-distill-qwen-7b`
+  - `kl3m_safe -> ollama-local / llama3.1`
 
 Initialize both development and test databases:
 
