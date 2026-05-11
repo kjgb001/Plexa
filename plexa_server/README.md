@@ -56,7 +56,7 @@ python -m pytest
 
 ## PostgreSQL Setup
 
-This repository includes a local Postgres service definition in [docker-compose.yml](/home/kellan/projects/school/plexa/plexa_server/docker-compose.yml).
+This repository includes a local Postgres service definition in [docker-compose.yml](docker-compose.yml).
 
 Start the database:
 
@@ -70,7 +70,7 @@ If your machine uses the older standalone Compose binary, use:
 docker-compose up -d
 ```
 
-The server-local [.env](/home/kellan/projects/school/plexa/plexa_server/.env) file defines the default development and test database URLs.
+The server-local `.env` file defines the default development and test database URLs.
 
 Important variables:
 - `PLEXA_DATABASE_URL`
@@ -84,7 +84,7 @@ Important variables:
 
 ## Bootstrap
 
-The application bootstrap entrypoint is [bootstrap.py](/home/kellan/projects/school/plexa/plexa_server/bootstrap.py).
+The application bootstrap entrypoint is [bootstrap.py](bootstrap.py).
 
 It can:
 - create `plexa_server/.env` when missing
@@ -129,13 +129,13 @@ Initialize only the test database:
 python -m plexa_server.bootstrap --init-test
 ```
 
-The lower-level Postgres-specific helpers remain in [db/bootstrap.py](/home/kellan/projects/school/plexa/plexa_server/db/bootstrap.py), but the intended user-facing entrypoint is the top-level bootstrap module.
+The lower-level Postgres-specific helpers remain in [db/bootstrap.py](db/bootstrap.py), but the intended user-facing entrypoint is the top-level bootstrap module.
 
 ## Migrations
 
 Alembic is configured in:
-- [alembic.ini](/home/kellan/projects/school/plexa/plexa_server/alembic.ini)
-- [alembic/env.py](/home/kellan/projects/school/plexa/plexa_server/alembic/env.py)
+- [alembic.ini](alembic.ini)
+- [alembic/env.py](alembic/env.py)
 
 Run all migrations:
 
@@ -159,7 +159,7 @@ Migrations are the authoritative schema workflow. The application should not rel
 
 ## Importing Legacy Filesystem Data
 
-The one-way importer lives at [utils/import_filesystem_to_postgres.py](/home/kellan/projects/school/plexa/plexa_server/utils/import_filesystem_to_postgres.py).
+The one-way importer lives at [utils/import_filesystem_to_postgres.py](utils/import_filesystem_to_postgres.py).
 
 Import the filesystem dataset into the development database:
 
@@ -177,11 +177,11 @@ In normal local setup, it is simpler to let the bootstrap command handle this wi
 
 ## Storage Backends
 
-The active persistence implementations live under [storage](/home/kellan/projects/school/plexa/plexa_server/storage):
+The active persistence implementations live under [storage](storage):
 
-- [filesystem.py](/home/kellan/projects/school/plexa/plexa_server/storage/filesystem.py)
-- [postgres.py](/home/kellan/projects/school/plexa/plexa_server/storage/postgres.py)
-- [storage_interface.py](/home/kellan/projects/school/plexa/plexa_server/storage/storage_interface.py)
+- [filesystem.py](storage/filesystem.py)
+- [postgres.py](storage/postgres.py)
+- [storage_interface.py](storage/storage_interface.py)
 
 The application depends on the storage interfaces. Concrete backend selection happens in the composition root, not inside core session logic.
 
@@ -195,7 +195,7 @@ The test suite is backend-aware.
 
 The default backend selector is read from:
 1. an exported environment variable
-2. [plexa_server/.env](/home/kellan/projects/school/plexa/plexa_server/.env)
+2. `plexa_server/.env`
 3. the hard default `filesystem`
 
 Set the backend in `.env`:
@@ -233,11 +233,11 @@ Run only the API suite against Postgres:
 python -m pytest -q plexa_server/tests/api --storage-backend=postgres
 ```
 
-The backend-aware test wiring is centralized in [tests/conftest.py](/home/kellan/projects/school/plexa/plexa_server/tests/conftest.py).
+The backend-aware test wiring is centralized in [tests/conftest.py](tests/conftest.py).
 
 ## Running the API
 
-The FastAPI app is constructed in [api/app.py](/home/kellan/projects/school/plexa/plexa_server/api/app.py).
+The FastAPI app is constructed in [api/app.py](api/app.py).
 
 You can interact with it over the terminal using `curl` once the server is running. Example:
 

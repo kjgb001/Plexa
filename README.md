@@ -44,13 +44,13 @@ plexa/
 
 ### Package Overview
 
-- [plexa_server/README.md](/home/kellan/projects/school/plexa/plexa_server/README.md)
+- [plexa_server/README.md](plexa_server/README.md)
   The main implemented backend package. It contains the FastAPI server, lesson/session runtime, storage abstractions, PostgreSQL integration, Alembic migrations, bootstrap tooling, and the backend-aware test suite.
 
-- [plexa_author/README.md](/home/kellan/projects/school/plexa/plexa_author/README.md)
+- [plexa_author/README.md](plexa_author/README.md)
   A Python/Tkinter lesson authoring tool for producing structured lesson artifacts offline.
 
-- [plexa_client/README.md](/home/kellan/projects/school/plexa/plexa_client/README.md)
+- [plexa_client/README.md](plexa_client/README.md)
   Currently still close to a Vite/React scaffold rather than a documented production-ready client application.
 
 ## Current State Of The Codebase
@@ -77,8 +77,8 @@ Plexa is designed around explicit contracts and separation of concerns.
 
 Current architectural principles reflected in the code:
 - **Lesson-first runtime**: sessions are created from structured lesson artifacts
-- **Backend abstraction**: storage and inference are hidden behind interfaces
-- **PostgreSQL as primary persistence**: the server now supports full relational persistence
+- **Backend abstraction**: storage and inference are behind interfaces
+- **PostgreSQL as primary persistence**: the server supports full relational persistence
 - **Filesystem retained as legacy/test backend**: useful for migration support and comparative testing
 - **Mostly async server path**: runtime persistence and request handling are aligned with the async database stack
 
@@ -93,11 +93,11 @@ For local server work:
 4. run tests through `python -m pytest`
 
 The detailed server workflow is documented in:
-- [plexa_server/README.md](/home/kellan/projects/school/plexa/plexa_server/README.md)
+- [plexa_server/README.md](plexa_server/README.md)
 
 ## Testing
 
-The repository root has a pytest hook in [conftest.py](/home/kellan/projects/school/plexa/conftest.py) that:
+The repository root has a pytest hook in [conftest.py](conftest.py) that:
 - loads `plexa_server/.env`
 - registers the `--storage-backend` option early enough for root-level test runs
 
@@ -114,18 +114,8 @@ python -m pytest -q plexa_server/tests --storage-backend=postgres
 python -m pytest -q plexa_server/tests --storage-backend=both
 ```
 
-## Status
-
-This project is still pre-release, but the server architecture is no longer just aspirational.
-
-The important distinction now is:
-- the **server runtime and persistence path are real and tested**
-- the **rest of the monorepo is still catching up in polish and completeness**
-
-That is the current truth of the codebase, and the README should reflect that.
-
 ## License
 
-Plexa is open-source.
+Plexa is open-source with a permissive license.
 
-See [LICENSE](/home/kellan/projects/school/plexa/LICENSE).
+See [LICENSE](LICENSE).
