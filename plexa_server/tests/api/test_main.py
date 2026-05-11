@@ -5,7 +5,13 @@ from plexa_server.inference.stub import StubInference
 from plexa_server.inference.openai_compatible import OpenAICompatibleInference
 
 
+def _disable_env_file_loading(monkeypatch):
+    """Keep tests focused on explicit env mutations, not ambient `.env` state."""
+    monkeypatch.setattr(main, "load_server_env_file", lambda: None)
+
+
 def test_create_inference_registry_defaults_to_stub(monkeypatch):
+    _disable_env_file_loading(monkeypatch)
     monkeypatch.delenv("PLEXA_INFERENCE_BACKEND", raising=False)
     monkeypatch.delenv("PLEXA_INFERENCE_BACKENDS", raising=False)
     monkeypatch.delenv("PLEXA_INFERENCE_PROFILES", raising=False)
@@ -16,6 +22,7 @@ def test_create_inference_registry_defaults_to_stub(monkeypatch):
 
 
 def test_create_inference_registry_builds_openai_compatible(monkeypatch):
+    _disable_env_file_loading(monkeypatch)
     monkeypatch.setenv("PLEXA_INFERENCE_BACKEND", "openai-compatible")
     monkeypatch.setenv("PLEXA_OPENAI_BASE_URL", "http://localhost:11434/v1")
     monkeypatch.setenv("PLEXA_OPENAI_DEFAULT_MODEL", "llama3.1")
@@ -31,6 +38,7 @@ def test_create_inference_registry_builds_openai_compatible(monkeypatch):
 
 
 def test_create_inference_router_defaults_to_stub_fallback(monkeypatch):
+    _disable_env_file_loading(monkeypatch)
     monkeypatch.delenv("PLEXA_INFERENCE_BACKEND", raising=False)
     monkeypatch.delenv("PLEXA_INFERENCE_BACKENDS", raising=False)
     monkeypatch.delenv("PLEXA_INFERENCE_PROFILES", raising=False)
@@ -42,6 +50,7 @@ def test_create_inference_router_defaults_to_stub_fallback(monkeypatch):
 
 
 def test_create_inference_registry_builds_multiple_backends(monkeypatch):
+    _disable_env_file_loading(monkeypatch)
     monkeypatch.setenv(
         "PLEXA_INFERENCE_BACKENDS",
         '{"stub-a":{"type":"stub"},"stub-b":{"type":"stub"}}',
@@ -58,6 +67,7 @@ def test_create_inference_registry_builds_multiple_backends(monkeypatch):
 
 
 def test_create_required_backend_ids_from_json(monkeypatch):
+    _disable_env_file_loading(monkeypatch)
     monkeypatch.setenv("PLEXA_INFERENCE_REQUIRED_BACKENDS", '["stub-a","stub-b"]')
     monkeypatch.delenv("PLEXA_INFERENCE_REQUIRED_BACKENDS_CSV", raising=False)
 
@@ -65,6 +75,7 @@ def test_create_required_backend_ids_from_json(monkeypatch):
 
 
 def test_create_inference_registry_rejects_unknown_backend(monkeypatch):
+    _disable_env_file_loading(monkeypatch)
     monkeypatch.setenv("PLEXA_INFERENCE_BACKEND", "unknown-backend")
     monkeypatch.delenv("PLEXA_INFERENCE_BACKENDS", raising=False)
     monkeypatch.delenv("PLEXA_INFERENCE_PROFILES", raising=False)

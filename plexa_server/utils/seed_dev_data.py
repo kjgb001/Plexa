@@ -9,41 +9,16 @@ from plexa_server.models.lesson import Lesson
 from plexa_server.storage.filesystem import FileSystemArtifactStorage, FileSystemCourseStorage
 from plexa_server.storage.postgres import PostgresArtifactStorage, PostgresCourseStorage
 from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage
-from plexa_server.tests.fixtures import valid_course, valid_lesson
+from plexa_server.tests.fixtures import (
+    SEEDED_COURSE_SPECS,
+    SEEDED_LESSON_SPECS,
+    make_seeded_lesson_payload,
+    valid_course,
+)
 from plexa_server.utils.filesystem_data_dir import get_data_dir_path
 
 
 DATA_PATH = get_data_dir_path()
-
-LESSON_PROFILES = {
-    "default": "default",
-    "The Danger of Hallucinations": "default",
-    "The Power of Prompt Engineering": "default",
-    "Managing Context Decay": "reasoning",
-    "Prompt Engineering for Data Viz": "fast",
-    "LLM Assisted Data Evaluation": "reasoning",
-}
-
-COURSE_SPECS = [
-    {
-        "course_title": "default",
-        "course_description": "default",
-        "lessons": {
-            "default": "default",
-            "The Danger of Hallucinations": "0.1.0",
-            "The Power of Prompt Engineering": "0.3.0",
-            "Managing Context Decay": "0.2.0",
-        },
-    },
-    {
-        "course_title": "Data Visualization",
-        "course_description": "Using AI for accelerated visualization",
-        "lessons": {
-            "Prompt Engineering for Data Viz": "0.2.0",
-            "LLM Assisted Data Evaluation": "0.4.0",
-        },
-    },
-]
 
 
 def parse_args() -> argparse.Namespace:
@@ -99,15 +74,14 @@ async def seed_lesson(
     artifact_storage: ArtifactStorage,
 ) -> Lesson:
     """Create and persist a seeded lesson with an explicit inference profile."""
-    payload = valid_lesson()
-    if lesson_id != "default":
-        payload["identity"]["lesson_id"] = lesson_id
-        payload["identity"]["title"] = lesson_id
-    if lesson_version != "default":
-        payload["identity"]["version"] = lesson_version
+    expected_version = SEEDED_LESSON_SPECS.get(lesson_id, {}).get("version", lesson_version)
+    if lesson_version != expected_version:
+        raise ValueError(
+            f"Seed lesson version mismatch for '{lesson_id}': "
+            f"got {lesson_version!r}, expected {expected_version!r}."
+        )
 
-    payload["execution"]["profile"] = LESSON_PROFILES.get(lesson_id, "default")
-    lesson = Lesson.model_validate(payload)
+    lesson = Lesson.model_validate(make_seeded_lesson_payload(lesson_id, lesson_version))
     await artifact_storage.save_lesson(lesson)
     return lesson
 
@@ -116,9 +90,10 @@ async def seed_target(target: str) -> None:
     """Seed the requested storage target with example lessons and courses."""
     artifact_storage, course_storage = _build_storage(target)
 
-    for course_spec in COURSE_SPECS:
+    for course_spec in SEEDED_COURSE_SPECS:
         lessons: list[Lesson] = []
-        for lesson_id, lesson_version in course_spec["lessons"].items():
+        for lesson_id in course_spec["lesson_ids"]:
+            lesson_version = SEEDED_LESSON_SPECS[lesson_id]["version"]
             lessons.append(await seed_lesson(lesson_id, lesson_version, artifact_storage))
         await seed_course(
             lessons=lessons,
