@@ -21,7 +21,7 @@ class SessionTitleGenerator(ABC):
 class DeterministicSessionTitleGenerator(SessionTitleGenerator):
     """Derive a stable session title directly from the first user message."""
 
-    def __init__(self, max_words: int = 8, max_chars: int = 56):
+    def __init__(self, max_words: int = 8, max_chars: int = 28):
         self._max_words = max_words
         self._max_chars = max_chars
 

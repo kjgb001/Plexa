@@ -1,7 +1,7 @@
-import { useEffect } from "react"
+import { useEffect, type ReactNode } from "react"
 import BootScreen from "./app/BootScreen"
 import AuthCallbackScreen from "./app/AuthCallbackScreen"
-import { navigate, parseRoute, useCurrentPathname } from "./app/router"
+import { navigate, parseRoute, useCurrentPathname, type AppRoute } from "./app/router"
 import { useAuth } from "./auth/useAuth"
 import { ApiProvider } from "./api"
 import StudentShell from "./app/StudentShell"
@@ -60,41 +60,19 @@ function AppView() {
 
   if (route.kind === "courses") {
     return (
-      <StudentShell route={route} userId={user?.userId ?? null} onLogout={logout}>
-        <CourseListScreen
-          onSelectCourse={(course) => {
-            navigate(`/app/courses/${encodeURIComponent(course)}`)
-          }}
-        />
-      </StudentShell>
+      <AuthenticatedAppShell route={route} userId={user?.userId ?? null} onLogout={logout} />
     )
   }
 
   if (route.kind === "lessons") {
     return (
-      <StudentShell route={route} userId={user?.userId ?? null} onLogout={logout}>
-        <LessonListScreen
-          courseId={route.courseId}
-          onSelectLesson={(lessonId, lessonVersion) => {
-            navigate(
-              `/app/courses/${encodeURIComponent(route.courseId)}/lessons/${encodeURIComponent(lessonId)}/${encodeURIComponent(lessonVersion)}`
-            )
-          }}
-        />
-      </StudentShell>
+      <AuthenticatedAppShell route={route} userId={user?.userId ?? null} onLogout={logout} />
     )
   }
 
   if (route.kind === "chat") {
     return (
-      <StudentShell route={route} userId={user?.userId ?? null} onLogout={logout}>
-        <ChatScreen
-          courseId={route.courseId}
-          lessonId={route.lessonId}
-          lessonVersion={route.lessonVersion}
-          sessionId={route.sessionId}
-        />
-      </StudentShell>
+      <AuthenticatedAppShell route={route} userId={user?.userId ?? null} onLogout={logout} />
     )
   }
 
@@ -103,5 +81,53 @@ function AppView() {
       <h1>Plexa</h1>
       <p>Page not found.</p>
     </div>
+  )
+}
+
+function AuthenticatedAppShell({
+  route,
+  userId,
+  onLogout,
+}: {
+  route: Exclude<AppRoute, { kind: "login" | "auth-callback" | "not-found" }>
+  userId: string | null
+  onLogout: () => Promise<void>
+}) {
+  let content: ReactNode
+
+  if (route.kind === "courses") {
+    content = (
+      <CourseListScreen
+        onSelectCourse={(course) => {
+          navigate(`/app/courses/${encodeURIComponent(course)}`)
+        }}
+      />
+    )
+  } else if (route.kind === "lessons") {
+    content = (
+      <LessonListScreen
+        courseId={route.courseId}
+        onSelectLesson={(lessonId, lessonVersion) => {
+          navigate(
+            `/app/courses/${encodeURIComponent(route.courseId)}/lessons/${encodeURIComponent(lessonId)}/${encodeURIComponent(lessonVersion)}`,
+          )
+        }}
+      />
+    )
+  } else {
+    content = (
+      <ChatScreen
+        courseId={route.courseId}
+        lessonId={route.lessonId}
+        lessonVersion={route.lessonVersion}
+        sessionId={route.sessionId}
+      />
+    )
+  }
+
+  return (
+    <StudentShell route={route} userId={userId} onLogout={onLogout}>
+      {content}
+    </StudentShell>
   )
 }

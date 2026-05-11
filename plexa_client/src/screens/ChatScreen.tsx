@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { useApis } from "../api"
 import type { Message, Session } from "../api/interfaces"
 import { navigate } from "../app/router"
@@ -10,10 +10,17 @@ interface Props {
   sessionId?: string | null
 }
 
-function dispatchSessionChanged(courseId: string, lessonId: string, lessonVersion: string) {
+const MAX_COMPOSER_HEIGHT_PX = 224
+
+function dispatchSessionChanged(
+  courseId: string,
+  lessonId: string,
+  lessonVersion: string,
+  change: { type: "upsert"; session: Session } | { type: "delete"; sessionId: string },
+) {
   window.dispatchEvent(
     new CustomEvent("plexa:sessions-changed", {
-      detail: { courseId, lessonId, lessonVersion },
+      detail: { courseId, lessonId, lessonVersion, change },
     }),
   )
 }
@@ -26,7 +33,7 @@ export default function ChatScreen({
 }: Props) {
   const { sessionApi } = useApis()
   const transcriptRef = useRef<HTMLOListElement | null>(null)
-  const inputRef = useRef<HTMLInputElement | null>(null)
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const latestSessionRef = useRef<Session | null>(null)
   const latestMessagesRef = useRef<Message[]>([])
   const latestLoadingRef = useRef(false)
@@ -111,6 +118,23 @@ export default function ChatScreen({
     }
   }, [messages, loading])
 
+  useLayoutEffect(() => {
+    const element = inputRef.current
+    if (!element) {
+      return
+    }
+
+    element.style.height = "0px"
+    const nextHeight = Math.min(element.scrollHeight, MAX_COMPOSER_HEIGHT_PX)
+    element.style.height = `${nextHeight}px`
+    element.style.overflowY = element.scrollHeight > MAX_COMPOSER_HEIGHT_PX ? "auto" : "hidden"
+
+    const transcript = transcriptRef.current
+    if (transcript) {
+      transcript.scrollTop = transcript.scrollHeight
+    }
+  }, [input])
+
   useEffect(() => {
     const sessionIdAtMount = sessionId
     const courseIdAtMount = courseId
@@ -151,7 +175,10 @@ export default function ChatScreen({
 
     try {
       const result = await sessionApi.createSession(courseId, lessonId, lessonVersion)
-      dispatchSessionChanged(courseId, lessonId, lessonVersion)
+      dispatchSessionChanged(courseId, lessonId, lessonVersion, {
+        type: "upsert",
+        session: result.session,
+      })
 
       navigate(
         `/app/courses/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}/${encodeURIComponent(lessonVersion)}/sessions/${encodeURIComponent(result.session.session_id)}`,
@@ -175,7 +202,10 @@ export default function ChatScreen({
     try {
       suppressAutoDeleteRef.current = true
       await sessionApi.deleteSession(courseId, lessonId, lessonVersion, session.session_id)
-      dispatchSessionChanged(courseId, lessonId, lessonVersion)
+      dispatchSessionChanged(courseId, lessonId, lessonVersion, {
+        type: "delete",
+        sessionId: session.session_id,
+      })
       setShowDeleteConfirm(false)
       navigate(
         `/app/courses/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}/${encodeURIComponent(lessonVersion)}`,
@@ -216,7 +246,10 @@ export default function ChatScreen({
 
       setMessages((previous) => [...previous, result.assistantMessage])
       setSession(result.session)
-      dispatchSessionChanged(courseId, lessonId, lessonVersion)
+      dispatchSessionChanged(courseId, lessonId, lessonVersion, {
+        type: "upsert",
+        session: result.session,
+      })
     } catch (error) {
       console.error("Failed to send message", error)
       setMessages((previous) => previous.slice(0, -1))
@@ -370,12 +403,19 @@ export default function ChatScreen({
           >
             <label className="composer-form__field">
               <span className="sr-only">Message</span>
-              <input
+              <textarea
                 ref={inputRef}
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault()
+                    void sendMessage()
+                  }
+                }}
                 placeholder="Ask a question, test a prompt, or reflect on the lesson."
                 disabled={loading || deleting || session.is_active === false}
+                rows={1}
               />
             </label>
 

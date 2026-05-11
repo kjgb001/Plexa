@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { useApis } from "../api"
 import type { Course, Lesson, Session } from "../api/interfaces"
 import { useTheme } from "../theme/useTheme"
@@ -26,6 +26,11 @@ export default function StudentShell({
 }: StudentShellProps) {
   const { courseApi, sessionApi } = useApis()
   const { theme, toggleTheme } = useTheme()
+  const railScrollRef = useRef<HTMLDivElement | null>(null)
+  const pendingPrependCompensationRef = useRef<{
+    previousScrollHeight: number
+    previousScrollTop: number
+  } | null>(null)
   const [courses, setCourses] = useState<Course[]>([])
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [sessions, setSessions] = useState<Session[]>([])
@@ -33,7 +38,6 @@ export default function StudentShell({
   const [lessonsLoading, setLessonsLoading] = useState(false)
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [sessionsError, setSessionsError] = useState<string | null>(null)
-  const [sessionRefreshKey, setSessionRefreshKey] = useState(0)
   const [sessionPendingDelete, setSessionPendingDelete] = useState<Session | null>(null)
   const [sessionDeleting, setSessionDeleting] = useState(false)
   const [sessionCreating, setSessionCreating] = useState(false)
@@ -151,13 +155,23 @@ export default function StudentShell({
       active = false
     }
   }, [
-    activeSessionId,
     selectedCourseId,
     selectedLessonId,
     selectedLessonVersion,
     sessionApi,
-    sessionRefreshKey,
   ])
+
+  useEffect(() => {
+    const element = railScrollRef.current
+    const pending = pendingPrependCompensationRef.current
+    if (!element || pending === null) {
+      return
+    }
+
+    const delta = element.scrollHeight - pending.previousScrollHeight
+    element.scrollTop = pending.previousScrollTop + delta
+    pendingPrependCompensationRef.current = null
+  }, [sessions.length])
 
   useEffect(() => {
     function handleSessionChange(event: Event) {
@@ -165,6 +179,9 @@ export default function StudentShell({
         courseId: string
         lessonId: string
         lessonVersion: string
+        change:
+          | { type: "upsert"; session: Session }
+          | { type: "delete"; sessionId: string }
       }>).detail
 
       if (
@@ -176,7 +193,37 @@ export default function StudentShell({
         return
       }
 
-      setSessionRefreshKey((value) => value + 1)
+      const change = detail.change
+
+      if (change.type === "delete") {
+        setSessions((current) =>
+          current.filter((session) => session.session_id !== change.sessionId),
+        )
+        return
+      }
+
+      setSessions((current) => {
+        const existingIndex = current.findIndex(
+          (session) => session.session_id === change.session.session_id,
+        )
+
+        if (existingIndex === -1) {
+          const element = railScrollRef.current
+          if (element) {
+            pendingPrependCompensationRef.current = {
+              previousScrollHeight: element.scrollHeight,
+              previousScrollTop: element.scrollTop,
+            }
+          }
+          return [change.session, ...current]
+        }
+
+        return current.map((session) =>
+          session.session_id === change.session.session_id
+            ? change.session
+            : session,
+        )
+      })
     }
 
     window.addEventListener("plexa:sessions-changed", handleSessionChange as EventListener)
@@ -233,7 +280,9 @@ export default function StudentShell({
       const deletedActiveSession = sessionPendingDelete.session_id === activeSessionId
 
       setSessionPendingDelete(null)
-      setSessionRefreshKey((value) => value + 1)
+      setSessions((current) =>
+        current.filter((session) => session.session_id !== sessionPendingDelete.session_id),
+      )
 
       if (deletedActiveSession) {
         navigate(
@@ -261,7 +310,14 @@ export default function StudentShell({
         selectedLesson.lesson_id,
         selectedLesson.version,
       )
-      setSessionRefreshKey((value) => value + 1)
+      const element = railScrollRef.current
+      if (element) {
+        pendingPrependCompensationRef.current = {
+          previousScrollHeight: element.scrollHeight,
+          previousScrollTop: element.scrollTop,
+        }
+      }
+      setSessions((current) => [result.session, ...current])
       navigate(
         `/app/courses/${encodeURIComponent(selectedCourseId)}/lessons/${encodeURIComponent(selectedLesson.lesson_id)}/${encodeURIComponent(selectedLesson.version)}/sessions/${encodeURIComponent(result.session.session_id)}`,
       )
@@ -297,7 +353,10 @@ export default function StudentShell({
           </div>
         </div>
 
-        <div className="rail__scroll">
+        <div
+          ref={railScrollRef}
+          className="rail__scroll"
+        >
           <section className="rail__section">
             <div className="rail__section-header">
               <h2>Courses</h2>
