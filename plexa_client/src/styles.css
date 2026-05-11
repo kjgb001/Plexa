@@ -292,6 +292,9 @@ button {
 .session-card__title,
 .rail-card__title {
   font-weight: 650;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .session-card__meta,
@@ -300,6 +303,9 @@ button {
 .screen-card p,
 .empty-panel {
   color: var(--ink-soft);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .ghost-button,
@@ -451,6 +457,7 @@ button {
 .transcript-entry {
   display: grid;
   gap: 0.35rem;
+  min-width: 0;
   max-width: min(100%, 56rem);
 }
 
@@ -495,6 +502,8 @@ button {
 .message-body {
   margin: 0;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .composer {
@@ -504,11 +513,13 @@ button {
 }
 
 .composer input {
+  min-width: 0;
   padding: 0.95rem 1rem;
   border-radius: 16px;
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-strong) 88%, transparent);
   color: var(--ink);
+  overflow-wrap: anywhere;
 }
 
 .context-panel {
