@@ -10,6 +10,7 @@ class Session(BaseModel):
     """Persisted state for a user's lesson conversation."""
 
     session_id: str = Field(default_factory=lambda: str(uuid4()))
+    title: str = "Untitled session"
     user_id: str
 
     lesson_id: str

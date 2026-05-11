@@ -159,6 +159,32 @@ export default function StudentShell({
     sessionRefreshKey,
   ])
 
+  useEffect(() => {
+    function handleSessionChange(event: Event) {
+      const detail = (event as CustomEvent<{
+        courseId: string
+        lessonId: string
+        lessonVersion: string
+      }>).detail
+
+      if (
+        !detail ||
+        detail.courseId !== selectedCourseId ||
+        detail.lessonId !== selectedLessonId ||
+        detail.lessonVersion !== selectedLessonVersion
+      ) {
+        return
+      }
+
+      setSessionRefreshKey((value) => value + 1)
+    }
+
+    window.addEventListener("plexa:sessions-changed", handleSessionChange as EventListener)
+    return () => {
+      window.removeEventListener("plexa:sessions-changed", handleSessionChange as EventListener)
+    }
+  }, [selectedCourseId, selectedLessonId, selectedLessonVersion])
+
   const selectedCourse = useMemo(
     () => courses.find((course) => course.course_id === selectedCourseId) ?? null,
     [courses, selectedCourseId],
@@ -405,9 +431,10 @@ export default function StudentShell({
                           onKeyDown={(event) => handleSessionCardKeyDown(event, session)}
                         >
                           <span className="session-card__title">
-                            {session.is_active ? "Open session" : "Closed session"}
+                            {session.title}
                           </span>
                           <span className="session-card__meta">
+                            {session.is_active ? "Open session" : "Closed session"} ·{" "}
                             {formatSessionTimestamp(session.created_at)}
                           </span>
                           <span className="session-card__meta">

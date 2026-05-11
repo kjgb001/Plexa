@@ -124,6 +124,7 @@ def test_session_storage_roundtrip(tmp_path: Path):
     assert loaded is not None
     assert loaded.session_id == session.session_id
     assert loaded.user_id == session.user_id
+    assert loaded.title == session.title
 
 
 def test_session_storage_delete(tmp_path: Path):

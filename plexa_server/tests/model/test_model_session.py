@@ -17,6 +17,7 @@ def test_session_creation_valid():
     assert session.is_active is True
     assert session.turn_count == 0
     assert session.messages == []
+    assert session.title == "Untitled session"
     assert session.created_at is not None
 
 

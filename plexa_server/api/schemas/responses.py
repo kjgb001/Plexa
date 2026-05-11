@@ -10,6 +10,7 @@ class SessionResponse(BaseModel):
     """API projection of session state returned by session endpoints."""
 
     session_id: str
+    title: str
     user_id: str
     course_id: str
     lesson_id: str
@@ -31,6 +32,7 @@ class SessionResponse(BaseModel):
         """
         return cls(
             session_id=session.session_id,
+            title=session.title,
             user_id=session.user_id,
             course_id=session.course_id,
             lesson_id=session.lesson_id,

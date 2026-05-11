@@ -5,6 +5,7 @@ export interface Message {
 
 export interface Session {
   session_id: string
+  title: string
   user_id: string
   course_id: string
   lesson_id: string

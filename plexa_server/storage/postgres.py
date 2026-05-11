@@ -70,6 +70,7 @@ def _session_from_record(record: SessionRecord) -> Session:
     """
     return Session(
         session_id=record.session_id,
+        title=record.title,
         user_id=record.user.external_user_id,
         lesson_id=record.lesson.lesson_id,
         lesson_version=record.lesson.version,
@@ -705,6 +706,7 @@ class PostgresSessionStorage(PostgresStorageMixin, SessionStorage):
             record.user = user
             record.course = course
             record.lesson = lesson
+            record.title = session_model.title
             record.created_at = session_model.created_at
             record.closed_at = session_model.closed_at
             record.turn_count = session_model.turn_count

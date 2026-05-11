@@ -9,6 +9,7 @@ export interface ApiMessage {
 
 export interface ApiSessionResponse {
   session_id: string
+  title: string
   user_id: string
   course_id: string
   lesson_id: string

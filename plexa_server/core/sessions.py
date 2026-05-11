@@ -18,6 +18,11 @@ from plexa_server.core.lessons import (
     freeze_inference_config,
 )
 from plexa_server.core.encrypted_logs import EncryptedLogService
+from plexa_server.core.session_titles import (
+    DeterministicSessionTitleGenerator,
+    SessionTitleGenerator,
+    default_session_title,
+)
 from plexa_server.storage.storage_interface import SessionStorage
 from plexa_server.utils.lock_manager import LockManager
 
@@ -54,6 +59,7 @@ class SessionManager:
         inference_router: InferenceRouter | None = None,
         inference_backend: InferenceBackend | None = None,
         encrypted_log_service: EncryptedLogService | None = None,
+        title_generator: SessionTitleGenerator | None = None,
     ):
         """Initialize the session manager.
 
@@ -66,6 +72,7 @@ class SessionManager:
                 responses when no router is supplied.
             encrypted_log_service: Optional service used to persist encrypted
                 session log snapshots.
+            title_generator: Strategy used to derive persisted session titles.
         """
         self._storage = storage
         if inference_router is not None:
@@ -75,6 +82,7 @@ class SessionManager:
         else:
             raise ValueError("SessionManager requires an inference router or backend.")
         self._encrypted_logs = encrypted_log_service
+        self._title_generator = title_generator or DeterministicSessionTitleGenerator()
         self._lock_manager = LockManager()
 
     async def create_session(
@@ -117,6 +125,7 @@ class SessionManager:
 
         session = Session(
             session_id=session_id,
+            title="",
             lesson_id=lesson.identity.lesson_id,
             lesson_version=lesson.identity.version,
             user_id=user_id,
@@ -128,6 +137,7 @@ class SessionManager:
             closed_at=None,
             is_active=True,
         )
+        session.title = default_session_title(session)
 
         await self._storage.save_session(session)
         await self._storage.save_inference_config(session_id, inference_config)
@@ -290,6 +300,10 @@ class SessionManager:
             session.messages.append(user_message)
             session.messages.append(assistant_message)
             session.turn_count += 1
+            if session.turn_count == 1:
+                generated_title = await self._title_generator.generate_title(session, user_message)
+                if generated_title is not None and generated_title.strip():
+                    session.title = generated_title.strip()
 
             if session.turn_count >= session.max_turns:
                 session.is_active = False

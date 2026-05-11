@@ -10,6 +10,14 @@ interface Props {
   sessionId?: string | null
 }
 
+function dispatchSessionChanged(courseId: string, lessonId: string, lessonVersion: string) {
+  window.dispatchEvent(
+    new CustomEvent("plexa:sessions-changed", {
+      detail: { courseId, lessonId, lessonVersion },
+    }),
+  )
+}
+
 export default function ChatScreen({
   courseId,
   lessonId,
@@ -143,6 +151,7 @@ export default function ChatScreen({
 
     try {
       const result = await sessionApi.createSession(courseId, lessonId, lessonVersion)
+      dispatchSessionChanged(courseId, lessonId, lessonVersion)
 
       navigate(
         `/app/courses/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}/${encodeURIComponent(lessonVersion)}/sessions/${encodeURIComponent(result.session.session_id)}`,
@@ -166,6 +175,7 @@ export default function ChatScreen({
     try {
       suppressAutoDeleteRef.current = true
       await sessionApi.deleteSession(courseId, lessonId, lessonVersion, session.session_id)
+      dispatchSessionChanged(courseId, lessonId, lessonVersion)
       setShowDeleteConfirm(false)
       navigate(
         `/app/courses/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}/${encodeURIComponent(lessonVersion)}`,
@@ -206,6 +216,7 @@ export default function ChatScreen({
 
       setMessages((previous) => [...previous, result.assistantMessage])
       setSession(result.session)
+      dispatchSessionChanged(courseId, lessonId, lessonVersion)
     } catch (error) {
       console.error("Failed to send message", error)
       setMessages((previous) => previous.slice(0, -1))

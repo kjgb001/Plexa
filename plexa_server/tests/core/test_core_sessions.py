@@ -33,6 +33,7 @@ def test_create_session(setup_manager, storage_backend):
     assert session.session_id == "s1"
     assert session.turn_count == 0
     assert session.is_active is True
+    assert session.title.startswith("New session ")
     assert run(storage.get_session("s1")) is not None
 
 
@@ -57,6 +58,7 @@ def test_turn_increment_and_message_append(setup_manager, storage_backend):
 
     assert session.turn_count == 1
     assert len(session.messages) == 3
+    assert session.title == "Hello world"
     assert session.messages[0].role == "system"
     assert session.messages[1].role == "user"
     assert session.messages[2].role == "assistant"

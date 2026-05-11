@@ -29,6 +29,7 @@ export function mapMessage(message: ApiMessage): Message {
 export function mapSession(session: ApiSessionResponse): Session {
   return {
     session_id: session.session_id,
+    title: session.title,
     user_id: session.user_id,
     course_id: session.course_id,
     lesson_id: session.lesson_id,

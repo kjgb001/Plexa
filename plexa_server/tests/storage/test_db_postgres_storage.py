@@ -92,6 +92,7 @@ def test_postgres_roundtrip_for_core_models(
     loaded_config = run(session_storage.get_inference_config(session.session_id))
 
     assert loaded_session is not None
+    assert loaded_session.title == session.title
     assert loaded_session.course_id == course.course_id
     assert loaded_session.lesson_id == lesson.identity.lesson_id
     assert loaded_session.messages[0].content == "Hello from postgres test."
