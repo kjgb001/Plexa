@@ -74,23 +74,13 @@ export default function LessonListScreen({ courseId, onSelectLesson }: Props) {
 
   return (
     <section className="catalog-stage catalog-stage--lessons" aria-labelledby="lesson-stage-title">
-      <header className="catalog-stage__hero">
+      <header className="catalog-stage__hero catalog-stage__hero--sticky">
         <p className="eyebrow">Lesson Selection</p>
-        <h1 id="lesson-stage-title">Pick a lesson workspace</h1>
-        <p className="catalog-stage__summary">
-          Each lesson is an instructional frame with its own objectives,
-          behavioral expectations, and session history.
-        </p>
+        <h1 id="lesson-stage-title">Available Lessons</h1>
       </header>
 
-      <section className="catalog-stage__body" aria-label="Lesson browser">
-        <aside className="catalog-stage__brief">
-          <h2>What carries into every session</h2>
-          <p>
-            The lesson objective stays persistent while sessions let students
-            iterate, restart, and compare different conversational attempts.
-          </p>
-
+      <section className="catalog-stage__body catalog-stage__body--lessons" aria-label="Lesson browser">
+        <section className="catalog-stage__rail catalog-stage__rail--scroll" aria-label="Available lessons">
           {loading === false && loadError ? (
             <section className="notice-panel" aria-label="Enrollment notice">
               <h3>Access needed</h3>
@@ -115,13 +105,6 @@ export default function LessonListScreen({ courseId, onSelectLesson }: Props) {
               </footer>
             </section>
           ) : null}
-        </aside>
-
-        <section className="catalog-stage__rail" aria-label="Available lessons">
-          <header className="catalog-stage__section-header">
-            <h2>Available Lessons</h2>
-            <p>Choose the lesson that will anchor the chat workspace.</p>
-          </header>
 
           {loading ? <p className="status-note">Loading lesson menu...</p> : null}
 

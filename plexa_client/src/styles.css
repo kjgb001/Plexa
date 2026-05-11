@@ -111,6 +111,7 @@ button {
   flex-direction: column;
   gap: 1rem;
   background: var(--rail-background);
+  overflow: hidden;
 }
 
 .rail__brand {
@@ -120,6 +121,11 @@ button {
   gap: 0.75rem;
   padding: 0 0 1rem;
   border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: color-mix(in srgb, var(--rail-background) 92%, transparent);
+  backdrop-filter: blur(18px);
 }
 
 .rail__brand-actions {
@@ -146,8 +152,17 @@ button {
   gap: 0.75rem;
 }
 
-.rail__section--flex {
+.rail__scroll {
+  display: flex;
   flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 1rem;
+  overflow: auto;
+  padding-right: 0.15rem;
+}
+
+.rail__section--flex {
   min-height: 0;
 }
 
@@ -167,7 +182,6 @@ button {
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
-  overflow: auto;
 }
 
 .rail-card {
@@ -434,42 +448,48 @@ button {
   gap: 0.85rem;
 }
 
-.message-card {
-  max-width: 85%;
+.transcript-entry {
+  display: grid;
+  gap: 0.35rem;
+  max-width: min(100%, 56rem);
+}
+
+.transcript-entry--user {
+  max-width: min(85%, 42rem);
+  margin-left: auto;
   padding: 0.85rem 0.95rem;
   border-radius: 18px;
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface-strong) 82%, transparent);
-}
-
-.message-card--user {
-  margin-left: auto;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
   background: color-mix(in srgb, var(--accent-soft) 100%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
-.message-card--assistant {
-  background: color-mix(in srgb, var(--accent-secondary) 12%, var(--surface-strong));
-  border-color: color-mix(in srgb, var(--accent-secondary) 22%, transparent);
+.transcript-entry--assistant {
+  padding: 0.15rem 0;
 }
 
-.message-card--system,
-.message-card--instructor {
-  background: color-mix(in srgb, var(--ink) 6%, transparent);
+.transcript-entry--system,
+.transcript-entry--instructor {
+  padding: 0.75rem 0.9rem;
+  border-left: 3px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  background: color-mix(in srgb, var(--surface-strong) 42%, transparent);
 }
 
-.message-card--pending {
+.transcript-entry--pending {
   opacity: 0.8;
 }
 
-.message-role {
+.transcript-entry__role {
   display: inline-block;
-  margin-bottom: 0.35rem;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-soft);
+}
+
+.transcript-entry__header {
+  display: flex;
+  align-items: center;
 }
 
 .message-body {
@@ -621,11 +641,26 @@ button {
   gap: clamp(1rem, 1.4vw, 1.6rem);
 }
 
+.catalog-stage--lessons {
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+}
+
 .catalog-stage__hero,
 .conversation-stage__hero {
   display: grid;
   gap: 0.9rem;
   align-items: end;
+}
+
+.catalog-stage__hero--sticky {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding-bottom: 0.85rem;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--page-background) 96%, transparent), color-mix(in srgb, var(--page-background) 88%, transparent));
+  border-bottom: 1px solid var(--border);
 }
 
 .conversation-stage__hero {
@@ -659,6 +694,15 @@ button {
   align-items: start;
   padding-top: 1.35rem;
   border-top: 1px solid var(--border);
+}
+
+.catalog-stage__body--lessons {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
+  padding-top: 0.5rem;
+  border-top: 0;
+  overflow: hidden;
 }
 
 .catalog-stage__brief {
@@ -709,6 +753,15 @@ button {
   display: grid;
   gap: 1rem;
   padding: 0 0 0 0.25rem;
+}
+
+.catalog-stage__rail--scroll {
+  display: grid;
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+  align-content: start;
+  padding: 0 0.2rem 0 0;
 }
 
 .catalog-stage__section-header {
@@ -847,6 +900,13 @@ button {
   align-items: start;
 }
 
+.conversation-stage__hero--meta-only {
+  grid-template-columns: 1fr;
+  justify-items: end;
+  gap: 0.35rem;
+  margin-top: -0.55rem;
+}
+
 .conversation-stage__meta {
   display: flex;
   align-items: center;
@@ -979,4 +1039,3 @@ button {
     padding-bottom: 1rem;
   }
 }
-

@@ -33,6 +33,7 @@ export default function ChatScreen({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [bootError, setBootError] = useState<string | null>(null)
   const [interactionError, setInteractionError] = useState<string | null>(null)
+  const visibleMessages = messages.filter((message) => message.role !== "system")
 
   useEffect(() => {
     latestSessionRef.current = session
@@ -279,16 +280,8 @@ export default function ChatScreen({
 
   return (
     <>
-      <section className="conversation-stage" aria-labelledby="conversation-title">
-        <header className="conversation-stage__hero conversation-stage__hero--tight">
-          <div>
-            <h1 id="conversation-title">Lesson chat</h1>
-            <p className="conversation-stage__summary">
-              Ask questions, test reasoning, and keep a reusable transcript for
-              this lesson context.
-            </p>
-          </div>
-
+      <section className="conversation-stage" aria-label="Lesson conversation">
+        <header className="conversation-stage__hero conversation-stage__hero--tight conversation-stage__hero--meta-only">
           <div className="conversation-stage__meta">
             <dl className="conversation-stage__stats" aria-label="Session details">
               <div>
@@ -334,11 +327,11 @@ export default function ChatScreen({
               </li>
             ) : null}
 
-            {messages.map((message, index) => (
+            {visibleMessages.map((message, index) => (
               <li key={`${message.role}:${index}:${message.content.slice(0, 24)}`}>
-                <article className={`message-card message-card--${message.role}`}>
-                  <header className="message-card__header">
-                    <span className="message-role">{message.role}</span>
+                <article className={`transcript-entry transcript-entry--${message.role}`}>
+                  <header className="transcript-entry__header">
+                    <span className="transcript-entry__role">{message.role}</span>
                   </header>
                   <p className="message-body">{message.content}</p>
                 </article>
@@ -347,9 +340,9 @@ export default function ChatScreen({
 
             {loading ? (
               <li>
-                <article className="message-card message-card--assistant message-card--pending">
-                  <header className="message-card__header">
-                    <span className="message-role">assistant</span>
+                <article className="transcript-entry transcript-entry--assistant transcript-entry--pending">
+                  <header className="transcript-entry__header">
+                    <span className="transcript-entry__role">assistant</span>
                   </header>
                   <p className="message-body">Thinking...</p>
                 </article>
