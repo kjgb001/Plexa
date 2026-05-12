@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
+import { cloneElement, isValidElement, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement, type ReactNode } from "react"
 import { useApis } from "../api"
 import type { Course, Lesson, Session } from "../api/interfaces"
 import { useTheme } from "../theme/useTheme"
@@ -72,6 +72,7 @@ export default function StudentShell({
   const [coursesExpanded, setCoursesExpanded] = useState(false)
   const [lessonsExpanded, setLessonsExpanded] = useState(false)
   const [sessionsExpanded, setSessionsExpanded] = useState(false)
+  const [railCollapsed, setRailCollapsed] = useState(false)
 
   const selectedCourseId = route.kind === "courses" ? null : route.courseId
   const selectedLessonId = route.kind === "chat" ? route.lessonId : null
@@ -308,6 +309,12 @@ export default function StudentShell({
       ),
     [activeSessionId, sessions, sessionsExpanded],
   )
+  const mainContent =
+    route.kind === "chat" && isValidElement(children)
+      ? cloneElement(children as ReactElement<{ lessonTitle?: string }>, {
+          lessonTitle: selectedLesson?.title ?? route.lessonId,
+        })
+      : children
 
 
   function handleSessionCardKeyDown(
@@ -391,26 +398,63 @@ export default function StudentShell({
   }
 
   return (
-    <div className="app-shell">
+    <div className={railCollapsed ? "app-shell app-shell--rail-collapsed" : "app-shell"}>
+      {railCollapsed ? (
+        <button
+          className="rail-reopen-button"
+          type="button"
+          aria-label="Open sidebar"
+          title="Open sidebar"
+          onClick={() => setRailCollapsed(false)}
+        >
+          <span className="rail-toggle-glyph" aria-hidden="true">
+            <svg className="rail-toggle-glyph__menu" viewBox="0 0 24 24" focusable="false">
+              <path d="M4 6h11v2H4V6Zm0 5h11v2H4v-2Zm0 5h11v2H4v-2Z" fill="currentColor" />
+            </svg>
+            <svg className="rail-toggle-glyph__arrow rail-toggle-glyph__arrow--open" viewBox="0 0 24 24" focusable="false">
+              <path d="m10.5 7 5 5-5 5-1.4-1.4 3.6-3.6-3.6-3.6L10.5 7Z" fill="currentColor" />
+            </svg>
+          </span>
+        </button>
+      ) : null}
+
       <aside className="app-shell__rail">
         <div className="rail__brand">
-          <div>
+          <div className="rail__brand-copy">
             <p className="eyebrow">Student Workspace</p>
             <h1>Plexa</h1>
+            <div className="rail__brand-inline-actions">
+              <button
+                className="ghost-button rail__inline-action"
+                onClick={() => {
+                  void onLogout().then(() => {
+                    navigate("/login", { replace: true })
+                  })
+                }}
+              >
+                Logout
+              </button>
+              <button className="ghost-button rail__inline-action" onClick={toggleTheme}>
+                {theme === "light" ? "Dark mode" : "Light mode"}
+              </button>
+            </div>
           </div>
           <div className="rail__brand-actions">
-            <button className="ghost-button" onClick={toggleTheme}>
-              {theme === "light" ? "Dark mode" : "Light mode"}
-            </button>
             <button
-              className="ghost-button"
-              onClick={() => {
-                void onLogout().then(() => {
-                  navigate("/login", { replace: true })
-                })
-              }}
+              className="rail__collapse-button"
+              type="button"
+              aria-label="Minimize sidebar"
+              title="Minimize sidebar"
+              onClick={() => setRailCollapsed(true)}
             >
-              Logout
+              <span className="rail-toggle-glyph" aria-hidden="true">
+                <svg className="rail-toggle-glyph__menu" viewBox="0 0 24 24" focusable="false">
+                  <path d="M4 6h11v2H4V6Zm0 5h11v2H4v-2Zm0 5h11v2H4v-2Z" fill="currentColor" />
+                </svg>
+                <svg className="rail-toggle-glyph__arrow rail-toggle-glyph__arrow--close" viewBox="0 0 24 24" focusable="false">
+                  <path d="m13.5 7 1.4 1.4-3.6 3.6 3.6 3.6-1.4 1.4-5-5 5-5Z" fill="currentColor" />
+                </svg>
+              </span>
             </button>
           </div>
         </div>
@@ -626,32 +670,34 @@ export default function StudentShell({
       </aside>
 
       <section className="app-shell__main">
-        <header className="workspace-header">
-          <div>
-            <h2>
-              {selectedLesson?.title ??
-                selectedCourse?.title ??
-                "Course and lesson selection"}
-            </h2>
-          </div>
+        {route.kind !== "chat" ? (
+          <header className="workspace-header">
+            <div>
+              <h2>
+                {selectedLesson?.title ??
+                  selectedCourse?.title ??
+                  "Course and lesson selection"}
+              </h2>
+            </div>
 
-          <div className="workspace-header__meta">
-            <span className="section-chip">{userId ?? "Unknown user"}</span>
-            {selectedCourse ? (
-              <span className="section-chip">{selectedCourse.course_id}</span>
-            ) : null}
-            {selectedLesson ? (
-              <>
-                <span className="section-chip">v{selectedLesson.version}</span>
-                <span className="section-chip">
-                  {activeSessionId ? "Session selected" : "Ready for new session"}
-                </span>
-              </>
-            ) : null}
-          </div>
-        </header>
+            <div className="workspace-header__meta">
+              <span className="section-chip">{userId ?? "Unknown user"}</span>
+              {selectedCourse ? (
+                <span className="section-chip">{selectedCourse.course_id}</span>
+              ) : null}
+              {selectedLesson ? (
+                <>
+                  <span className="section-chip">v{selectedLesson.version}</span>
+                  <span className="section-chip">
+                    {activeSessionId ? "Session selected" : "Ready for new session"}
+                  </span>
+                </>
+              ) : null}
+            </div>
+          </header>
+        ) : null}
 
-        <main className="workspace-main">{children}</main>
+        <main className="workspace-main">{mainContent}</main>
       </section>
 
       {sessionPendingDelete ? (

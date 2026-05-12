@@ -7,6 +7,7 @@ interface Props {
   courseId: string
   lessonId: string
   lessonVersion: string
+  lessonTitle?: string
   sessionId?: string | null
 }
 
@@ -29,6 +30,7 @@ export default function ChatScreen({
   courseId,
   lessonId,
   lessonVersion,
+  lessonTitle,
   sessionId = null,
 }: Props) {
   const { sessionApi } = useApis()
@@ -360,23 +362,29 @@ export default function ChatScreen({
       <section className="conversation-stage" aria-label="Lesson conversation">
         <header className="conversation-stage__hero conversation-stage__hero--tight conversation-stage__hero--meta-only">
           <div className="conversation-stage__meta">
-            <dl className="conversation-stage__stats" aria-label="Session details">
-              <div>
-                <dt>Turns</dt>
-                <dd>{session.turn_count} / {session.max_turns}</dd>
-              </div>
-              <div>
-                <dt>Status</dt>
-                <dd>{session.is_active ? "Active" : "Closed"}</dd>
-              </div>
-            </dl>
-            <button
-              className="ghost-button ghost-button--danger"
-              onClick={() => setShowDeleteConfirm(true)}
-              disabled={deleting || loading}
-            >
-              Delete session
-            </button>
+            <div className="conversation-stage__meta-copy">
+              <p className="eyebrow">Lesson</p>
+              <h2>{lessonTitle ?? lessonId}</h2>
+            </div>
+            <div className="conversation-stage__meta-actions">
+              <dl className="conversation-stage__stats" aria-label="Session details">
+                <div>
+                  <dt>Turns</dt>
+                  <dd>{session.turn_count} / {session.max_turns}</dd>
+                </div>
+                <div>
+                  <dt>Status</dt>
+                  <dd>{session.is_active ? "Active" : "Closed"}</dd>
+                </div>
+              </dl>
+              <button
+                className="ghost-button ghost-button--danger"
+                onClick={() => setShowDeleteConfirm(true)}
+                disabled={deleting || loading}
+              >
+                Delete session
+              </button>
+            </div>
           </div>
         </header>
 
