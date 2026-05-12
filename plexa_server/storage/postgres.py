@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any, Iterable, Optional
 
 from sqlalchemy import delete, select, text
@@ -16,6 +17,8 @@ from plexa_server.db.models import (
     LessonRecord,
     MessageRecord,
     SessionRecord,
+    UserCourseStateRecord,
+    UserLessonStateRecord,
     UserRecord,
 )
 from plexa_server.inference.base import InferenceConfig
@@ -24,7 +27,8 @@ from plexa_server.models.course import Course
 from plexa_server.models.lesson import Lesson
 from plexa_server.models.message import Message
 from plexa_server.models.session import Session
-from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage, SessionStorage
+from plexa_server.models.workspace_state import UserCourseState, UserLessonState
+from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage, SessionStorage, WorkspaceStateStorage
 
 
 def _lesson_to_record_payload(lesson: Lesson) -> dict[str, Any]:
@@ -77,6 +81,7 @@ def _session_from_record(record: SessionRecord) -> Session:
         course_id=record.course.course_id,
         messages=[_message_from_record(message, record.session_id) for message in record.messages],
         created_at=record.created_at,
+        updated_at=record.updated_at,
         closed_at=record.closed_at,
         turn_count=record.turn_count,
         max_turns=record.max_turns,
@@ -110,6 +115,7 @@ def _course_from_record(record: CourseRecord) -> Course:
         pending_requests=[request.user.external_user_id for request in record.pending_requests],
         created_at=record.created_at,
         lessons=lessons,
+        lesson_timeline=record.lesson_timeline,
     )
 
 
@@ -502,6 +508,7 @@ class PostgresCourseStorage(PostgresStorageMixin, CourseStorage):
             record.term = course.term
             record.owner = owner
             record.discoverable = course.discoverable
+            record.lesson_timeline = [window.model_dump(mode="json") for window in course.lesson_timeline]
             record.created_at = course.created_at
 
             await session.flush()
@@ -632,6 +639,12 @@ class PostgresCourseStorage(PostgresStorageMixin, CourseStorage):
             else:
                 course.lesson_bindings.append(CourseLessonRecord(lesson=lesson))
 
+            course.lesson_timeline = [
+                window
+                for window in course.lesson_timeline
+                if window["lesson_id"] != lesson_id
+            ]
+
             await session.commit()
 
     async def health_check(self) -> bool:
@@ -708,6 +721,7 @@ class PostgresSessionStorage(PostgresStorageMixin, SessionStorage):
             record.lesson = lesson
             record.title = session_model.title
             record.created_at = session_model.created_at
+            record.updated_at = session_model.updated_at
             record.closed_at = session_model.closed_at
             record.turn_count = session_model.turn_count
             record.max_turns = session_model.max_turns
@@ -813,4 +827,163 @@ class PostgresSessionStorage(PostgresStorageMixin, SessionStorage):
         Returns:
             bool: `True` when the storage backend is ready for use.
         """
+        return await self._ping()
+
+
+class PostgresWorkspaceStateStorage(PostgresStorageMixin, WorkspaceStateStorage):
+    """Postgres-backed storage for user course and lesson recency state."""
+
+    async def touch_course(
+        self,
+        user_id: str,
+        course_id: str,
+    ) -> UserCourseState:
+        async with self._session_factory() as session:
+            user = await self._get_or_create_user(session, user_id)
+            course_result = await session.execute(
+                select(CourseRecord).where(CourseRecord.course_id == course_id)
+            )
+            course = course_result.scalar_one_or_none()
+            if course is None:
+                raise ValueError(f"Course {course_id} does not exist.")
+
+            result = await session.execute(
+                select(UserCourseStateRecord).where(
+                    UserCourseStateRecord.user_id == user.id,
+                    UserCourseStateRecord.course_id == course.id,
+                )
+            )
+            record = result.scalar_one_or_none()
+            if record is None:
+                record = UserCourseStateRecord(
+                    user=user,
+                    course=course,
+                    last_accessed_at=datetime.now(UTC),
+                )
+                session.add(record)
+            else:
+                record.last_accessed_at = datetime.now(UTC)
+
+            await session.commit()
+            return UserCourseState(
+                user_id=user_id,
+                course_id=course_id,
+                last_accessed_at=record.last_accessed_at,
+            )
+
+    async def touch_lesson(
+        self,
+        user_id: str,
+        course_id: str,
+        lesson_id: str,
+        lesson_version: str,
+    ) -> UserLessonState:
+        async with self._session_factory() as session:
+            user = await self._get_or_create_user(session, user_id)
+            course_result = await session.execute(
+                select(CourseRecord).where(CourseRecord.course_id == course_id)
+            )
+            course = course_result.scalar_one_or_none()
+            if course is None:
+                raise ValueError(f"Course {course_id} does not exist.")
+            lesson_result = await session.execute(
+                select(LessonRecord).where(
+                    LessonRecord.lesson_id == lesson_id,
+                    LessonRecord.version == lesson_version,
+                )
+            )
+            lesson = lesson_result.scalar_one_or_none()
+            if lesson is None:
+                raise ValueError(f"Lesson {lesson_id}@{lesson_version} does not exist.")
+
+            result = await session.execute(
+                select(UserLessonStateRecord).where(
+                    UserLessonStateRecord.user_id == user.id,
+                    UserLessonStateRecord.course_id == course.id,
+                    UserLessonStateRecord.lesson_id == lesson.id,
+                )
+            )
+            record = result.scalar_one_or_none()
+            if record is None:
+                record = UserLessonStateRecord(
+                    user=user,
+                    course=course,
+                    lesson=lesson,
+                    last_accessed_at=datetime.now(UTC),
+                )
+                session.add(record)
+            else:
+                record.last_accessed_at = datetime.now(UTC)
+
+            await session.commit()
+            return UserLessonState(
+                user_id=user_id,
+                course_id=course_id,
+                lesson_id=lesson_id,
+                lesson_version=lesson_version,
+                last_accessed_at=record.last_accessed_at,
+            )
+
+    async def list_course_states(self, user_id: str) -> list[UserCourseState]:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(
+                    UserCourseStateRecord.last_accessed_at,
+                    UserRecord.external_user_id,
+                    CourseRecord.course_id,
+                )
+                .join(UserRecord, UserCourseStateRecord.user_id == UserRecord.id)
+                .join(CourseRecord, UserCourseStateRecord.course_id == CourseRecord.id)
+                .where(UserRecord.external_user_id == user_id)
+            )
+            return [
+                UserCourseState(
+                    user_id=external_user_id,
+                    course_id=course_id,
+                    last_accessed_at=last_accessed_at,
+                )
+                for last_accessed_at, external_user_id, course_id in result.all()
+            ]
+
+    async def list_lesson_states(
+        self,
+        user_id: str,
+        course_id: str | None = None,
+    ) -> list[UserLessonState]:
+        async with self._session_factory() as session:
+            query = (
+                select(
+                    UserLessonStateRecord.last_accessed_at,
+                    UserRecord.external_user_id,
+                    CourseRecord.course_id,
+                    LessonRecord.lesson_id,
+                    LessonRecord.version,
+                )
+                .join(UserRecord, UserLessonStateRecord.user_id == UserRecord.id)
+                .join(CourseRecord, UserLessonStateRecord.course_id == CourseRecord.id)
+                .join(LessonRecord, UserLessonStateRecord.lesson_id == LessonRecord.id)
+                .where(UserRecord.external_user_id == user_id)
+            )
+            if course_id is not None:
+                query = query.where(CourseRecord.course_id == course_id)
+
+            result = await session.execute(query)
+            return [
+                UserLessonState(
+                    user_id=external_user_id,
+                    course_id=resolved_course_id,
+                    lesson_id=resolved_lesson_id,
+                    lesson_version=lesson_version,
+                    last_accessed_at=last_accessed_at,
+                )
+                for (
+                    last_accessed_at,
+                    external_user_id,
+                    resolved_course_id,
+                    resolved_lesson_id,
+                    lesson_version,
+                ) in result.all()
+            ]
+
+    async def health_check(self) -> bool:
         return await self._ping()

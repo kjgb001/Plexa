@@ -7,11 +7,13 @@ from plexa_server.storage.filesystem import (
     FileSystemSessionStorage,
     FileSystemArtifactStorage,
     FileSystemCourseStorage,
+    FileSystemWorkspaceStateStorage,
 )
 from plexa_server.storage.storage_interface import (
     ArtifactStorage,
     CourseStorage,
     SessionStorage,
+    WorkspaceStateStorage,
 )
 
 from plexa_server.api.routes.sessions import get_sessions_router
@@ -37,6 +39,7 @@ def build_app(
     artifact_storage: ArtifactStorage | None = None,
     session_storage: SessionStorage | None = None,
     course_storage: CourseStorage | None = None,
+    workspace_state_storage: WorkspaceStateStorage | None = None,
 ) -> FastAPI:
     """Assemble the FastAPI application and its storage-backed dependencies.
 
@@ -61,7 +64,12 @@ def build_app(
             raise ValueError("build_app requires an inference router or backend.")
         inference_router = create_single_backend_router(inference_backend)
 
-    if artifact_storage is None or session_storage is None or course_storage is None:
+    if (
+        artifact_storage is None
+        or session_storage is None
+        or course_storage is None
+        or workspace_state_storage is None
+    ):
         from plexa_server.db.config import get_database_config
 
         database_config = get_database_config()
@@ -72,6 +80,7 @@ def build_app(
                 PostgresArtifactStorage,
                 PostgresCourseStorage,
                 PostgresSessionStorage,
+                PostgresWorkspaceStateStorage,
             )
 
             session_factory = create_session_factory(
@@ -81,10 +90,12 @@ def build_app(
             artifact_storage = PostgresArtifactStorage(session_factory)
             session_storage = PostgresSessionStorage(session_factory)
             course_storage = PostgresCourseStorage(session_factory)
+            workspace_state_storage = PostgresWorkspaceStateStorage(session_factory)
         else:
             artifact_storage = FileSystemArtifactStorage(data_path)
             session_storage = FileSystemSessionStorage(data_path)
             course_storage = FileSystemCourseStorage(data_path)
+            workspace_state_storage = FileSystemWorkspaceStateStorage(data_path)
 
     encrypted_log_service = EncryptedLogService.from_env(artifact_storage, course_storage)
     session_manager = SessionManager(
@@ -102,7 +113,8 @@ def build_app(
         get_sessions_router(
             session_manager=session_manager,
             artifact_storage=artifact_storage,
-            course_storage=course_storage
+            course_storage=course_storage,
+            workspace_state_storage=workspace_state_storage,
         )
     )
     api_router.include_router(
@@ -110,6 +122,7 @@ def build_app(
             course_storage=course_storage,
             artifact_storage=artifact_storage,
             encrypted_log_service=encrypted_log_service,
+            workspace_state_storage=workspace_state_storage,
         )
     )
     api_router.include_router(

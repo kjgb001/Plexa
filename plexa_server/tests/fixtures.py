@@ -20,6 +20,13 @@ SEEDED_COURSE_SPECS = [
             "The Power of Prompt Engineering",
             "Managing Context Decay",
         ],
+        "lesson_timeline": [
+            {
+                "lesson_id": "The Danger of Hallucinations",
+                "lesson_version": "0.1.0",
+                "starts_at": "2026-01-01T00:00:00Z",
+            }
+        ],
     },
     {
         "course_title": "Data Visualization",
@@ -28,6 +35,7 @@ SEEDED_COURSE_SPECS = [
             "Prompt Engineering for Data Viz",
             "LLM Assisted Data Evaluation",
         ],
+        "lesson_timeline": [],
     },
 ]
 

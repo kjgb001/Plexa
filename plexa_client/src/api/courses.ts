@@ -37,8 +37,15 @@ export class CourseApi {
       }
     )
 
+    const pinnedKey = `${result.pinned_lesson_id ?? ""}:${result.pinned_lesson_version ?? ""}`
     return {
-      lessons: result.lessons.map(mapLessonSummary),
+      lessons: result.lessons.map((lesson) => {
+        const mapped = mapLessonSummary(lesson)
+        return {
+          ...mapped,
+          is_pinned_now: `${mapped.lesson_id}:${mapped.version}` === pinnedKey,
+        }
+      }),
     }
   }
 }

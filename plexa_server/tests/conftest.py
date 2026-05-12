@@ -20,11 +20,13 @@ from plexa_server.storage.filesystem import (
     FileSystemArtifactStorage,
     FileSystemCourseStorage,
     FileSystemSessionStorage,
+    FileSystemWorkspaceStateStorage,
 )
 from plexa_server.storage.postgres import (
     PostgresArtifactStorage,
     PostgresCourseStorage,
     PostgresSessionStorage,
+    PostgresWorkspaceStateStorage,
 )
 from plexa_server.tests.fixtures import (
     make_valid_lesson_payload,
@@ -173,12 +175,14 @@ def storage_bundle(
             "artifact": PostgresArtifactStorage(postgres_session_factory),
             "course": PostgresCourseStorage(postgres_session_factory),
             "session": PostgresSessionStorage(postgres_session_factory),
+            "workspace": PostgresWorkspaceStateStorage(postgres_session_factory),
         }
 
     return {
         "artifact": FileSystemArtifactStorage(tmp_data_dir),
         "course": FileSystemCourseStorage(tmp_data_dir),
         "session": FileSystemSessionStorage(tmp_data_dir),
+        "workspace": FileSystemWorkspaceStateStorage(tmp_data_dir),
     }
 
 
@@ -219,6 +223,12 @@ def session_storage(storage_bundle):
         SessionStorage: Selected session storage implementation.
     """
     return storage_bundle["session"]
+
+
+@pytest.fixture
+def workspace_state_storage(storage_bundle):
+    """Return the workspace-state storage for the selected backend."""
+    return storage_bundle["workspace"]
 
 
 @pytest.fixture
@@ -263,6 +273,7 @@ def app(
     artifact_storage,
     session_storage,
     course_storage,
+    workspace_state_storage,
 ) -> FastAPI:
     """Build an application instance for the selected backend.
 
@@ -281,6 +292,7 @@ def app(
         artifact_storage=artifact_storage,
         session_storage=session_storage,
         course_storage=course_storage,
+        workspace_state_storage=workspace_state_storage,
     )
 
 

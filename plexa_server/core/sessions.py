@@ -23,6 +23,7 @@ from plexa_server.core.session_titles import (
     SessionTitleGenerator,
     default_session_title,
 )
+from plexa_server.core.workspace import order_sessions_by_updated_at
 from plexa_server.storage.storage_interface import SessionStorage
 from plexa_server.utils.lock_manager import LockManager
 
@@ -134,6 +135,7 @@ class SessionManager:
             turn_count=0,
             max_turns=turn_limit,
             created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
             closed_at=None,
             is_active=True,
         )
@@ -189,7 +191,7 @@ class SessionManager:
             and session.lesson_version == lesson_version
         ]
 
-        return sorted(sessions, key=lambda session: session.created_at, reverse=True)
+        return order_sessions_by_updated_at(sessions)
 
     async def close_session(self, session_id: str) -> None:
         """Mark a session inactive and persist the closure timestamp.
@@ -209,6 +211,7 @@ class SessionManager:
 
             session.is_active = False
             session.closed_at = datetime.now(UTC)
+            session.updated_at = datetime.now(UTC)
             await self._storage.save_session(session)
             inference_config = await self._storage.get_inference_config(session_id)
             await self._persist_encrypted_log(session, inference_config, event_type="closed")
@@ -300,6 +303,7 @@ class SessionManager:
             session.messages.append(user_message)
             session.messages.append(assistant_message)
             session.turn_count += 1
+            session.updated_at = datetime.now(UTC)
             if session.turn_count == 1:
                 generated_title = await self._title_generator.generate_title(session, user_message)
                 if generated_title is not None and generated_title.strip():

@@ -1,6 +1,6 @@
 import pytest
 from pydantic import ValidationError
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 from plexa_server.models.course import Course
 
@@ -66,3 +66,52 @@ def test_owner_is_added_to_instructor_ids():
     )
 
     assert course.instructor_ids == ["owner-1", "assistant-1"]
+
+
+def test_course_timeline_must_reference_bound_lessons():
+    with pytest.raises(ValidationError):
+        Course.model_validate(
+            {
+                "course_id": "CS101",
+                "title": "Intro to AI",
+                "owner_id": "owner-1",
+                "lessons": {},
+                "lesson_timeline": [
+                    {
+                        "lesson_id": "lesson-1",
+                        "lesson_version": "0.1.0",
+                        "starts_at": datetime.now(UTC).isoformat(),
+                    }
+                ],
+            }
+        )
+
+
+def test_course_timeline_rejects_overlapping_windows():
+    start = datetime.now(UTC)
+    with pytest.raises(ValidationError):
+        Course.model_validate(
+            {
+                "course_id": "CS101",
+                "title": "Intro to AI",
+                "owner_id": "owner-1",
+                "lessons": {
+                    "lesson-1": "0.1.0",
+                    "lesson-2": "0.1.0",
+                },
+                "lesson_timeline": [
+                    {
+                        "lesson_id": "lesson-1",
+                        "lesson_version": "0.1.0",
+                        "starts_at": start.isoformat(),
+                        "ends_at": (start + timedelta(days=1)).isoformat(),
+                    },
+                    {
+                        "lesson_id": "lesson-2",
+                        "lesson_version": "0.1.0",
+                        "starts_at": (start + timedelta(hours=12)).isoformat(),
+                        "ends_at": (start + timedelta(days=2)).isoformat(),
+                    },
+                ],
+            }
+        )

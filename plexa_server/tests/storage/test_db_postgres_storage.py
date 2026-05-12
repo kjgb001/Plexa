@@ -7,7 +7,7 @@ from plexa_server.models.course import Course
 from plexa_server.models.lesson import Lesson
 from plexa_server.models.message import Message
 from plexa_server.models.session import Session
-from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage, SessionStorage
+from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage, SessionStorage, WorkspaceStateStorage
 from plexa_server.tests.fixtures import make_valid_lesson_payload
 
 pytestmark = pytest.mark.postgres_only
@@ -21,22 +21,26 @@ def test_postgres_storages_implement_interfaces(
     artifact_storage,
     course_storage,
     session_storage,
+    workspace_state_storage,
     storage_backend,
 ):
     assert isinstance(artifact_storage, ArtifactStorage)
     assert isinstance(course_storage, CourseStorage)
     assert isinstance(session_storage, SessionStorage)
+    assert isinstance(workspace_state_storage, WorkspaceStateStorage)
 
 
 def test_postgres_storage_health_checks(
     artifact_storage,
     course_storage,
     session_storage,
+    workspace_state_storage,
     storage_backend,
 ):
     assert run(artifact_storage.health_check()) is True
     assert run(course_storage.health_check()) is True
     assert run(session_storage.health_check()) is True
+    assert run(workspace_state_storage.health_check()) is True
 
 
 def test_postgres_roundtrip_for_core_models(
@@ -57,6 +61,13 @@ def test_postgres_roundtrip_for_core_models(
     course_payload["lessons"] = {
         lesson.identity.lesson_id: lesson.identity.version,
     }
+    course_payload["lesson_timeline"] = [
+        {
+            "lesson_id": lesson.identity.lesson_id,
+            "lesson_version": lesson.identity.version,
+            "starts_at": "2026-01-01T00:00:00Z",
+        }
+    ]
     course = Course.model_validate(course_payload)
     run(course_storage.save_course(course))
 
@@ -64,6 +75,7 @@ def test_postgres_roundtrip_for_core_models(
     assert loaded_course is not None
     assert loaded_course.lessons[lesson.identity.lesson_id] == lesson.identity.version
     assert loaded_course.instructor_ids == [course.owner_id]
+    assert loaded_course.lesson_timeline[0].lesson_id == lesson.identity.lesson_id
 
     session = Session(
         session_id="postgres-session-1",
@@ -95,6 +107,7 @@ def test_postgres_roundtrip_for_core_models(
     assert loaded_session.title == session.title
     assert loaded_session.course_id == course.course_id
     assert loaded_session.lesson_id == lesson.identity.lesson_id
+    assert loaded_session.updated_at >= session.updated_at
     assert loaded_session.messages[0].content == "Hello from postgres test."
     assert loaded_config is not None
     assert loaded_config.model == "stub-model"
@@ -141,3 +154,43 @@ def test_postgres_encrypted_log_roundtrip(
     run(artifact_storage.delete_encrypted_log("postgres-log-1"))
     assert run(artifact_storage.load_encrypted_log("postgres-log-1")) is None
     assert run(artifact_storage.load_encrypted_log_metadata("postgres-log-1")) is None
+
+
+def test_postgres_workspace_state_roundtrip(
+    artifact_storage,
+    course_storage,
+    workspace_state_storage,
+    valid_course_payload,
+    storage_backend,
+):
+    lesson = Lesson.model_validate(make_valid_lesson_payload())
+    run(artifact_storage.save_lesson(lesson))
+
+    course_payload = dict(valid_course_payload)
+    course_payload["lessons"] = {
+        lesson.identity.lesson_id: lesson.identity.version,
+    }
+    course = Course.model_validate(course_payload)
+    run(course_storage.save_course(course))
+
+    course_state = run(workspace_state_storage.touch_course("tester", course.course_id))
+    lesson_state = run(
+        workspace_state_storage.touch_lesson(
+            "tester",
+            course.course_id,
+            lesson.identity.lesson_id,
+            lesson.identity.version,
+        )
+    )
+
+    listed_course_states = run(workspace_state_storage.list_course_states("tester"))
+    listed_lesson_states = run(
+        workspace_state_storage.list_lesson_states("tester", course_id=course.course_id)
+    )
+
+    assert course_state.course_id == course.course_id
+    assert lesson_state.lesson_id == lesson.identity.lesson_id
+    assert len(listed_course_states) == 1
+    assert listed_course_states[0].course_id == course.course_id
+    assert len(listed_lesson_states) == 1
+    assert listed_lesson_states[0].lesson_version == lesson.identity.version

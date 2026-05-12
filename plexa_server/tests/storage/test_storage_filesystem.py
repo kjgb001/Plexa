@@ -8,6 +8,7 @@ from plexa_server.storage.filesystem import (
     FileSystemArtifactStorage,
     FileSystemSessionStorage,
     FileSystemCourseStorage,
+    FileSystemWorkspaceStateStorage,
 )
 from plexa_server.models.lesson import Lesson
 from plexa_server.models.session import Session
@@ -125,6 +126,7 @@ def test_session_storage_roundtrip(tmp_path: Path):
     assert loaded.session_id == session.session_id
     assert loaded.user_id == session.user_id
     assert loaded.title == session.title
+    assert loaded.updated_at == session.updated_at
 
 
 def test_session_storage_delete(tmp_path: Path):
@@ -168,7 +170,16 @@ def test_session_storage_list_sessions(tmp_path: Path):
 def test_course_storage_roundtrip(tmp_path: Path, valid_course_payload):
     storage = FileSystemCourseStorage(tmp_path)
 
-    course = make_valid_course(valid_course_payload)
+    payload = dict(valid_course_payload)
+    payload["lessons"] = {"lesson-1": "0.1.0"}
+    payload["lesson_timeline"] = [
+        {
+            "lesson_id": "lesson-1",
+            "lesson_version": "0.1.0",
+            "starts_at": "2026-01-01T00:00:00Z",
+        }
+    ]
+    course = make_valid_course(payload)
 
     run(storage.save_course(course))
     loaded = run(storage.get_course(course.course_id))
@@ -177,6 +188,7 @@ def test_course_storage_roundtrip(tmp_path: Path, valid_course_payload):
     assert loaded.course_id == course.course_id
     assert loaded.title == course.title
     assert loaded.instructor_ids == [course.owner_id]
+    assert loaded.lesson_timeline[0].lesson_id == "lesson-1"
 
 
 def test_course_storage_delete(tmp_path: Path, valid_course_payload):
@@ -210,3 +222,20 @@ def test_course_storage_list(tmp_path: Path, valid_course_payload):
 
     assert "CS101" in ids
     assert "CS102" in ids
+
+
+def test_workspace_state_storage_roundtrip(tmp_path: Path):
+    storage = FileSystemWorkspaceStateStorage(tmp_path)
+
+    course_state = run(storage.touch_course("tester", "CS101"))
+    lesson_state = run(storage.touch_lesson("tester", "CS101", "lesson-1", "0.1.0"))
+
+    listed_course_states = run(storage.list_course_states("tester"))
+    listed_lesson_states = run(storage.list_lesson_states("tester", course_id="CS101"))
+
+    assert course_state.course_id == "CS101"
+    assert lesson_state.lesson_id == "lesson-1"
+    assert len(listed_course_states) == 1
+    assert listed_course_states[0].course_id == "CS101"
+    assert len(listed_lesson_states) == 1
+    assert listed_lesson_states[0].lesson_version == "0.1.0"

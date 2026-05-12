@@ -11,6 +11,7 @@ export interface Session {
   lesson_id: string
   lesson_version: string
   created_at: string
+  updated_at: string
   turn_count: number
   max_turns: number
   is_active: boolean
@@ -29,6 +30,7 @@ export interface Lesson {
   lesson_id: string
   version: string
   title: string
+  is_pinned_now?: boolean
   author?: string
   learning_objective?: string
   behavioral_focus?: string

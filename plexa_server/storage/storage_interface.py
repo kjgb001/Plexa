@@ -6,6 +6,7 @@ from plexa_server.models.encrypted_log import EncryptedLogMetadata
 from plexa_server.models.course import Course
 from plexa_server.models.lesson import Lesson
 from plexa_server.models.session import Session
+from plexa_server.models.workspace_state import UserCourseState, UserLessonState
 
 
 class ArtifactStorage(ABC):
@@ -236,6 +237,48 @@ class CourseStorage(ABC):
     @abstractmethod
     async def health_check(self) -> bool:
         """Report whether course storage is reachable.
+
+        Returns:
+            bool: `True` when the storage backend is ready for use.
+        """
+
+
+class WorkspaceStateStorage(ABC):
+    """Abstract storage contract for user-scoped course and lesson recency state."""
+
+    @abstractmethod
+    async def touch_course(
+        self,
+        user_id: str,
+        course_id: str,
+    ) -> UserCourseState:
+        """Persist a course access timestamp for a user."""
+
+    @abstractmethod
+    async def touch_lesson(
+        self,
+        user_id: str,
+        course_id: str,
+        lesson_id: str,
+        lesson_version: str,
+    ) -> UserLessonState:
+        """Persist a lesson access timestamp for a user."""
+
+    @abstractmethod
+    async def list_course_states(self, user_id: str) -> list[UserCourseState]:
+        """Return all stored course recency state for a user."""
+
+    @abstractmethod
+    async def list_lesson_states(
+        self,
+        user_id: str,
+        course_id: str | None = None,
+    ) -> list[UserLessonState]:
+        """Return all stored lesson recency state for a user."""
+
+    @abstractmethod
+    async def health_check(self) -> bool:
+        """Report whether workspace-state storage is reachable.
 
         Returns:
             bool: `True` when the storage backend is ready for use.

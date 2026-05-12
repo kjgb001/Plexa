@@ -16,6 +16,7 @@ class SessionResponse(BaseModel):
     lesson_id: str
     lesson_version: str
     created_at: datetime
+    updated_at: datetime
     is_active: bool
     turn_count: int
     max_turns: int
@@ -38,6 +39,7 @@ class SessionResponse(BaseModel):
             lesson_id=session.lesson_id,
             lesson_version=session.lesson_version,
             created_at=session.created_at,
+            updated_at=session.updated_at,
             is_active=session.is_active,
             turn_count=session.turn_count,
             max_turns=session.max_turns,
@@ -48,6 +50,8 @@ class CourseLessonsResponse(BaseModel):
     """Response payload returned when listing lessons bound to a course."""
 
     lessons: List[Lesson]
+    pinned_lesson_id: str | None = None
+    pinned_lesson_version: str | None = None
 
 
 class CourseInstructorsResponse(BaseModel):

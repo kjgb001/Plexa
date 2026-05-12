@@ -20,6 +20,7 @@ class Session(BaseModel):
     messages: List[Message] = Field(default_factory=list)
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     closed_at: Optional[datetime] = None
 
     turn_count: int = 0

@@ -9,10 +9,12 @@ from plexa_server.models.session import Session
 from plexa_server.models.course import Course
 from plexa_server.inference.base import InferenceConfig
 from plexa_server.models.encrypted_log import EncryptedLogMetadata
+from plexa_server.models.workspace_state import UserCourseState, UserLessonState
 from plexa_server.storage.storage_interface import (
     ArtifactStorage,
     CourseStorage,
     SessionStorage,
+    WorkspaceStateStorage,
 )
 
 
@@ -449,6 +451,11 @@ class FileSystemCourseStorage(CourseStorage):
 
         # Replace or insert
         course_data["lessons"][lesson_id] = version
+        course_data["lesson_timeline"] = [
+            window
+            for window in course_data.get("lesson_timeline", [])
+            if window.get("lesson_id") != lesson_id
+        ]
 
         with open(course_path, "w") as f:
             json.dump(course_data, f, indent=2)
@@ -460,3 +467,92 @@ class FileSystemCourseStorage(CourseStorage):
             bool: `True` when the expected filesystem path exists.
         """
         return self.base_path.exists() and self.courses_path.exists()
+
+
+class FileSystemWorkspaceStateStorage(WorkspaceStateStorage):
+    """Filesystem-backed storage for user course and lesson recency state."""
+
+    def __init__(self, base_path: Path):
+        """Create workspace state directories beneath the base path."""
+        self.base_path = Path(base_path)
+        self.course_states_path = self.base_path / "configs" / "workspace" / "course_states"
+        self.lesson_states_path = self.base_path / "configs" / "workspace" / "lesson_states"
+        self.course_states_path.mkdir(parents=True, exist_ok=True)
+        self.lesson_states_path.mkdir(parents=True, exist_ok=True)
+
+    def _course_state_path(self, user_id: str, course_id: str) -> Path:
+        return self.course_states_path / user_id / f"{course_id}.json"
+
+    def _lesson_state_path(
+        self,
+        user_id: str,
+        course_id: str,
+        lesson_id: str,
+        lesson_version: str,
+    ) -> Path:
+        filename = f"{course_id}__{lesson_id}__{lesson_version}.json"
+        return self.lesson_states_path / user_id / filename
+
+    async def touch_course(
+        self,
+        user_id: str,
+        course_id: str,
+    ) -> UserCourseState:
+        state = UserCourseState(user_id=user_id, course_id=course_id)
+        _atomic_write(self._course_state_path(user_id, course_id), state.model_dump_json(indent=2))
+        return state
+
+    async def touch_lesson(
+        self,
+        user_id: str,
+        course_id: str,
+        lesson_id: str,
+        lesson_version: str,
+    ) -> UserLessonState:
+        state = UserLessonState(
+            user_id=user_id,
+            course_id=course_id,
+            lesson_id=lesson_id,
+            lesson_version=lesson_version,
+        )
+        _atomic_write(
+            self._lesson_state_path(user_id, course_id, lesson_id, lesson_version),
+            state.model_dump_json(indent=2),
+        )
+        return state
+
+    async def list_course_states(self, user_id: str) -> list[UserCourseState]:
+        directory = self.course_states_path / user_id
+        if not directory.exists():
+            return []
+
+        states: list[UserCourseState] = []
+        for file in directory.glob("*.json"):
+            with file.open("r", encoding="utf-8") as f:
+                states.append(UserCourseState.model_validate(json.load(f)))
+        return states
+
+    async def list_lesson_states(
+        self,
+        user_id: str,
+        course_id: str | None = None,
+    ) -> list[UserLessonState]:
+        directory = self.lesson_states_path / user_id
+        if not directory.exists():
+            return []
+
+        states: list[UserLessonState] = []
+        for file in directory.glob("*.json"):
+            with file.open("r", encoding="utf-8") as f:
+                state = UserLessonState.model_validate(json.load(f))
+            if course_id is not None and state.course_id != course_id:
+                continue
+            states.append(state)
+        return states
+
+    async def health_check(self) -> bool:
+        return (
+            self.base_path.exists()
+            and self.course_states_path.exists()
+            and self.lesson_states_path.exists()
+        )

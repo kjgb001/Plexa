@@ -8,7 +8,8 @@ from plexa_server.auth.dependencies import (
 )
 from plexa_server.auth.identity import UserIdentity
 from plexa_server.core.encrypted_logs import EncryptedLogService
-from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage
+from plexa_server.core.workspace import order_courses_for_user, order_lessons_for_user, resolve_pinned_lesson_window
+from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage, WorkspaceStateStorage
 from plexa_server.api.schemas.responses import (
     CourseInstructorsResponse,
     CourseLessonsResponse,
@@ -21,6 +22,7 @@ def get_course_router(
     course_storage: CourseStorage,
     artifact_storage: ArtifactStorage,
     encrypted_log_service: EncryptedLogService | None = None,
+    workspace_state_storage: WorkspaceStateStorage | None = None,
 ) -> APIRouter:
     """Create learner-facing course discovery and enrollment endpoints.
 
@@ -47,11 +49,15 @@ def get_course_router(
             dict: Mapping containing discoverable course documents.
         """
         courses = await course_storage.list_courses()
+        course_states = []
+        if workspace_state_storage is not None:
+            course_states = await workspace_state_storage.list_course_states(_.user_id)
 
         visible = [
             c for c in courses
             if c.discoverable
         ]
+        visible = order_courses_for_user(visible, course_states)
 
         return {"courses": visible}
 
@@ -83,6 +89,8 @@ def get_course_router(
             or course.has_instructor_access(identity.user_id)
             or identity.user_id in course.enrolled_users
         ):
+            if workspace_state_storage is not None:
+                await workspace_state_storage.touch_course(identity.user_id, course_id)
             return course
 
         raise HTTPException(status_code=404, detail="Course not found")
@@ -114,13 +122,24 @@ def get_course_router(
             raise HTTPException(status_code=404, detail="Course not found")
         if not course.has_instructor_access(identity.user_id):
             ensure_enrolled_or_owner(course.owner_id, course.enrolled_users, identity)
+        if workspace_state_storage is not None:
+            await workspace_state_storage.touch_course(identity.user_id, course_id)
 
         lessons = []
         for lesson_id, lesson_version in course.lessons.items():
             lesson = await artifact_storage.load_lesson(lesson_id, lesson_version)
             if lesson is not None:
                 lessons.append(lesson)
-        return CourseLessonsResponse(lessons=lessons)
+        lesson_states = []
+        if workspace_state_storage is not None:
+            lesson_states = await workspace_state_storage.list_lesson_states(identity.user_id, course_id=course_id)
+        ordered_lessons = order_lessons_for_user(course, lessons, lesson_states)
+        pinned_window = resolve_pinned_lesson_window(course)
+        return CourseLessonsResponse(
+            lessons=ordered_lessons,
+            pinned_lesson_id=None if pinned_window is None else pinned_window.lesson_id,
+            pinned_lesson_version=None if pinned_window is None else pinned_window.lesson_version,
+        )
         
 
     @router.post("/{course_id}/enroll")

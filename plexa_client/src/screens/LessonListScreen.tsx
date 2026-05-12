@@ -117,12 +117,27 @@ export default function LessonListScreen({ courseId, onSelectLesson }: Props) {
           <ol className="catalog-list catalog-list--compact">
             {lessons.map((lesson, index) => (
               <li key={lesson.lesson_id + ":" + lesson.version}>
-                <article className="catalog-entry catalog-entry--lesson">
+                <article
+                  className={
+                    lesson.is_pinned_now
+                      ? "catalog-entry catalog-entry--lesson catalog-entry--pinned"
+                      : "catalog-entry catalog-entry--lesson"
+                  }
+                >
                   <header className="catalog-entry__header">
                     <p className="catalog-entry__index">{String(index + 1).padStart(2, "0")}</p>
                     <div>
                       <p className="catalog-entry__eyebrow">Lesson</p>
-                      <h3>{lesson.title}</h3>
+                      <h3 className="catalog-entry__title-with-icon">
+                        {lesson.is_pinned_now ? (
+                          <span className="pin-indicator" aria-label="Pinned lesson" title="Pinned lesson">
+                            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                              <path d="M15 3c.55 0 1 .45 1 1v2.17l2.41 2.42c.38.37.59.88.59 1.41V12c0 .55-.45 1-1 1h-5v7l-1 1-1-1v-7H6c-.55 0-1-.45-1-1V10c0-.53.21-1.04.59-1.41L8 6.17V4c0-.55.45-1 1-1h6Z" fill="currentColor" />
+                            </svg>
+                          </span>
+                        ) : null}
+                        <span>{lesson.title}</span>
+                      </h3>
                     </div>
                     <span className="section-chip">v{lesson.version}</span>
                   </header>

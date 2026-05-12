@@ -15,6 +15,7 @@ export interface ApiSessionResponse {
   lesson_id: string
   lesson_version: string
   created_at: string
+  updated_at: string
   is_active: boolean
   turn_count: number
   max_turns: number
@@ -85,6 +86,8 @@ export interface ApiLessonDocument {
 
 export interface ApiCourseLessonsResponse {
   lessons: ApiLessonDocument[]
+  pinned_lesson_id?: string | null
+  pinned_lesson_version?: string | null
 }
 
 export interface ApiStatusResponse {

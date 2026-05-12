@@ -51,6 +51,7 @@ async def seed_course(
     lessons: list[Lesson],
     course_title: str,
     course_desc: str,
+    lesson_timeline: list[dict],
     course_storage: CourseStorage,
 ) -> None:
     """Create a fixture-backed course and bind the supplied lesson versions."""
@@ -63,6 +64,7 @@ async def seed_course(
 
     for lesson in lessons:
         payload["lessons"][lesson.identity.lesson_id] = lesson.identity.version
+    payload["lesson_timeline"] = lesson_timeline
 
     course = Course.model_validate(payload)
     await course_storage.save_course(course)
@@ -99,6 +101,7 @@ async def seed_target(target: str) -> None:
             lessons=lessons,
             course_title=course_spec["course_title"],
             course_desc=course_spec["course_description"],
+            lesson_timeline=course_spec.get("lesson_timeline", []),
             course_storage=course_storage,
         )
 

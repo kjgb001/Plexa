@@ -84,6 +84,30 @@ def test_list_sessions_for_lesson(client, session_factory, api_prefix, storage_b
     assert all(session["user_id"] == "tester" for session in sessions)
 
 
+def test_list_sessions_orders_by_updated_at_after_message_send(client, session_factory, api_prefix, storage_backend):
+    first_session_id, lesson_id, lesson_version = session_factory()
+    second_session_id, _, _ = session_factory()
+    course_id = "CS101"
+
+    response = client.post(
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{first_session_id}/messages",
+        json={"content": "Move this session to the top"},
+        headers={"X-User-Id": "tester"},
+    )
+    assert response.status_code == 200
+
+    listed = client.get(
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions",
+        headers={"X-User-Id": "tester"},
+    )
+    assert listed.status_code == 200
+    sessions = listed.json()["sessions"]
+    assert [session["session_id"] for session in sessions] == [
+        first_session_id,
+        second_session_id,
+    ]
+
+
 def test_close_session(client, session_factory, api_prefix, storage_backend):
     session_id, lesson_id, lesson_version = session_factory()
     course_id = "CS101"
@@ -381,6 +405,97 @@ def test_lesson_list(client, course_factory, lesson_factory, api_prefix, admin_h
 
     assert response.status_code == 200
     assert response.json()["lessons"][0]["identity"]["lesson_id"] == "test"
+
+
+def test_discoverable_courses_order_by_last_accessed(
+    client,
+    admin_headers,
+    valid_course_payload,
+    api_prefix,
+    storage_backend,
+):
+    first_payload = dict(valid_course_payload)
+    first_payload["course_id"] = "CS101"
+    first_payload["title"] = "Course One"
+    second_payload = dict(valid_course_payload)
+    second_payload["course_id"] = "CS102"
+    second_payload["title"] = "Course Two"
+
+    assert client.post(f"{api_prefix}/admin/courses", json=first_payload, headers=admin_headers).status_code == 200
+    assert client.post(f"{api_prefix}/admin/courses", json=second_payload, headers=admin_headers).status_code == 200
+
+    touched = client.get(f"{api_prefix}/courses/CS101", headers={"X-User-Id": "tester"})
+    assert touched.status_code == 200
+
+    listed = client.get(f"{api_prefix}/courses", headers={"X-User-Id": "tester"})
+    assert listed.status_code == 200
+    assert [course["course_id"] for course in listed.json()["courses"]][:2] == ["CS101", "CS102"]
+
+
+def test_lesson_list_orders_last_accessed_first_and_pinned_second(
+    client,
+    admin_headers,
+    valid_course_payload,
+    valid_lesson_payload,
+    api_prefix,
+    storage_backend,
+):
+    alpha_payload = dict(valid_lesson_payload)
+    alpha_payload["identity"] = dict(valid_lesson_payload["identity"])
+    alpha_payload["identity"]["lesson_id"] = "alpha"
+    alpha_payload["identity"]["title"] = "Alpha"
+
+    beta_payload = dict(valid_lesson_payload)
+    beta_payload["identity"] = dict(valid_lesson_payload["identity"])
+    beta_payload["identity"]["lesson_id"] = "beta"
+    beta_payload["identity"]["title"] = "Beta"
+
+    gamma_payload = dict(valid_lesson_payload)
+    gamma_payload["identity"] = dict(valid_lesson_payload["identity"])
+    gamma_payload["identity"]["lesson_id"] = "gamma"
+    gamma_payload["identity"]["title"] = "Gamma"
+
+    for payload in [alpha_payload, beta_payload, gamma_payload]:
+        response = client.post(f"{api_prefix}/admin/lessons", json=payload, headers=admin_headers)
+        assert response.status_code == 200
+
+    course_payload = dict(valid_course_payload)
+    course_payload["lessons"] = {
+        "alpha": "0.1.0",
+        "beta": "0.1.0",
+        "gamma": "0.1.0",
+    }
+    course_payload["lesson_timeline"] = [
+        {
+            "lesson_id": "beta",
+            "lesson_version": "0.1.0",
+            "starts_at": "2026-01-01T00:00:00Z",
+        }
+    ]
+    created = client.post(f"{api_prefix}/admin/courses", json=course_payload, headers=admin_headers)
+    assert created.status_code == 200
+
+    touched = client.get(
+        f"{api_prefix}/courses/{course_payload['course_id']}/lessons",
+        headers={"X-User-Id": "tester"},
+    )
+    assert touched.status_code == 200
+    initial_ids = [lesson["identity"]["lesson_id"] for lesson in touched.json()["lessons"]]
+    assert initial_ids[:2] == ["beta", "alpha"]
+
+    session_response = client.post(
+        f"{api_prefix}/courses/{course_payload['course_id']}/lessons/gamma/0.1.0/sessions",
+        headers={"X-User-Id": "tester"},
+    )
+    assert session_response.status_code == 201
+
+    listed = client.get(
+        f"{api_prefix}/courses/{course_payload['course_id']}/lessons",
+        headers={"X-User-Id": "tester"},
+    )
+    assert listed.status_code == 200
+    ordered_ids = [lesson["identity"]["lesson_id"] for lesson in listed.json()["lessons"]]
+    assert ordered_ids[:3] == ["gamma", "beta", "alpha"]
 
 
 def test_owner_can_add_and_remove_parallel_instructor(client, course_factory, api_prefix, storage_backend):

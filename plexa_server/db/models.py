@@ -44,6 +44,7 @@ class CourseRecord(Base):
     term: Mapped[str | None] = mapped_column(String(255), nullable=True)
     owner_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
     discoverable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    lesson_timeline: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     owner: Mapped[UserRecord] = relationship()
@@ -149,6 +150,40 @@ class CourseLessonRecord(Base):
 
     course: Mapped[CourseRecord] = relationship(back_populates="lesson_bindings")
     lesson: Mapped[LessonRecord] = relationship(back_populates="course_bindings")
+
+
+class UserCourseStateRecord(Base):
+    """User-scoped recency state for a course."""
+
+    __tablename__ = "user_course_states"
+    __table_args__ = (UniqueConstraint("user_id", "course_id", name="uq_user_course_state"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    course_id: Mapped[int] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"), nullable=False)
+    last_accessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    user: Mapped[UserRecord] = relationship()
+    course: Mapped[CourseRecord] = relationship()
+
+
+class UserLessonStateRecord(Base):
+    """User-scoped recency state for a lesson within a course."""
+
+    __tablename__ = "user_lesson_states"
+    __table_args__ = (
+        UniqueConstraint("user_id", "course_id", "lesson_id", name="uq_user_lesson_state"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    course_id: Mapped[int] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"), nullable=False)
+    lesson_id: Mapped[int] = mapped_column(ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False)
+    last_accessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    user: Mapped[UserRecord] = relationship()
+    course: Mapped[CourseRecord] = relationship()
+    lesson: Mapped[LessonRecord] = relationship()
 
 
 class SessionRecord(Base):

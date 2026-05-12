@@ -35,6 +35,7 @@ export function mapSession(session: ApiSessionResponse): Session {
     lesson_id: session.lesson_id,
     lesson_version: session.lesson_version,
     created_at: session.created_at,
+    updated_at: session.updated_at,
     turn_count: session.turn_count,
     max_turns: session.max_turns,
     is_active: session.is_active,

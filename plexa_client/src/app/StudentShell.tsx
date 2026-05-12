@@ -18,6 +18,34 @@ function formatSessionTimestamp(value: string) {
   })
 }
 
+function sortSessionsByUpdatedAt(items: Session[]) {
+  return [...items].sort((left, right) => {
+    const delta = new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime()
+    if (delta !== 0) {
+      return delta
+    }
+    return right.session_id.localeCompare(left.session_id)
+  })
+}
+
+function visibleRailItems<T>(
+  items: T[],
+  expanded: boolean,
+  isSelected: (item: T) => boolean,
+  limit = 4,
+) {
+  if (expanded || items.length <= limit) {
+    return items
+  }
+
+  const selectedIndex = items.findIndex((item) => isSelected(item))
+  if (selectedIndex === -1 || selectedIndex < limit) {
+    return items.slice(0, limit)
+  }
+
+  return [...items.slice(0, limit - 1), items[selectedIndex]]
+}
+
 export default function StudentShell({
   route,
   userId,
@@ -41,6 +69,9 @@ export default function StudentShell({
   const [sessionPendingDelete, setSessionPendingDelete] = useState<Session | null>(null)
   const [sessionDeleting, setSessionDeleting] = useState(false)
   const [sessionCreating, setSessionCreating] = useState(false)
+  const [coursesExpanded, setCoursesExpanded] = useState(false)
+  const [lessonsExpanded, setLessonsExpanded] = useState(false)
+  const [sessionsExpanded, setSessionsExpanded] = useState(false)
 
   const selectedCourseId = route.kind === "courses" ? null : route.courseId
   const selectedLessonId = route.kind === "chat" ? route.lessonId : null
@@ -135,7 +166,7 @@ export default function StudentShell({
         )
 
         if (active) {
-          setSessions(result.sessions)
+          setSessions(sortSessionsByUpdatedAt(result.sessions))
         }
       } catch {
         if (active) {
@@ -215,13 +246,15 @@ export default function StudentShell({
               previousScrollTop: element.scrollTop,
             }
           }
-          return [change.session, ...current]
+          return sortSessionsByUpdatedAt([change.session, ...current])
         }
 
-        return current.map((session) =>
-          session.session_id === change.session.session_id
-            ? change.session
-            : session,
+        return sortSessionsByUpdatedAt(
+          current.map((session) =>
+            session.session_id === change.session.session_id
+              ? change.session
+              : session,
+          ),
         )
       })
     }
@@ -245,6 +278,35 @@ export default function StudentShell({
           lesson.version === selectedLessonVersion,
       ) ?? null,
     [lessons, selectedLessonId, selectedLessonVersion],
+  )
+  const visibleCourses = useMemo(
+    () =>
+      visibleRailItems(
+        courses,
+        coursesExpanded,
+        (course) => course.course_id === selectedCourseId,
+      ),
+    [courses, coursesExpanded, selectedCourseId],
+  )
+  const visibleLessons = useMemo(
+    () =>
+      visibleRailItems(
+        lessons,
+        lessonsExpanded,
+        (lesson) =>
+          lesson.lesson_id === selectedLessonId &&
+          lesson.version === selectedLessonVersion,
+      ),
+    [lessons, lessonsExpanded, selectedLessonId, selectedLessonVersion],
+  )
+  const visibleSessions = useMemo(
+    () =>
+      visibleRailItems(
+        sessions,
+        sessionsExpanded,
+        (session) => session.session_id === activeSessionId,
+      ),
+    [activeSessionId, sessions, sessionsExpanded],
   )
 
 
@@ -317,7 +379,7 @@ export default function StudentShell({
           previousScrollTop: element.scrollTop,
         }
       }
-      setSessions((current) => [result.session, ...current])
+      setSessions((current) => sortSessionsByUpdatedAt([result.session, ...current]))
       navigate(
         `/app/courses/${encodeURIComponent(selectedCourseId)}/lessons/${encodeURIComponent(selectedLesson.lesson_id)}/${encodeURIComponent(selectedLesson.version)}/sessions/${encodeURIComponent(result.session.session_id)}`,
       )
@@ -372,7 +434,7 @@ export default function StudentShell({
               {coursesLoading ? <div className="empty-panel">Loading courses...</div> : null}
 
               {!coursesLoading &&
-                courses.map((course) => {
+                visibleCourses.map((course) => {
                   const isActive = course.course_id === selectedCourseId
 
                   return (
@@ -390,6 +452,14 @@ export default function StudentShell({
                     </button>
                   )
                 })}
+              {!coursesLoading && courses.length > 4 ? (
+                <button
+                  className="ghost-button rail__toggle"
+                  onClick={() => setCoursesExpanded((current) => !current)}
+                >
+                  {coursesExpanded ? "Show Less" : "Show More"}
+                </button>
+              ) : null}
             </div>
           </section>
 
@@ -406,7 +476,7 @@ export default function StudentShell({
                 {lessonsLoading ? <div className="empty-panel">Loading lessons...</div> : null}
 
                 {!lessonsLoading &&
-                  lessons.map((lesson) => {
+                  visibleLessons.map((lesson) => {
                     const isActive =
                       lesson.lesson_id === selectedLessonId &&
                       lesson.version === selectedLessonVersion
@@ -414,20 +484,45 @@ export default function StudentShell({
                     return (
                       <button
                         key={`${lesson.lesson_id}:${lesson.version}`}
-                        className={isActive ? "rail-card rail-card--active" : "rail-card"}
+                        className={
+                          [
+                            "rail-card",
+                            isActive ? "rail-card--active" : "",
+                            lesson.is_pinned_now ? "rail-card--pinned" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")
+                        }
                         onClick={() =>
                           navigate(
                             `/app/courses/${encodeURIComponent(selectedCourseId)}/lessons/${encodeURIComponent(lesson.lesson_id)}/${encodeURIComponent(lesson.version)}`,
                           )
                         }
                       >
-                        <span className="rail-card__title">{lesson.title}</span>
+                        <span className="rail-card__title rail-card__title--with-icon">
+                          {lesson.is_pinned_now ? (
+                            <span className="pin-indicator" aria-label="Pinned lesson" title="Pinned lesson">
+                              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                <path d="M15 3c.55 0 1 .45 1 1v2.17l2.41 2.42c.38.37.59.88.59 1.41V12c0 .55-.45 1-1 1h-5v7l-1 1-1-1v-7H6c-.55 0-1-.45-1-1V10c0-.53.21-1.04.59-1.41L8 6.17V4c0-.55.45-1 1-1h6Z" fill="currentColor" />
+                              </svg>
+                            </span>
+                          ) : null}
+                          <span>{lesson.title}</span>
+                        </span>
                         <span className="rail-card__meta">
                           {lesson.difficulty ?? "Open level"}
                         </span>
                       </button>
                     )
                   })}
+                {!lessonsLoading && lessons.length > 4 ? (
+                  <button
+                    className="ghost-button rail__toggle"
+                    onClick={() => setLessonsExpanded((current) => !current)}
+                  >
+                    {lessonsExpanded ? "Show Less" : "Show More"}
+                  </button>
+                ) : null}
               </div>
             ) : (
               <div className="empty-panel">
@@ -470,7 +565,7 @@ export default function StudentShell({
 
                 {!sessionsLoading &&
                   !sessionsError &&
-                  sessions.map((session) => {
+                  visibleSessions.map((session) => {
                     const isActive = session.session_id === activeSessionId
 
                     return (
@@ -494,7 +589,7 @@ export default function StudentShell({
                           </span>
                           <span className="session-card__meta">
                             {session.is_active ? "Open session" : "Closed session"} ·{" "}
-                            {formatSessionTimestamp(session.created_at)}
+                            {formatSessionTimestamp(session.updated_at)}
                           </span>
                           <span className="session-card__meta">
                             {session.turn_count} / {session.max_turns} turns
@@ -516,6 +611,14 @@ export default function StudentShell({
                       </article>
                     )
                   })}
+                {!sessionsLoading && !sessionsError && sessions.length > 4 ? (
+                  <button
+                    className="ghost-button rail__toggle"
+                    onClick={() => setSessionsExpanded((current) => !current)}
+                  >
+                    {sessionsExpanded ? "Show Less" : "Show More"}
+                  </button>
+                ) : null}
               </div>
             )}
           </section>

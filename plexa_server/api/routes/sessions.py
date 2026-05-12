@@ -20,13 +20,14 @@ from plexa_server.api.schemas.responses import (
 from plexa_server.auth.dependencies import get_owned_session, require_identity
 from plexa_server.auth.identity import UserIdentity
 from plexa_server.core.sessions import SessionManager
-from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage
+from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage, WorkspaceStateStorage
 
 
 def get_sessions_router(
     session_manager: SessionManager,
     artifact_storage: ArtifactStorage,
-    course_storage: CourseStorage
+    course_storage: CourseStorage,
+    workspace_state_storage: WorkspaceStateStorage,
 ) -> APIRouter:
     """Create session endpoints bound to the supplied storage and manager objects.
 
@@ -40,6 +41,21 @@ def get_sessions_router(
     """
 
     router = APIRouter(tags=["sessions"])
+
+    async def touch_course_and_lesson(
+        identity: UserIdentity,
+        course_id: str,
+        lesson_id: str,
+        lesson_version: str,
+    ) -> None:
+        """Record meaningful course and lesson access for sidebar ordering."""
+        await workspace_state_storage.touch_course(identity.user_id, course_id)
+        await workspace_state_storage.touch_lesson(
+            identity.user_id,
+            course_id,
+            lesson_id,
+            lesson_version,
+        )
 
 
     def check_session_path(
@@ -123,6 +139,7 @@ def get_sessions_router(
             user_id=identity.user_id,
             course_id=course_id
         )
+        await touch_course_and_lesson(identity, course_id, lesson_id, lesson_version)
 
         return CreateSessionResponse(
             session=SessionResponse.from_session(session),
@@ -189,7 +206,6 @@ def get_sessions_router(
             lesson_id=lesson_id,
             lesson_version=lesson_version,
         )
-
         return ListSessionsResponse(
             sessions=[SessionResponse.from_session(session) for session in sessions]
         )
@@ -237,6 +253,7 @@ def get_sessions_router(
             )
 
             session = await session_manager.get_session(session_id)
+            await touch_course_and_lesson(identity, course_id, lesson_id, lesson_version)
 
             return SendMessageResponse(
                 assistant_message=assistant_message,
@@ -283,6 +300,7 @@ def get_sessions_router(
         try:
             session = await get_owned_session(session_manager, session_id, identity)
             check_session_path(session, course_id, lesson_id, lesson_version)
+            await touch_course_and_lesson(identity, course_id, lesson_id, lesson_version)
 
             return CreateSessionResponse(
                 session=SessionResponse.from_session(session),
@@ -328,6 +346,7 @@ def get_sessions_router(
 
             await session_manager.close_session(session_id)
             session = await session_manager.get_session(session_id)
+            await touch_course_and_lesson(identity, course_id, lesson_id, lesson_version)
             return SessionResponse.from_session(session)
 
         except SessionClosedError:

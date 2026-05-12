@@ -215,6 +215,7 @@ def get_admin_router(
 
         # Preserve lesson bindings
         payload.lessons = existing.lessons
+        payload.lesson_timeline = existing.lesson_timeline
 
         await course_storage.save_course(payload)
         return payload
