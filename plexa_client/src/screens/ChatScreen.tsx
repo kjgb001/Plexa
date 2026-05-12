@@ -38,6 +38,8 @@ export default function ChatScreen({
   const latestMessagesRef = useRef<Message[]>([])
   const latestLoadingRef = useRef(false)
   const suppressAutoDeleteRef = useRef(false)
+  const keepComposerFocusRef = useRef(true)
+  const suppressComposerBlurRef = useRef(false)
   const [session, setSession] = useState<Session | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
@@ -70,6 +72,8 @@ export default function ChatScreen({
         setBooting(false)
         return
       }
+
+      keepComposerFocusRef.current = true
 
       setBooting(true)
       setBootError(null)
@@ -118,6 +122,20 @@ export default function ChatScreen({
     }
   }, [messages, loading])
 
+  function focusComposerIfAllowed(force = false) {
+    if (!force && keepComposerFocusRef.current === false) {
+      return
+    }
+
+    requestAnimationFrame(() => {
+      const element = inputRef.current
+      if (element === null || element.disabled) {
+        return
+      }
+      element.focus()
+    })
+  }
+
   useLayoutEffect(() => {
     const element = inputRef.current
     if (!element) {
@@ -134,6 +152,18 @@ export default function ChatScreen({
       transcript.scrollTop = transcript.scrollHeight
     }
   }, [input])
+
+  useEffect(() => {
+    if (
+      sessionId !== null &&
+      session !== null &&
+      booting === false &&
+      deleting === false
+    ) {
+      keepComposerFocusRef.current = true
+      focusComposerIfAllowed(true)
+    }
+  }, [booting, deleting, session, sessionId])
 
   useEffect(() => {
     const sessionIdAtMount = sessionId
@@ -175,6 +205,7 @@ export default function ChatScreen({
 
     try {
       const result = await sessionApi.createSession(courseId, lessonId, lessonVersion)
+      keepComposerFocusRef.current = true
       dispatchSessionChanged(courseId, lessonId, lessonVersion, {
         type: "upsert",
         session: result.session,
@@ -233,6 +264,7 @@ export default function ChatScreen({
     setInteractionError(null)
     setMessages((previous) => [...previous, userMessage])
     setInput("")
+    suppressComposerBlurRef.current = true
     setLoading(true)
 
     try {
@@ -257,8 +289,9 @@ export default function ChatScreen({
       setInteractionError("Message delivery failed. Try again.")
     } finally {
       setLoading(false)
+      focusComposerIfAllowed()
       requestAnimationFrame(() => {
-        inputRef.current?.focus()
+        suppressComposerBlurRef.current = false
       })
     }
   }
@@ -407,6 +440,20 @@ export default function ChatScreen({
                 ref={inputRef}
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
+                onFocus={() => {
+                  keepComposerFocusRef.current = true
+                }}
+                onBlur={() => {
+                  if (suppressComposerBlurRef.current) {
+                    return
+                  }
+                  requestAnimationFrame(() => {
+                    const activeElement = document.activeElement
+                    if (activeElement !== inputRef.current) {
+                      keepComposerFocusRef.current = false
+                    }
+                  })
+                }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault()
@@ -414,7 +461,7 @@ export default function ChatScreen({
                   }
                 }}
                 placeholder="Ask a question, test a prompt, or reflect on the lesson."
-                disabled={loading || deleting || session.is_active === false}
+                disabled={deleting || session.is_active === false}
                 rows={1}
               />
             </label>
@@ -422,6 +469,9 @@ export default function ChatScreen({
             <button
               className="composer-button"
               type="submit"
+              onMouseDown={(event) => {
+                event.preventDefault()
+              }}
               disabled={loading || deleting || session.is_active === false || input.trim() === ""}
             >
               {loading ? "Sending..." : "Send"}
