@@ -45,6 +45,9 @@ DEFAULT_ENV_VALUES = {
     "PLEXA_TEST_DATABASE_URL": "postgresql+asyncpg://plexa:plexa_dev_password@localhost:5432/plexa_test",
     "PLEXA_TEST_DATABASE_SYNC_URL": "postgresql://plexa:plexa_dev_password@localhost:5432/plexa_test",
     "PLEXA_TEST_STORAGE_BACKEND": "postgres",
+    "PLEXA_AUTH_MODE": "dev-header",
+    "PLEXA_ADMIN_USER_IDS": '["admin"]',
+    "PLEXA_CORS_ALLOWED_ORIGINS": '["http://localhost:5173"]',
     "PLEXA_INFERENCE_BACKENDS": json.dumps(DEFAULT_INFERENCE_BACKENDS, separators=(",", ":")),
     "PLEXA_INFERENCE_PROFILES": json.dumps(DEFAULT_INFERENCE_PROFILES, separators=(",", ":")),
     "PLEXA_INFERENCE_REQUIRED_BACKENDS": json.dumps(

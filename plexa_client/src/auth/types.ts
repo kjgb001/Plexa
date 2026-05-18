@@ -1,3 +1,7 @@
+export type AuthMode =
+  | "dev"
+  | "oidc"
+
 export type AuthStatus =
   | "booting"
   | "authenticated"
@@ -6,12 +10,14 @@ export type AuthStatus =
 
 export interface AuthUser {
   userId: string
+  displayName?: string | null
 }
 
 export interface AuthService {
+  readonly mode: AuthMode
   boot(): Promise<AuthUser | null>
   getAuthHeaders(): Promise<Record<string, string>>
-  login(userId: string): Promise<AuthUser>
+  login(userId?: string): Promise<AuthUser | null>
   logout(): Promise<void>
   handleCallback(): Promise<AuthUser | null>
 }

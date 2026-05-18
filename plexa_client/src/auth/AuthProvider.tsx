@@ -3,12 +3,19 @@ import {
   useState,
   type ReactNode,
 } from "react"
+import { AUTH_MODE } from "./config"
 import { DevAuthService } from "./devAuth"
+import { OidcAuthService } from "./oidcAuth"
 import type { AuthService, AuthStatus, AuthUser } from "./types"
 import { AuthContext } from "./AuthContext"
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [authService] = useState<AuthService>(() => new DevAuthService())
+  const [authService] = useState<AuthService>(() => {
+    if (AUTH_MODE === "oidc") {
+      return new OidcAuthService()
+    }
+    return new DevAuthService()
+  })
   const [status, setStatus] = useState<AuthStatus>("booting")
   const [user, setUser] = useState<AuthUser | null>(null)
   const [error, setError] = useState<Error | null>(null)
@@ -43,11 +50,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [authService])
 
-  async function login(userId: string) {
+  async function login(userId?: string) {
     setError(null)
     const nextUser = await authService.login(userId)
-    setUser(nextUser)
-    setStatus("authenticated")
+    if (nextUser) {
+      setUser(nextUser)
+      setStatus("authenticated")
+    }
   }
 
   async function logout() {
@@ -73,6 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider
       value={{
+        mode: authService.mode,
         authService,
         status,
         user,

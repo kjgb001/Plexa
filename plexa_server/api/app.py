@@ -1,3 +1,5 @@
+import json
+import os
 from pathlib import Path
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,7 +22,8 @@ from plexa_server.api.routes.sessions import get_sessions_router
 from plexa_server.api.routes.health import get_health_router
 from plexa_server.api.routes.admin import get_admin_router
 from plexa_server.api.routes.courses import get_course_router
-from plexa_server.auth.middleware import auth_identity_middleware
+from plexa_server.auth.factory import create_request_authenticator
+from plexa_server.auth.middleware import create_auth_identity_middleware
 from plexa_server.core.encrypted_logs import EncryptedLogService
 from plexa_server.inference.base import InferenceBackend
 from plexa_server.inference.routing import InferenceRouter, create_single_backend_router
@@ -30,6 +33,25 @@ from plexa_server.utils.filesystem_data_dir import get_data_dir_path
 DATA_PATH = get_data_dir_path()
 APP_VERSION = "0.1.0"
 API_VERSION = "v1"
+
+
+def _load_cors_allowed_origins() -> list[str]:
+    """Return configured CORS origins from environment."""
+    from plexa_server.db.config import load_server_env_file
+
+    load_server_env_file()
+    raw = os.getenv("PLEXA_CORS_ALLOWED_ORIGINS")
+    if raw is None or not raw.strip():
+        return ["http://localhost:5173"]
+
+    raw = raw.strip()
+    if raw.startswith("["):
+        parsed = json.loads(raw)
+        if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+            raise ValueError("PLEXA_CORS_ALLOWED_ORIGINS must be a JSON array of strings or CSV.")
+        return [item for item in parsed if item.strip()]
+
+    return [item.strip() for item in raw.split(",") if item.strip()]
 
 def build_app(
     inference_router: InferenceRouter | None = None,
@@ -106,7 +128,8 @@ def build_app(
 
     # FastAPI app
     app = FastAPI(title="Plexa Server", version=APP_VERSION)
-    app.middleware("http")(auth_identity_middleware)
+    request_authenticator = create_request_authenticator()
+    app.middleware("http")(create_auth_identity_middleware(request_authenticator))
     api_router = APIRouter(prefix=f"/api/{API_VERSION}")
 
     api_router.include_router(
@@ -141,10 +164,9 @@ def build_app(
     )
     app.include_router(api_router)
 
-    # DEV: Allow cross-origin requests from port 5173 (client dev)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173"],
+        allow_origins=_load_cors_allowed_origins(),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

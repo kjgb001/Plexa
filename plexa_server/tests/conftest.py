@@ -10,6 +10,7 @@ from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from plexa_server.api.app import build_app
+from plexa_server.auth.factory import clear_request_authenticator_cache
 from plexa_server.core.sessions import SessionManager
 from plexa_server.db.config import DatabaseConfig
 from plexa_server.db.models import Base
@@ -37,6 +38,16 @@ from plexa_server.tests.fixtures import (
 
 def run(coro):
     return asyncio.run(coro)
+
+
+@pytest.fixture(autouse=True)
+def auth_test_mode(monkeypatch):
+    """Keep tests on explicit dev-header auth unless overridden locally."""
+    monkeypatch.setenv("PLEXA_AUTH_MODE", "dev-header")
+    monkeypatch.setenv("PLEXA_ADMIN_USER_IDS", "admin-user")
+    clear_request_authenticator_cache()
+    yield
+    clear_request_authenticator_cache()
 
 
 def pytest_generate_tests(metafunc):
@@ -389,16 +400,17 @@ def course_factory(client, valid_course_payload, admin_headers, api_prefix):
 
 @pytest.fixture
 def admin_headers(monkeypatch) -> dict:
-    """Provide a valid admin header for API tests.
+    """Provide a valid admin identity header for API tests.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
 
     Returns:
-        dict: HTTP headers containing a valid admin token.
+        dict: HTTP headers containing a valid admin user identity.
     """
-    monkeypatch.setenv("PLEXA_ADMIN_TOKEN", "test-token")
-    return {"X-Admin-Token": "test-token"}
+    monkeypatch.setenv("PLEXA_ADMIN_USER_IDS", "admin-user")
+    clear_request_authenticator_cache()
+    return {"X-User-Id": "admin-user"}
 
 
 @pytest.fixture

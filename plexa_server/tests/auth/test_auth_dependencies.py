@@ -1,4 +1,9 @@
 import asyncio
+import base64
+import hashlib
+import hmac
+import json
+import time
 
 import pytest
 from fastapi import Depends, FastAPI, HTTPException
@@ -12,16 +17,31 @@ from plexa_server.auth.dependencies import (
     require_admin,
     require_identity,
 )
+from plexa_server.auth.factory import clear_request_authenticator_cache
 from plexa_server.auth.identity import UserIdentity
 from plexa_server.auth.middleware import auth_identity_middleware
-from plexa_server.models.course import Course
 from plexa_server.core.sessions import SessionNotFoundError
+from plexa_server.models.course import Course
 from plexa_server.models.session import Session
-from plexa_server.tests.fixtures import make_valid_lesson_payload
 
 
 def run(coro):
     return asyncio.run(coro)
+
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode("utf-8").rstrip("=")
+
+
+def make_hs256_jwt(secret: str, payload: dict[str, object], header: dict[str, object] | None = None) -> str:
+    header_dict = {"alg": "HS256", "typ": "JWT"}
+    if header:
+        header_dict.update(header)
+    encoded_header = _b64url(json.dumps(header_dict, separators=(",", ":")).encode("utf-8"))
+    encoded_payload = _b64url(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+    signing_input = f"{encoded_header}.{encoded_payload}".encode("utf-8")
+    signature = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
+    return f"{encoded_header}.{encoded_payload}.{_b64url(signature)}"
 
 
 def _identity_payload(identity: UserIdentity) -> dict:
@@ -36,17 +56,17 @@ def _identity_payload(identity: UserIdentity) -> dict:
     }
 
 
+@pytest.fixture(autouse=True)
+def clear_auth_cache():
+    clear_request_authenticator_cache()
+    yield
+    clear_request_authenticator_cache()
+
+
 @pytest.fixture
-def auth_app(monkeypatch) -> FastAPI:
-    """Return a minimal app exposing auth middleware and dependencies.
-
-    Args:
-        monkeypatch: Pytest monkeypatch fixture used to control env config.
-
-    Returns:
-        FastAPI: Test app with auth middleware installed.
-    """
-    monkeypatch.setenv("PLEXA_ADMIN_TOKEN", "test-token")
+def dev_auth_app(monkeypatch) -> FastAPI:
+    monkeypatch.setenv("PLEXA_AUTH_MODE", "dev-header")
+    monkeypatch.setenv("PLEXA_ADMIN_USER_IDS", "admin-user")
 
     app = FastAPI()
     app.middleware("http")(auth_identity_middleware)
@@ -63,27 +83,48 @@ def auth_app(monkeypatch) -> FastAPI:
 
 
 @pytest.fixture
-def auth_client(auth_app: FastAPI) -> TestClient:
-    """Return a test client for the auth test app.
-
-    Args:
-        auth_app: App exposing auth middleware and dependencies.
-
-    Returns:
-        TestClient: Synchronous test client.
-    """
-    return TestClient(auth_app)
+def dev_auth_client(dev_auth_app: FastAPI) -> TestClient:
+    return TestClient(dev_auth_app)
 
 
-def test_identity_dependency_rejects_anonymous(auth_client: TestClient):
-    response = auth_client.get("/identity")
+@pytest.fixture
+def bearer_auth_app(monkeypatch) -> FastAPI:
+    monkeypatch.setenv("PLEXA_AUTH_MODE", "bearer-jwt")
+    monkeypatch.setenv("PLEXA_AUTH_SHARED_SECRET", "super-secret")
+    monkeypatch.setenv("PLEXA_AUTH_ALLOWED_ALGORITHMS", "HS256")
+    monkeypatch.setenv("PLEXA_AUTH_ISSUER", "https://issuer.example")
+    monkeypatch.setenv("PLEXA_AUTH_AUDIENCE", "plexa-api")
+    monkeypatch.setenv("PLEXA_AUTH_ROLES_CLAIM", "roles")
+    monkeypatch.setenv("PLEXA_ADMIN_USER_IDS", '["admin-sub"]')
+
+    app = FastAPI()
+    app.middleware("http")(auth_identity_middleware)
+
+    @app.get("/identity")
+    async def identity_route(identity: UserIdentity = Depends(require_identity)):
+        return _identity_payload(identity)
+
+    @app.get("/admin")
+    async def admin_route(identity: UserIdentity = Depends(require_admin)):
+        return _identity_payload(identity)
+
+    return app
+
+
+@pytest.fixture
+def bearer_auth_client(bearer_auth_app: FastAPI) -> TestClient:
+    return TestClient(bearer_auth_app)
+
+
+def test_identity_dependency_rejects_anonymous(dev_auth_client: TestClient):
+    response = dev_auth_client.get("/identity")
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Missing user identity"
 
 
-def test_identity_dependency_accepts_dev_user(auth_client: TestClient):
-    response = auth_client.get("/identity", headers={"X-User-Id": "tester"})
+def test_identity_dependency_accepts_dev_user(dev_auth_client: TestClient):
+    response = dev_auth_client.get("/identity", headers={"X-User-Id": "tester"})
 
     assert response.status_code == 200
     assert response.json() == {
@@ -97,71 +138,92 @@ def test_identity_dependency_accepts_dev_user(auth_client: TestClient):
     }
 
 
-def test_admin_dependency_accepts_valid_admin_token(auth_client: TestClient):
-    response = auth_client.get("/admin", headers={"X-Admin-Token": "test-token"})
+def test_admin_dependency_accepts_allowlisted_dev_admin(dev_auth_client: TestClient):
+    response = dev_auth_client.get("/admin", headers={"X-User-Id": "admin-user"})
 
     assert response.status_code == 200
     assert response.json() == {
-        "user_id": None,
-        "roles": ["admin"],
-        "claims": {"admin_token_present": True},
-        "auth_type": "admin_token",
-        "is_authenticated": False,
-        "is_admin": True,
-        "is_anonymous": False,
-    }
-
-
-def test_admin_dependency_accepts_admin_plus_user_identity(auth_client: TestClient):
-    response = auth_client.get(
-        "/admin",
-        headers={
-            "X-Admin-Token": "test-token",
-            "X-User-Id": "instructor-1",
-        },
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "user_id": "instructor-1",
+        "user_id": "admin-user",
         "roles": ["admin", "user"],
-        "claims": {"admin_token_present": True},
-        "auth_type": "admin_token",
+        "claims": {},
+        "auth_type": "dev_header",
         "is_authenticated": True,
         "is_admin": True,
         "is_anonymous": False,
     }
 
 
-def test_admin_dependency_rejects_invalid_admin_token(auth_client: TestClient):
-    response = auth_client.get("/admin", headers={"X-Admin-Token": "wrong-token"})
+def test_admin_dependency_rejects_non_admin_dev_identity(dev_auth_client: TestClient):
+    response = dev_auth_client.get("/admin", headers={"X-User-Id": "tester"})
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "Invalid admin token"
+    assert response.json()["detail"] == "Admin access denied"
 
 
-def test_admin_dependency_rejects_user_only_identity(auth_client: TestClient):
-    response = auth_client.get("/admin", headers={"X-User-Id": "tester"})
+def test_bearer_identity_dependency_accepts_valid_jwt(bearer_auth_client: TestClient):
+    token = make_hs256_jwt(
+        "super-secret",
+        {
+            "sub": "student-1",
+            "iss": "https://issuer.example",
+            "aud": "plexa-api",
+            "exp": int(time.time()) + 3600,
+            "roles": ["learner"],
+        },
+    )
 
-    assert response.status_code == 403
-    assert response.json()["detail"] == "Invalid admin token"
+    response = bearer_auth_client.get("/identity", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["user_id"] == "student-1"
+    assert payload["roles"] == ["learner", "user"]
+    assert payload["auth_type"] == "bearer_jwt"
+    assert payload["is_authenticated"] is True
 
 
-def test_admin_dependency_returns_500_when_token_unconfigured(monkeypatch):
-    monkeypatch.delenv("PLEXA_ADMIN_TOKEN", raising=False)
+def test_bearer_admin_dependency_accepts_allowlisted_admin_user(bearer_auth_client: TestClient):
+    token = make_hs256_jwt(
+        "super-secret",
+        {
+            "sub": "admin-sub",
+            "iss": "https://issuer.example",
+            "aud": "plexa-api",
+            "exp": int(time.time()) + 3600,
+        },
+    )
 
-    app = FastAPI()
-    app.middleware("http")(auth_identity_middleware)
+    response = bearer_auth_client.get("/admin", headers={"Authorization": f"Bearer {token}"})
 
-    @app.get("/admin")
-    async def admin_route(identity: UserIdentity = Depends(require_admin)):
-        return _identity_payload(identity)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["user_id"] == "admin-sub"
+    assert payload["roles"] == ["admin", "user"]
+    assert payload["auth_type"] == "bearer_jwt"
 
-    client = TestClient(app)
-    response = client.get("/admin", headers={"X-Admin-Token": "anything"})
 
-    assert response.status_code == 500
-    assert response.json()["detail"] == "Admin token not configured"
+def test_bearer_dependency_rejects_invalid_token(bearer_auth_client: TestClient):
+    response = bearer_auth_client.get("/identity", headers={"Authorization": "Bearer not-a-token"})
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid bearer token"
+
+
+def test_bearer_dependency_rejects_wrong_audience(bearer_auth_client: TestClient):
+    token = make_hs256_jwt(
+        "super-secret",
+        {
+            "sub": "student-1",
+            "iss": "https://issuer.example",
+            "aud": "wrong-audience",
+            "exp": int(time.time()) + 3600,
+        },
+    )
+
+    response = bearer_auth_client.get("/identity", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid bearer token"
 
 
 def test_ensure_course_owner_allows_owner():
@@ -238,52 +300,53 @@ class _FakeSessionManager:
     def __init__(self, session: Session | None):
         self._session = session
 
-    async def get_session(self, session_id: str) -> Session:
-        if self._session is None or self._session.session_id != session_id:
+    async def get_session(self, session_id: str):
+        if self._session is None:
             raise SessionNotFoundError(session_id)
         return self._session
 
 
-def _make_session(session_id: str = "s1", user_id: str = "tester") -> Session:
-    lesson_payload = make_valid_lesson_payload()
-    return Session(
-        session_id=session_id,
-        user_id=user_id,
-        lesson_id=lesson_payload["identity"]["lesson_id"],
-        lesson_version=lesson_payload["identity"]["version"],
+def test_get_owned_session_returns_matching_session():
+    session = Session(
+        session_id="session-1",
+        user_id="owner-1",
+        lesson_id="lesson-1",
+        lesson_version="1.0.0",
         course_id="CS101",
         messages=[],
-        turn_count=0,
-        max_turns=lesson_payload["constraints"]["turn_limit"],
-        is_active=True,
     )
+    manager = _FakeSessionManager(session)
+    identity = UserIdentity(user_id="owner-1", roles={"user"}, auth_type="dev_header")
+
+    loaded = run(get_owned_session(manager, "session-1", identity))
+    assert loaded.session_id == "session-1"
 
 
-def test_get_owned_session_returns_session_for_owner():
-    session = _make_session()
-    identity = UserIdentity(user_id="tester", roles={"user"}, auth_type="dev_header")
-
-    loaded = run(get_owned_session(_FakeSessionManager(session), "s1", identity))
-
-    assert loaded.session_id == "s1"
-
-
-def test_get_owned_session_hides_missing_session():
-    identity = UserIdentity(user_id="tester", roles={"user"}, auth_type="dev_header")
+def test_get_owned_session_rejects_other_user():
+    session = Session(
+        session_id="session-1",
+        user_id="owner-1",
+        lesson_id="lesson-1",
+        lesson_version="1.0.0",
+        course_id="CS101",
+        messages=[],
+    )
+    manager = _FakeSessionManager(session)
+    identity = UserIdentity(user_id="other-user", roles={"user"}, auth_type="dev_header")
 
     with pytest.raises(HTTPException) as exc_info:
-        run(get_owned_session(_FakeSessionManager(None), "missing", identity))
+        run(get_owned_session(manager, "session-1", identity))
 
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Session not found"
 
 
-def test_get_owned_session_hides_non_owned_session():
-    session = _make_session(user_id="alice")
-    identity = UserIdentity(user_id="bob", roles={"user"}, auth_type="dev_header")
+def test_get_owned_session_rejects_missing_session():
+    manager = _FakeSessionManager(None)
+    identity = UserIdentity(user_id="owner-1", roles={"user"}, auth_type="dev_header")
 
     with pytest.raises(HTTPException) as exc_info:
-        run(get_owned_session(_FakeSessionManager(session), "s1", identity))
+        run(get_owned_session(manager, "missing", identity))
 
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Session not found"

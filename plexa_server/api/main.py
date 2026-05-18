@@ -1,4 +1,5 @@
 import json
+import os
 
 import uvicorn
 
@@ -174,6 +175,6 @@ if __name__ == "__main__":
         "plexa_server.api.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True,
+        reload=os.getenv("PLEXA_UVICORN_RELOAD", "false").strip().lower() == "true",
         ws="none",
     )

@@ -1,6 +1,8 @@
 import type { AuthService, AuthUser } from "./types"
 
 export class DevAuthService implements AuthService {
+  readonly mode = "dev" as const
+
   async boot(): Promise<AuthUser | null> {
     const user = localStorage.getItem("plexa_user")
 
@@ -23,7 +25,10 @@ export class DevAuthService implements AuthService {
     }
   }
 
-  async login(userId: string): Promise<AuthUser> {
+  async login(userId?: string): Promise<AuthUser> {
+    if (!userId?.trim()) {
+      throw new Error("Dev auth login requires a user id.")
+    }
     localStorage.setItem("plexa_user", userId)
     return { userId }
   }

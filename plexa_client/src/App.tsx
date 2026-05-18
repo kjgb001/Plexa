@@ -21,7 +21,7 @@ export default function App() {
 function AppView() {
   const pathname = useCurrentPathname()
   const route = parseRoute(pathname)
-  const { status, user, error, login, logout } = useAuth()
+  const { mode, status, user, error, login, logout } = useAuth()
 
   useEffect(() => {
     if (status === "authenticated" && route.kind === "login") {
@@ -50,9 +50,9 @@ function AppView() {
   if (status !== "authenticated") {
     return (
       <LoginScreen
+        mode={mode}
         onLogin={async (userId) => {
           await login(userId)
-          navigate("/app/courses", { replace: true })
         }}
       />
     )

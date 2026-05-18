@@ -38,7 +38,7 @@ def get_admin_router(
 
         Args:
             lesson_payload: Raw lesson document submitted by the caller.
-            _: Validated admin token dependency value.
+            _: Validated admin identity.
 
         Returns:
             dict | JSONResponse: Success metadata for the stored lesson, or a
@@ -86,7 +86,7 @@ def get_admin_router(
         Args:
             lesson_id: Lesson identifier to load.
             version: Lesson version to load.
-            _: Validated admin token dependency value.
+            _: Validated admin identity.
 
         Returns:
             Lesson: Stored lesson artifact.
@@ -116,7 +116,7 @@ def get_admin_router(
 
         Args:
             payload: Course payload to persist.
-            _: Validated admin token dependency value.
+            _: Validated admin identity.
 
         Returns:
             Course: Persisted course payload.
@@ -147,7 +147,7 @@ def get_admin_router(
 
         Args:
             course_id: Course identifier to load.
-            _: Validated admin token dependency value.
+            _: Validated admin identity.
 
         Returns:
             Course: Stored course document.
@@ -175,7 +175,7 @@ def get_admin_router(
         """List all persisted courses for administrative inspection.
 
         Args:
-            _: Validated admin token dependency value.
+            _: Validated admin identity.
 
         Returns:
             dict: Mapping containing all persisted courses.
@@ -197,7 +197,7 @@ def get_admin_router(
         Args:
             course_id: Course identifier to update.
             payload: Replacement course payload.
-            _: Validated admin token dependency value.
+            _: Validated admin identity.
 
         Returns:
             Course: Updated course payload with preserved lesson bindings.
@@ -232,7 +232,7 @@ def get_admin_router(
 
         Args:
             course_id: Course identifier to delete.
-            _: Validated admin token dependency value.
+            _: Validated admin identity.
 
         Returns:
             dict: Deletion status payload.
@@ -269,7 +269,7 @@ def get_admin_router(
         Args:
             course_id: Course identifier whose lesson mapping should change.
             payload: Mapping containing `lesson_id` and `version`.
-            _: Validated admin token dependency value.
+            _: Validated admin identity.
 
         Returns:
             dict | JSONResponse: Binding success payload, or a validation
@@ -329,7 +329,7 @@ def get_admin_router(
 
         Args:
             course_id: Course identifier whose lesson bindings should be read.
-            _: Validated admin token dependency value.
+            _: Validated admin identity.
 
         Returns:
             dict: Raw persisted course document containing lesson bindings.

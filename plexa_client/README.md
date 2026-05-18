@@ -3,7 +3,7 @@
 `plexa_client` is the student-facing web client for Plexa.
 
 It is a React + TypeScript + Vite application that provides the browser UI for:
-- logging in with the current development auth flow
+- authenticating through the configured client auth mode
 - browsing courses
 - browsing lessons within a course
 - creating and resuming lesson sessions
@@ -15,7 +15,7 @@ This README is intentionally scoped to the client package itself. It documents t
 
 The client is not just a raw Vite scaffold anymore. It already contains:
 - route parsing and navigation helpers
-- a development auth flow using `localStorage`
+- configurable client auth services for development and OIDC
 - API client modules for courses and sessions
 - state modules for course, lesson, and session UI
 - a student shell and lesson chat screen
@@ -54,7 +54,7 @@ plexa_client/
   App shell, router, boot screen, and auth callback screen.
 
 - `src/auth/`
-  Authentication context and the current development auth service.
+  Authentication context plus development and OIDC auth services.
 
 - `src/screens/`
   Screen-level UI for login, courses, lessons, and chat.
@@ -114,16 +114,19 @@ npm run docs
 
 ## Environment Configuration
 
-The client currently reads its local API configuration from [src/.env](/home/kellan/projects/school/plexa/plexa_client/src/.env).
+The client reads its local configuration from [src/.env.example](src/.env.example) and your local `src/.env`.
 
 Current variables:
 
 ```env
 VITE_API_BASE_URL=http://localhost:8000
 TARGET_API_VERSION=v1
+VITE_AUTH_MODE=dev
 ```
 
-These are consumed in [src/api/config.ts](/home/kellan/projects/school/plexa/plexa_client/src/api/config.ts).
+These are consumed in:
+- [src/api/config.ts](src/api/config.ts)
+- [src/auth/config.ts](src/auth/config.ts)
 
 Important note:
 - `VITE_API_BASE_URL` should point at the server base path expected by the client
@@ -133,14 +136,22 @@ If you change the server host, port, or mounted API prefix, update the client co
 
 ## Authentication Model
 
-The current client package uses a development auth flow implemented in [src/auth/devAuth.ts](/home/kellan/projects/school/plexa/plexa_client/src/auth/devAuth.ts).
+The client now supports two auth modes:
+- `VITE_AUTH_MODE=dev`
+- `VITE_AUTH_MODE=oidc`
 
-What it does:
+Development mode uses [src/auth/devAuth.ts](src/auth/devAuth.ts):
 - stores the active user id in `localStorage`
 - sends that value as `X-User-Id`
 - restores the user on refresh if the local storage value exists
 
-This is appropriate for local development. It is not a production identity solution.
+OIDC mode uses [src/auth/oidcAuth.ts](src/auth/oidcAuth.ts):
+- starts an Authorization Code + PKCE flow
+- exchanges the callback `code` for tokens
+- stores the active bearer token locally
+- sends `Authorization: Bearer ...` to the server
+
+Production deployments should use OIDC mode.
 
 ## Routing
 

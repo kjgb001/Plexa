@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from collections.abc import Iterable
 
 from fastapi import HTTPException, Request
@@ -39,6 +38,8 @@ def require_identity(request: Request) -> UserIdentity:
     """
     identity = get_request_identity(request)
     if not identity.is_authenticated:
+        if identity.claims.get("bearer_token_present") and not identity.claims.get("bearer_token_valid", True):
+            raise HTTPException(status_code=401, detail="Invalid bearer token")
         raise HTTPException(status_code=401, detail="Missing user identity")
     return identity
 
@@ -68,20 +69,16 @@ def require_admin(request: Request) -> UserIdentity:
         UserIdentity: Identity carrying the admin role.
 
     Raises:
-        HTTPException: If admin auth is not configured or invalid.
+        HTTPException: If the caller is not a Plexa admin.
     """
-    expected = os.getenv("PLEXA_ADMIN_TOKEN")
-    if expected is None:
-        raise HTTPException(status_code=500, detail="Admin token not configured")
-
     identity = get_request_identity(request)
     if not identity.is_admin:
-        raise HTTPException(status_code=403, detail="Invalid admin token")
+        raise HTTPException(status_code=403, detail="Admin access denied")
     return identity
 
 
 def require_admin_token(request: Request) -> str:
-    """Return a validated admin token compatibility value.
+    """Return a validated admin compatibility sentinel.
 
     This is a compatibility helper for code that still expects the older
     string-returning dependency shape.
@@ -93,7 +90,7 @@ def require_admin_token(request: Request) -> str:
         str: Stable compatibility sentinel for validated admin access.
     """
     require_admin(request)
-    return "validated-admin-token"
+    return "validated-admin-identity"
 
 
 def ensure_course_owner(course_owner_id: str, identity: UserIdentity) -> None:

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 
-AuthType = Literal["anonymous", "dev_header", "admin_token"]
+AuthType = Literal["anonymous", "dev_header", "bearer_jwt"]
 
 
 @dataclass(slots=True)

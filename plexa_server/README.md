@@ -45,7 +45,7 @@ source .venv/bin/activate
 Install the server dependencies into that environment. At minimum, the database path requires:
 
 ```bash
-python -m pip install sqlalchemy alembic asyncpg pytest
+python -m pip install sqlalchemy alembic asyncpg pytest cryptography
 ```
 
 If `pytest` resolves to a system binary on your machine, prefer:
@@ -78,6 +78,9 @@ Important variables:
 - `PLEXA_TEST_DATABASE_URL`
 - `PLEXA_TEST_DATABASE_SYNC_URL`
 - `PLEXA_TEST_STORAGE_BACKEND`
+- `PLEXA_AUTH_MODE`
+- `PLEXA_ADMIN_USER_IDS`
+- `PLEXA_CORS_ALLOWED_ORIGINS`
 - `PLEXA_INFERENCE_BACKENDS`
 - `PLEXA_INFERENCE_PROFILES`
 - `PLEXA_INFERENCE_REQUIRED_BACKENDS`
@@ -90,6 +93,7 @@ It can:
 - create `plexa_server/.env` when missing
 - populate missing local defaults without overwriting existing values
 - generate and persist the encrypted log key once
+- seed explicit local auth defaults
 - seed multi-backend inference defaults for local Ollama and vLLM targets
 - wait for Postgres
 - create the development and test databases
@@ -97,6 +101,9 @@ It can:
 - optionally import the legacy filesystem dataset
 
 The generated inference defaults are meant to be edited locally as needed. By default bootstrap writes:
+- `PLEXA_AUTH_MODE=dev-header`
+- `PLEXA_ADMIN_USER_IDS=["admin"]`
+- `PLEXA_CORS_ALLOWED_ORIGINS=["http://localhost:5173"]`
 - `PLEXA_INFERENCE_BACKENDS`
   - `ollama-local -> http://localhost:11434/v1`
   - `vllm-local -> http://localhost:8001/v1`
@@ -184,6 +191,45 @@ The active persistence implementations live under [storage](storage):
 - [storage_interface.py](storage/storage_interface.py)
 
 The application depends on the storage interfaces. Concrete backend selection happens in the composition root, not inside core session logic.
+
+## Authentication
+
+The server now supports modular request authentication selected by `PLEXA_AUTH_MODE`.
+
+Current modes:
+- `dev-header`
+- `bearer-jwt`
+
+`dev-header`:
+- local development only
+- authenticates requests from `X-User-Id`
+
+`bearer-jwt`:
+- validates `Authorization: Bearer ...`
+- verifies JWT signature and registered claims
+- supports:
+  - `HS256`
+  - `RS256`
+- can load verification material from:
+  - shared secret
+  - PEM public key
+  - JWKS JSON/file/URL
+
+Admin access is no longer based on a shared admin token. Plexa admin users are mapped through:
+- `PLEXA_ADMIN_USER_IDS`
+
+Useful bearer-JWT settings:
+- `PLEXA_AUTH_ISSUER`
+- `PLEXA_AUTH_AUDIENCE`
+- `PLEXA_AUTH_USER_ID_CLAIM`
+- `PLEXA_AUTH_ROLES_CLAIM`
+- `PLEXA_AUTH_ALLOWED_ALGORITHMS`
+- `PLEXA_AUTH_SHARED_SECRET`
+- `PLEXA_AUTH_PUBLIC_KEY_PEM`
+- `PLEXA_AUTH_PUBLIC_KEY_FILE`
+- `PLEXA_AUTH_JWKS_JSON`
+- `PLEXA_AUTH_JWKS_FILE`
+- `PLEXA_AUTH_JWKS_URL`
 
 At this point:
 - PostgreSQL is the primary backend
