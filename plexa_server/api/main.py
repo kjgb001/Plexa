@@ -9,6 +9,10 @@ from plexa_server.inference.base import InferenceProfile
 from plexa_server.inference.openai_compatible import OpenAICompatibleInference
 from plexa_server.inference.routing import InferenceRegistry, InferenceRouter
 from plexa_server.inference.stub import StubInference
+from plexa_server.runtime import (
+    validate_production_inference_configuration,
+    validate_production_runtime_configuration,
+)
 
 
 def _load_json_env(name: str):
@@ -161,6 +165,9 @@ def create_required_backend_ids() -> set[str] | None:
 
 def create_app():
     """Create the default application instance backed by the configured inference router."""
+    load_server_env_file()
+    validate_production_runtime_configuration()
+    validate_production_inference_configuration()
     return build_app(
         inference_router=create_inference_router(),
         required_backend_ids=create_required_backend_ids(),

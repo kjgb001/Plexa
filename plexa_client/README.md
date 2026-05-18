@@ -119,6 +119,7 @@ The client reads its local configuration from [src/.env.example](src/.env.exampl
 Current variables:
 
 ```env
+VITE_APP_ENV=development
 VITE_API_BASE_URL=http://localhost:8000
 TARGET_API_VERSION=v1
 VITE_AUTH_MODE=dev
@@ -152,6 +153,11 @@ OIDC mode uses [src/auth/oidcAuth.ts](src/auth/oidcAuth.ts):
 - sends `Authorization: Bearer ...` to the server
 
 Production deployments should use OIDC mode.
+
+In production mode (`VITE_APP_ENV=production`), the client now fails fast when:
+- `VITE_API_BASE_URL` is missing
+- `VITE_AUTH_MODE` is missing
+- OIDC mode is selected without the required OIDC config
 
 ## Routing
 

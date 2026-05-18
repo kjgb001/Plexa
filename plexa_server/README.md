@@ -138,6 +138,11 @@ python -m plexa_server.bootstrap --init-test
 
 The lower-level Postgres-specific helpers remain in [db/bootstrap.py](db/bootstrap.py), but the intended user-facing entrypoint is the top-level bootstrap module.
 
+Important boundary:
+- bootstrap is local development and test tooling
+- it is not the production provisioning contract
+- production mode now refuses bootstrap by default unless `PLEXA_ALLOW_PRODUCTION_BOOTSTRAP=true` is set explicitly
+
 ## Migrations
 
 Alembic is configured in:
@@ -191,6 +196,39 @@ The active persistence implementations live under [storage](storage):
 - [storage_interface.py](storage/storage_interface.py)
 
 The application depends on the storage interfaces. Concrete backend selection happens in the composition root, not inside core session logic.
+
+## Production Runtime
+
+Plexa now distinguishes between local/dev behavior and production runtime behavior.
+
+Set:
+
+```env
+PLEXA_ENV=production
+```
+
+In production, startup fails closed when critical configuration is missing or unsafe. At minimum you should provide:
+- `PLEXA_DATABASE_URL` or `PLEXA_DATABASE_SYNC_URL`
+- `PLEXA_AUTH_MODE`
+  - must not be `dev-header`
+- `PLEXA_CORS_ALLOWED_ORIGINS`
+- `PLEXA_LOG_ENCRYPTION_KEY`
+- real inference configuration
+  - production cannot fall back to stub inference
+
+Production startup should run the ASGI app with explicit environment injection. For example:
+
+```bash
+uvicorn plexa_server.api.main:app --host 0.0.0.0 --port 8000
+```
+
+Reload is disabled by default. Only enable it intentionally with:
+
+```env
+PLEXA_UVICORN_RELOAD=true
+```
+
+The repository does not currently prescribe one deployment stack or process manager beyond that. The important requirement is that production config be injected explicitly rather than relying on bootstrap-generated local defaults.
 
 ## Authentication
 

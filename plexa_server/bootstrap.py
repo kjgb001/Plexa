@@ -40,6 +40,7 @@ DEFAULT_INFERENCE_PROFILES = {
     },
 }
 DEFAULT_ENV_VALUES = {
+    "PLEXA_ENV": "development",
     "PLEXA_DATABASE_URL": "postgresql+asyncpg://plexa:plexa_dev_password@localhost:5432/plexa",
     "PLEXA_DATABASE_SYNC_URL": "postgresql://plexa:plexa_dev_password@localhost:5432/plexa",
     "PLEXA_TEST_DATABASE_URL": "postgresql+asyncpg://plexa:plexa_dev_password@localhost:5432/plexa_test",
@@ -73,6 +74,28 @@ def _parse_env_value(lines: list[str], key: str) -> str | None:
             continue
         return line[len(prefix):].strip().strip("\"'")
     return None
+
+
+def _resolve_bootstrap_environment(env_path: Path | None) -> str:
+    """Resolve bootstrap environment without consulting the server-global `.env`.
+
+    This keeps bootstrap behavior scoped to the target env file and the current
+    process environment, which avoids cross-contaminating tests that use temp
+    env paths.
+    """
+    raw = os.getenv("PLEXA_ENV")
+    if raw and raw.strip():
+        value = raw.strip().lower()
+    else:
+        lines = _read_env_lines(SERVER_ENV_PATH if env_path is None else env_path)
+        file_value = _parse_env_value(lines, "PLEXA_ENV")
+        value = "development" if file_value is None else file_value.strip().lower()
+
+    if value in {"prod", "production"}:
+        return "production"
+    if value in {"test", "testing"}:
+        return "test"
+    return "development"
 
 
 def ensure_env_defaults(
@@ -156,6 +179,14 @@ def ensure_log_encryption_key(env_path: Path | None = None) -> str:
 
 def ensure_bootstrap_environment(env_path: Path | None = None) -> None:
     """Ensure local bootstrap environment prerequisites are present."""
+    if (
+        _resolve_bootstrap_environment(env_path) == "production"
+        and os.getenv("PLEXA_ALLOW_PRODUCTION_BOOTSTRAP", "").strip().lower() != "true"
+    ):
+        raise RuntimeError(
+            "Refusing to run Plexa bootstrap in production. "
+            "Set PLEXA_ALLOW_PRODUCTION_BOOTSTRAP=true only if this is intentional."
+        )
     ensure_env_defaults(env_path=env_path)
     ensure_log_encryption_key(env_path=env_path)
 

@@ -1,13 +1,18 @@
 from plexa_server.api import main
+from plexa_server.db import config as db_config
 from plexa_server.inference.base import InferenceConfig
 from plexa_server.inference.routing import InferenceRouter
 from plexa_server.inference.stub import StubInference
 from plexa_server.inference.openai_compatible import OpenAICompatibleInference
+from plexa_server import runtime
+from plexa_server.runtime import RuntimeConfigurationError
 
 
 def _disable_env_file_loading(monkeypatch):
     """Keep tests focused on explicit env mutations, not ambient `.env` state."""
     monkeypatch.setattr(main, "load_server_env_file", lambda: None)
+    monkeypatch.setattr(runtime, "load_server_env_file", lambda: None)
+    monkeypatch.setattr(db_config, "_load_env_file", lambda: None)
 
 
 def test_create_inference_registry_defaults_to_stub(monkeypatch):
@@ -86,3 +91,92 @@ def test_create_inference_registry_rejects_unknown_backend(monkeypatch):
         assert "Unsupported inference backend" in str(exc)
     else:
         raise AssertionError("Expected ValueError for unknown inference backend.")
+
+
+def test_create_app_rejects_production_dev_auth(monkeypatch):
+    _disable_env_file_loading(monkeypatch)
+    monkeypatch.setenv("PLEXA_ENV", "production")
+    monkeypatch.setenv("PLEXA_DATABASE_URL", "postgresql+asyncpg://plexa:pw@db/plexa")
+    monkeypatch.setenv("PLEXA_AUTH_MODE", "dev-header")
+    monkeypatch.setenv("PLEXA_CORS_ALLOWED_ORIGINS", '["https://client.example"]')
+    monkeypatch.setenv("PLEXA_LOG_ENCRYPTION_KEY", "test-key")
+
+    try:
+        main.create_app()
+    except RuntimeConfigurationError as exc:
+        assert "cannot use PLEXA_AUTH_MODE=dev-header" in str(exc)
+    else:
+        raise AssertionError("Expected production startup to reject dev-header auth mode.")
+
+
+def test_create_app_rejects_missing_production_log_key(monkeypatch):
+    _disable_env_file_loading(monkeypatch)
+    monkeypatch.setenv("PLEXA_ENV", "production")
+    monkeypatch.setenv("PLEXA_DATABASE_URL", "postgresql+asyncpg://plexa:pw@db/plexa")
+    monkeypatch.setenv("PLEXA_AUTH_MODE", "bearer-jwt")
+    monkeypatch.setenv("PLEXA_AUTH_SHARED_SECRET", "secret")
+    monkeypatch.setenv("PLEXA_AUTH_ALLOWED_ALGORITHMS", "HS256")
+    monkeypatch.setenv("PLEXA_CORS_ALLOWED_ORIGINS", '["https://client.example"]')
+    monkeypatch.setenv(
+        "PLEXA_INFERENCE_BACKENDS",
+        '{"real-a":{"type":"openai-compatible","base_url":"http://inference/v1"}}',
+    )
+    monkeypatch.setenv(
+        "PLEXA_INFERENCE_PROFILES",
+        '{"default":{"backend_id":"real-a","model":"model-a"}}',
+    )
+    monkeypatch.delenv("PLEXA_LOG_ENCRYPTION_KEY", raising=False)
+
+    try:
+        main.create_app()
+    except RuntimeConfigurationError as exc:
+        assert "PLEXA_LOG_ENCRYPTION_KEY" in str(exc)
+    else:
+        raise AssertionError("Expected production startup to require encrypted log key.")
+
+
+def test_create_app_rejects_production_stub_inference_fallback(monkeypatch):
+    _disable_env_file_loading(monkeypatch)
+    monkeypatch.setenv("PLEXA_ENV", "production")
+    monkeypatch.setenv("PLEXA_DATABASE_URL", "postgresql+asyncpg://plexa:pw@db/plexa")
+    monkeypatch.setenv("PLEXA_AUTH_MODE", "bearer-jwt")
+    monkeypatch.setenv("PLEXA_AUTH_SHARED_SECRET", "secret")
+    monkeypatch.setenv("PLEXA_AUTH_ALLOWED_ALGORITHMS", "HS256")
+    monkeypatch.setenv("PLEXA_CORS_ALLOWED_ORIGINS", '["https://client.example"]')
+    monkeypatch.setenv("PLEXA_LOG_ENCRYPTION_KEY", "test-key")
+    monkeypatch.delenv("PLEXA_INFERENCE_BACKEND", raising=False)
+    monkeypatch.delenv("PLEXA_INFERENCE_BACKENDS", raising=False)
+    monkeypatch.delenv("PLEXA_INFERENCE_PROFILES", raising=False)
+
+    try:
+        main.create_app()
+    except RuntimeConfigurationError as exc:
+        assert "cannot fall back to stub" in str(exc)
+    else:
+        raise AssertionError("Expected production startup to reject stub inference fallback.")
+
+
+def test_create_app_rejects_production_stub_backend_in_multi_backend_config(monkeypatch):
+    _disable_env_file_loading(monkeypatch)
+    monkeypatch.setenv("PLEXA_ENV", "production")
+    monkeypatch.setenv("PLEXA_DATABASE_URL", "postgresql+asyncpg://plexa:pw@db/plexa")
+    monkeypatch.setenv("PLEXA_AUTH_MODE", "bearer-jwt")
+    monkeypatch.setenv("PLEXA_AUTH_SHARED_SECRET", "secret")
+    monkeypatch.setenv("PLEXA_AUTH_ALLOWED_ALGORITHMS", "HS256")
+    monkeypatch.setenv("PLEXA_CORS_ALLOWED_ORIGINS", '["https://client.example"]')
+    monkeypatch.setenv("PLEXA_LOG_ENCRYPTION_KEY", "test-key")
+    monkeypatch.setenv(
+        "PLEXA_INFERENCE_BACKENDS",
+        '{"stub-a":{"type":"stub"},"real-a":{"type":"openai-compatible","base_url":"http://inference/v1"}}',
+    )
+    monkeypatch.setenv(
+        "PLEXA_INFERENCE_PROFILES",
+        '{"default":{"backend_id":"real-a","model":"model-a"}}',
+    )
+
+    try:
+        main.create_app()
+    except RuntimeConfigurationError as exc:
+        assert "cannot use stub inference backends" in str(exc)
+    else:
+        raise AssertionError("Expected production startup to reject stub backend definitions.")

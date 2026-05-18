@@ -26,12 +26,15 @@ def test_ensure_env_defaults_generates_file_with_missing_defaults(tmp_path, monk
     assert resolved["PLEXA_DATABASE_URL"].startswith("postgresql+asyncpg://")
     assert resolved["PLEXA_TEST_DATABASE_URL"].endswith("/plexa_test")
     assert resolved["PLEXA_TEST_STORAGE_BACKEND"] == "postgres"
+    assert resolved["PLEXA_ENV"] == "development"
+    assert resolved["PLEXA_AUTH_MODE"] == "dev-header"
     assert '"ollama-local"' in resolved["PLEXA_INFERENCE_BACKENDS"]
     assert '"vllm-local"' in resolved["PLEXA_INFERENCE_BACKENDS"]
     assert '"default"' in resolved["PLEXA_INFERENCE_PROFILES"]
     assert '"reasoning"' in resolved["PLEXA_INFERENCE_PROFILES"]
     env_text = env_path.read_text(encoding="utf-8")
     assert "PLEXA_DATABASE_URL=" in env_text
+    assert "PLEXA_ENV=development" in env_text
     assert "PLEXA_TEST_DATABASE_URL=" in env_text
     assert "PLEXA_INFERENCE_BACKENDS=" in env_text
     assert "PLEXA_INFERENCE_PROFILES=" in env_text
@@ -95,6 +98,19 @@ def test_ensure_bootstrap_environment_is_additive_and_idempotent(tmp_path, monke
     assert "PLEXA_DATABASE_URL=custom-db" in first_contents
     assert "PLEXA_LOG_ENCRYPTION_KEY=" in first_contents
     assert first_contents == second_contents
+
+
+def test_ensure_bootstrap_environment_rejects_production_without_override(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    monkeypatch.setenv("PLEXA_ENV", "production")
+    monkeypatch.delenv("PLEXA_ALLOW_PRODUCTION_BOOTSTRAP", raising=False)
+
+    try:
+        ensure_bootstrap_environment(env_path)
+    except RuntimeError as exc:
+        assert "Refusing to run Plexa bootstrap in production" in str(exc)
+    else:
+        raise AssertionError("Expected bootstrap to reject production mode by default.")
 
 
 def test_init_dev_database_bootstraps_env_then_db(tmp_path, monkeypatch):
