@@ -13,11 +13,15 @@ from plexa_server.bootstrap import (
 
 def test_ensure_env_defaults_generates_file_with_missing_defaults(tmp_path, monkeypatch):
     env_path = tmp_path / ".env"
+    monkeypatch.delenv("PLEXA_ENV", raising=False)
     monkeypatch.delenv("PLEXA_DATABASE_URL", raising=False)
     monkeypatch.delenv("PLEXA_DATABASE_SYNC_URL", raising=False)
     monkeypatch.delenv("PLEXA_TEST_DATABASE_URL", raising=False)
     monkeypatch.delenv("PLEXA_TEST_DATABASE_SYNC_URL", raising=False)
     monkeypatch.delenv("PLEXA_TEST_STORAGE_BACKEND", raising=False)
+    monkeypatch.delenv("PLEXA_AUTH_MODE", raising=False)
+    monkeypatch.delenv("PLEXA_ADMIN_USER_IDS", raising=False)
+    monkeypatch.delenv("PLEXA_CORS_ALLOWED_ORIGINS", raising=False)
     monkeypatch.delenv("PLEXA_INFERENCE_BACKENDS", raising=False)
     monkeypatch.delenv("PLEXA_INFERENCE_PROFILES", raising=False)
     monkeypatch.delenv("PLEXA_INFERENCE_REQUIRED_BACKENDS", raising=False)
@@ -131,11 +135,15 @@ def test_init_dev_database_bootstraps_env_then_db(tmp_path, monkeypatch):
     env_path = tmp_path / ".env"
     call_order: list[str] = []
     for key in (
+        "PLEXA_ENV",
         "PLEXA_DATABASE_URL",
         "PLEXA_DATABASE_SYNC_URL",
         "PLEXA_TEST_DATABASE_URL",
         "PLEXA_TEST_DATABASE_SYNC_URL",
         "PLEXA_TEST_STORAGE_BACKEND",
+        "PLEXA_AUTH_MODE",
+        "PLEXA_ADMIN_USER_IDS",
+        "PLEXA_CORS_ALLOWED_ORIGINS",
         "PLEXA_INFERENCE_BACKENDS",
         "PLEXA_INFERENCE_PROFILES",
         "PLEXA_INFERENCE_REQUIRED_BACKENDS",
@@ -169,11 +177,15 @@ def test_init_test_database_bootstraps_env_then_db(tmp_path, monkeypatch):
     env_path = tmp_path / ".env"
     call_order: list[str] = []
     for key in (
+        "PLEXA_ENV",
         "PLEXA_DATABASE_URL",
         "PLEXA_DATABASE_SYNC_URL",
         "PLEXA_TEST_DATABASE_URL",
         "PLEXA_TEST_DATABASE_SYNC_URL",
         "PLEXA_TEST_STORAGE_BACKEND",
+        "PLEXA_AUTH_MODE",
+        "PLEXA_ADMIN_USER_IDS",
+        "PLEXA_CORS_ALLOWED_ORIGINS",
         "PLEXA_INFERENCE_BACKENDS",
         "PLEXA_INFERENCE_PROFILES",
         "PLEXA_INFERENCE_REQUIRED_BACKENDS",
