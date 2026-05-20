@@ -2,10 +2,10 @@ import { cloneElement, isValidElement, useEffect, useMemo, useRef, useState, typ
 import { useApis } from "../api"
 import type { Course, Lesson, Session } from "../api/interfaces"
 import { useTheme } from "../theme/useTheme"
-import { navigate, type AppRoute } from "./router"
+import { navigate, studentPaths, type StudentRoute } from "./router"
 
 interface StudentShellProps {
-  route: Exclude<AppRoute, { kind: "login" | "auth-callback" | "not-found" }>
+  route: StudentRoute
   userId: string | null
   onLogout(): Promise<void>
   children: ReactNode
@@ -327,7 +327,12 @@ export default function StudentShell({
 
     event.preventDefault()
     navigate(
-      `/app/courses/${encodeURIComponent(session.course_id)}/lessons/${encodeURIComponent(session.lesson_id)}/${encodeURIComponent(session.lesson_version)}/sessions/${encodeURIComponent(session.session_id)}`,
+      studentPaths.session(
+        session.course_id,
+        session.lesson_id,
+        session.lesson_version,
+        session.session_id,
+      ),
     )
   }
 
@@ -355,7 +360,11 @@ export default function StudentShell({
 
       if (deletedActiveSession) {
         navigate(
-          `/app/courses/${encodeURIComponent(sessionPendingDelete.course_id)}/lessons/${encodeURIComponent(sessionPendingDelete.lesson_id)}/${encodeURIComponent(sessionPendingDelete.lesson_version)}`,
+          studentPaths.chat(
+            sessionPendingDelete.course_id,
+            sessionPendingDelete.lesson_id,
+            sessionPendingDelete.lesson_version,
+          ),
         )
       }
     } catch {
@@ -388,7 +397,12 @@ export default function StudentShell({
       }
       setSessions((current) => sortSessionsByUpdatedAt([result.session, ...current]))
       navigate(
-        `/app/courses/${encodeURIComponent(selectedCourseId)}/lessons/${encodeURIComponent(selectedLesson.lesson_id)}/${encodeURIComponent(selectedLesson.version)}/sessions/${encodeURIComponent(result.session.session_id)}`,
+        studentPaths.session(
+          selectedCourseId,
+          selectedLesson.lesson_id,
+          selectedLesson.version,
+          result.session.session_id,
+        ),
       )
     } catch {
       setSessionsError("Unable to start a new session right now.")
@@ -422,7 +436,7 @@ export default function StudentShell({
         <div className="rail__brand">
           <div className="rail__brand-copy">
             <p className="eyebrow">Student Workspace</p>
-            <h1>Plexa</h1>
+            <h1>Plexa Portal</h1>
             <div className="rail__brand-inline-actions">
               <button
                 className="ghost-button rail__inline-action"
@@ -468,7 +482,7 @@ export default function StudentShell({
               <h2>Courses</h2>
               <button
                 className="ghost-button"
-                onClick={() => navigate("/app/courses")}
+                onClick={() => navigate(studentPaths.courses())}
               >
                 Browse
               </button>
@@ -485,9 +499,7 @@ export default function StudentShell({
                     <button
                       key={course.course_id}
                       className={isActive ? "rail-card rail-card--active" : "rail-card"}
-                      onClick={() =>
-                        navigate(`/app/courses/${encodeURIComponent(course.course_id)}`)
-                      }
+                      onClick={() => navigate(studentPaths.lessons(course.course_id))}
                     >
                       <span className="rail-card__title">{course.title}</span>
                       {course.description ? (
@@ -537,11 +549,13 @@ export default function StudentShell({
                             .filter(Boolean)
                             .join(" ")
                         }
-                        onClick={() =>
-                          navigate(
-                            `/app/courses/${encodeURIComponent(selectedCourseId)}/lessons/${encodeURIComponent(lesson.lesson_id)}/${encodeURIComponent(lesson.version)}`,
-                          )
-                        }
+                        onClick={() => navigate(
+                          studentPaths.chat(
+                            selectedCourseId,
+                            lesson.lesson_id,
+                            lesson.version,
+                          ),
+                        )}
                       >
                         <span className="rail-card__title rail-card__title--with-icon">
                           {lesson.is_pinned_now ? (
@@ -621,11 +635,14 @@ export default function StudentShell({
                           className="session-card__main"
                           role="button"
                           tabIndex={0}
-                          onClick={() =>
-                            navigate(
-                              `/app/courses/${encodeURIComponent(session.course_id)}/lessons/${encodeURIComponent(session.lesson_id)}/${encodeURIComponent(session.lesson_version)}/sessions/${encodeURIComponent(session.session_id)}`,
-                            )
-                          }
+                          onClick={() => navigate(
+                            studentPaths.session(
+                              session.course_id,
+                              session.lesson_id,
+                              session.lesson_version,
+                              session.session_id,
+                            ),
+                          )}
                           onKeyDown={(event) => handleSessionCardKeyDown(event, session)}
                         >
                           <span className="session-card__title">

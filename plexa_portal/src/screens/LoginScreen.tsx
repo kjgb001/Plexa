@@ -21,7 +21,7 @@ export default function LoginScreen({
 
   return (
     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      <h1>Plexa</h1>
+      <h1>Plexa Portal</h1>
       {mode === "dev" ? (
         <>
           <p>Enter a dev user ID:</p>

@@ -21,9 +21,11 @@ export interface Course {
   course_id: string
   title: string
   description?: string
+  owner_id?: string
   discoverable: boolean
   lessons: Record<string, string>
   enrolled_users: string[]
+  pending_requests?: string[]
 }
 
 export interface Lesson {
@@ -56,4 +58,37 @@ export interface DeleteSessionResult {
 export interface SendMessageResult {
   assistantMessage: Message
   session: Session
+}
+
+export interface CourseInstructors {
+  owner_id: string
+  instructor_ids: string[]
+}
+
+export interface EncryptedLogMetadata {
+  instance_id: string
+  user_id: string
+  course_id: string
+  lesson_id: string
+  lesson_version: string
+  course_owner_id: string
+  authorized_instructor_ids: string[]
+  created_at: string
+  updated_at: string
+  closed_at: string | null
+  turn_count: number
+  is_active: boolean
+  log_version: number
+  artifact_sha256: string
+  last_event_type: string
+  last_event_at: string
+  key_id: string
+}
+
+export interface CourseRequestsResult {
+  pending_requests: string[]
+}
+
+export interface EncryptedLogPayload {
+  [key: string]: unknown
 }

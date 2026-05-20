@@ -262,7 +262,7 @@ export class OidcAuthService implements AuthService {
     writeStoredSession(session)
     localStorage.removeItem(PENDING_KEY)
 
-    window.history.replaceState(null, "", "/app/courses")
+    window.history.replaceState(null, "", "/student/courses")
     return userFromSession(session)
   }
 }

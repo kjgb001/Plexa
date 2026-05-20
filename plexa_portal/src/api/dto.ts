@@ -93,3 +93,36 @@ export interface ApiCourseLessonsResponse {
 export interface ApiStatusResponse {
   status: string
 }
+
+export interface ApiCourseInstructorsResponse {
+  owner_id: string
+  instructor_ids: string[]
+}
+
+export interface ApiEncryptedLogMetadata {
+  instance_id: string
+  user_id: string
+  course_id: string
+  lesson_id: string
+  lesson_version: string
+  course_owner_id: string
+  authorized_instructor_ids: string[]
+  created_at: string
+  updated_at: string
+  closed_at: string | null
+  turn_count: number
+  is_active: boolean
+  log_version: number
+  artifact_sha256: string
+  last_event_type: string
+  last_event_at: string
+  key_id: string
+}
+
+export interface ApiEncryptedLogListResponse {
+  logs: ApiEncryptedLogMetadata[]
+}
+
+export interface ApiCourseRequestsResponse {
+  pending_requests: string[]
+}

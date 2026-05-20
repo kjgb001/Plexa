@@ -1,6 +1,6 @@
 import { useEffect } from "react"
 import { useAuth } from "../auth/useAuth"
-import { navigate } from "./router"
+import { navigate, studentPaths } from "./router"
 
 export default function AuthCallbackScreen() {
   const { handleCallback } = useAuth()
@@ -13,7 +13,7 @@ export default function AuthCallbackScreen() {
         await handleCallback()
 
         if (active) {
-          navigate("/app/courses", { replace: true })
+          navigate(studentPaths.courses(), { replace: true })
         }
       } catch {
         if (active) {
@@ -31,7 +31,7 @@ export default function AuthCallbackScreen() {
 
   return (
     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      <h1>Plexa</h1>
+      <h1>Plexa Portal</h1>
       <p>Completing sign-in...</p>
     </div>
   )

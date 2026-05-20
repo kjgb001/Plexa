@@ -1,6 +1,10 @@
 import type {
   ApiCourse,
+  ApiCourseInstructorsResponse,
+  ApiCourseRequestsResponse,
   ApiCreateSessionResponse,
+  ApiEncryptedLogListResponse,
+  ApiEncryptedLogMetadata,
   ApiDeleteSessionResponse,
   ApiLessonDocument,
   ApiListSessionsResponse,
@@ -10,8 +14,11 @@ import type {
 } from "./dto"
 import type {
   Course,
+  CourseInstructors,
+  CourseRequestsResult,
   CreateSessionResult,
   DeleteSessionResult,
+  EncryptedLogMetadata,
   Lesson,
   ListSessionsResult,
   Message,
@@ -47,9 +54,11 @@ export function mapCourse(course: ApiCourse): Course {
     course_id: course.course_id,
     title: course.title,
     description: course.description,
+    owner_id: course.owner_id,
     discoverable: course.discoverable,
     lessons: course.lessons,
     enrolled_users: course.enrolled_users,
+    pending_requests: course.pending_requests,
   }
 }
 
@@ -99,5 +108,34 @@ export function mapSendMessageResult(
   return {
     assistantMessage: mapMessage(result.assistant_message),
     session: mapSession(result.session),
+  }
+}
+
+export function mapCourseInstructors(
+  result: ApiCourseInstructorsResponse,
+): CourseInstructors {
+  return {
+    owner_id: result.owner_id,
+    instructor_ids: result.instructor_ids,
+  }
+}
+
+export function mapEncryptedLogMetadata(
+  metadata: ApiEncryptedLogMetadata,
+): EncryptedLogMetadata {
+  return { ...metadata }
+}
+
+export function mapEncryptedLogList(
+  result: ApiEncryptedLogListResponse,
+): EncryptedLogMetadata[] {
+  return result.logs.map(mapEncryptedLogMetadata)
+}
+
+export function mapCourseRequests(
+  result: ApiCourseRequestsResponse,
+): CourseRequestsResult {
+  return {
+    pending_requests: result.pending_requests,
   }
 }

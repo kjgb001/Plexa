@@ -29,7 +29,7 @@ try {
   root.render(
     <StrictMode>
       <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-        <h1>Plexa</h1>
+        <h1>Plexa Portal</h1>
         <p>Client configuration error.</p>
         <pre>{message}</pre>
       </div>

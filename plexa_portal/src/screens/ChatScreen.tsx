@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { useApis } from "../api"
 import type { Message, Session } from "../api/interfaces"
-import { navigate } from "../app/router"
+import { navigate, studentPaths } from "../app/router"
 
 interface Props {
   courseId: string
@@ -213,9 +213,7 @@ export default function ChatScreen({
         session: result.session,
       })
 
-      navigate(
-        `/app/courses/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}/${encodeURIComponent(lessonVersion)}/sessions/${encodeURIComponent(result.session.session_id)}`,
-      )
+      navigate(studentPaths.session(courseId, lessonId, lessonVersion, result.session.session_id))
     } catch (error) {
       console.error("Failed to create session", error)
       setBootError("Unable to start a new session right now.")
@@ -240,9 +238,7 @@ export default function ChatScreen({
         sessionId: session.session_id,
       })
       setShowDeleteConfirm(false)
-      navigate(
-        `/app/courses/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}/${encodeURIComponent(lessonVersion)}`,
-      )
+      navigate(studentPaths.chat(courseId, lessonId, lessonVersion))
     } catch (error) {
       console.error("Failed to delete session", error)
       suppressAutoDeleteRef.current = false
