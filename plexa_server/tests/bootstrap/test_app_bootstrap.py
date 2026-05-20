@@ -7,6 +7,7 @@ from plexa_server.bootstrap import (
     ensure_log_encryption_key,
     init_dev_database,
     init_test_database,
+    write_production_env_template,
 )
 
 
@@ -111,6 +112,19 @@ def test_ensure_bootstrap_environment_rejects_production_without_override(tmp_pa
         assert "Refusing to run Plexa bootstrap in production" in str(exc)
     else:
         raise AssertionError("Expected bootstrap to reject production mode by default.")
+
+
+def test_write_production_env_template_writes_placeholders(tmp_path):
+    template_path = tmp_path / ".env.production.example"
+
+    written_path = write_production_env_template(template_path)
+
+    assert written_path == template_path
+    template_text = template_path.read_text(encoding="utf-8")
+    assert "PLEXA_ENV=production" in template_text
+    assert "PLEXA_DATABASE_URL=postgresql+asyncpg://<app_user>:<app_password>@<db_host>:5432/<app_database>" in template_text
+    assert "PLEXA_BOOTSTRAP_DATABASE_SYNC_URL=postgresql://<bootstrap_user>:<bootstrap_password>@<db_host>:5432/postgres" in template_text
+    assert "PLEXA_LOG_ENCRYPTION_KEY=<generate-and-store-securely>" in template_text
 
 
 def test_init_dev_database_bootstraps_env_then_db(tmp_path, monkeypatch):

@@ -97,6 +97,7 @@ def test_create_app_rejects_production_dev_auth(monkeypatch):
     _disable_env_file_loading(monkeypatch)
     monkeypatch.setenv("PLEXA_ENV", "production")
     monkeypatch.setenv("PLEXA_DATABASE_URL", "postgresql+asyncpg://plexa:pw@db/plexa")
+    monkeypatch.setenv("PLEXA_DATABASE_SYNC_URL", "postgresql://plexa:pw@db/plexa")
     monkeypatch.setenv("PLEXA_AUTH_MODE", "dev-header")
     monkeypatch.setenv("PLEXA_CORS_ALLOWED_ORIGINS", '["https://client.example"]')
     monkeypatch.setenv("PLEXA_LOG_ENCRYPTION_KEY", "test-key")
@@ -113,6 +114,7 @@ def test_create_app_rejects_missing_production_log_key(monkeypatch):
     _disable_env_file_loading(monkeypatch)
     monkeypatch.setenv("PLEXA_ENV", "production")
     monkeypatch.setenv("PLEXA_DATABASE_URL", "postgresql+asyncpg://plexa:pw@db/plexa")
+    monkeypatch.setenv("PLEXA_DATABASE_SYNC_URL", "postgresql://plexa:pw@db/plexa")
     monkeypatch.setenv("PLEXA_AUTH_MODE", "bearer-jwt")
     monkeypatch.setenv("PLEXA_AUTH_SHARED_SECRET", "secret")
     monkeypatch.setenv("PLEXA_AUTH_ALLOWED_ALGORITHMS", "HS256")
@@ -139,6 +141,7 @@ def test_create_app_rejects_production_stub_inference_fallback(monkeypatch):
     _disable_env_file_loading(monkeypatch)
     monkeypatch.setenv("PLEXA_ENV", "production")
     monkeypatch.setenv("PLEXA_DATABASE_URL", "postgresql+asyncpg://plexa:pw@db/plexa")
+    monkeypatch.setenv("PLEXA_DATABASE_SYNC_URL", "postgresql://plexa:pw@db/plexa")
     monkeypatch.setenv("PLEXA_AUTH_MODE", "bearer-jwt")
     monkeypatch.setenv("PLEXA_AUTH_SHARED_SECRET", "secret")
     monkeypatch.setenv("PLEXA_AUTH_ALLOWED_ALGORITHMS", "HS256")
@@ -160,6 +163,7 @@ def test_create_app_rejects_production_stub_backend_in_multi_backend_config(monk
     _disable_env_file_loading(monkeypatch)
     monkeypatch.setenv("PLEXA_ENV", "production")
     monkeypatch.setenv("PLEXA_DATABASE_URL", "postgresql+asyncpg://plexa:pw@db/plexa")
+    monkeypatch.setenv("PLEXA_DATABASE_SYNC_URL", "postgresql://plexa:pw@db/plexa")
     monkeypatch.setenv("PLEXA_AUTH_MODE", "bearer-jwt")
     monkeypatch.setenv("PLEXA_AUTH_SHARED_SECRET", "secret")
     monkeypatch.setenv("PLEXA_AUTH_ALLOWED_ALGORITHMS", "HS256")
@@ -180,3 +184,69 @@ def test_create_app_rejects_production_stub_backend_in_multi_backend_config(monk
         assert "cannot use stub inference backends" in str(exc)
     else:
         raise AssertionError("Expected production startup to reject stub backend definitions.")
+
+
+def test_create_app_rejects_production_dev_database_password(monkeypatch):
+    _disable_env_file_loading(monkeypatch)
+    monkeypatch.setenv("PLEXA_ENV", "production")
+    monkeypatch.setenv(
+        "PLEXA_DATABASE_URL",
+        "postgresql+asyncpg://plexa:plexa_dev_password@db/plexa",
+    )
+    monkeypatch.setenv(
+        "PLEXA_DATABASE_SYNC_URL",
+        "postgresql://plexa:plexa_dev_password@db/plexa",
+    )
+    monkeypatch.setenv("PLEXA_AUTH_MODE", "bearer-jwt")
+    monkeypatch.setenv("PLEXA_AUTH_SHARED_SECRET", "secret")
+    monkeypatch.setenv("PLEXA_AUTH_ALLOWED_ALGORITHMS", "HS256")
+    monkeypatch.setenv("PLEXA_CORS_ALLOWED_ORIGINS", '["https://client.example"]')
+    monkeypatch.setenv("PLEXA_LOG_ENCRYPTION_KEY", "test-key")
+    monkeypatch.setenv(
+        "PLEXA_INFERENCE_BACKENDS",
+        '{"real-a":{"type":"openai-compatible","base_url":"http://inference/v1"}}',
+    )
+    monkeypatch.setenv(
+        "PLEXA_INFERENCE_PROFILES",
+        '{"default":{"backend_id":"real-a","model":"model-a"}}',
+    )
+
+    try:
+        main.create_app()
+    except RuntimeConfigurationError as exc:
+        assert "development-only database value" in str(exc)
+    else:
+        raise AssertionError("Expected production startup to reject dev database password.")
+
+
+def test_create_app_rejects_production_test_database_name(monkeypatch):
+    _disable_env_file_loading(monkeypatch)
+    monkeypatch.setenv("PLEXA_ENV", "production")
+    monkeypatch.setenv(
+        "PLEXA_DATABASE_URL",
+        "postgresql+asyncpg://plexa:secure-password@db/plexa_test",
+    )
+    monkeypatch.setenv(
+        "PLEXA_DATABASE_SYNC_URL",
+        "postgresql://plexa:secure-password@db/plexa_test",
+    )
+    monkeypatch.setenv("PLEXA_AUTH_MODE", "bearer-jwt")
+    monkeypatch.setenv("PLEXA_AUTH_SHARED_SECRET", "secret")
+    monkeypatch.setenv("PLEXA_AUTH_ALLOWED_ALGORITHMS", "HS256")
+    monkeypatch.setenv("PLEXA_CORS_ALLOWED_ORIGINS", '["https://client.example"]')
+    monkeypatch.setenv("PLEXA_LOG_ENCRYPTION_KEY", "test-key")
+    monkeypatch.setenv(
+        "PLEXA_INFERENCE_BACKENDS",
+        '{"real-a":{"type":"openai-compatible","base_url":"http://inference/v1"}}',
+    )
+    monkeypatch.setenv(
+        "PLEXA_INFERENCE_PROFILES",
+        '{"default":{"backend_id":"real-a","model":"model-a"}}',
+    )
+
+    try:
+        main.create_app()
+    except RuntimeConfigurationError as exc:
+        assert "development-only database value" in str(exc)
+    else:
+        raise AssertionError("Expected production startup to reject test database name.")

@@ -13,6 +13,7 @@ from plexa_server.utils.import_filesystem_to_postgres import import_filesystem_t
 
 
 SERVER_ENV_PATH = Path(__file__).resolve().parent / ".env"
+PRODUCTION_ENV_TEMPLATE_PATH = Path(__file__).resolve().parent / ".env.production.example"
 DEFAULT_INFERENCE_BACKENDS = {
     "ollama-local": {
         "type": "openai-compatible",
@@ -55,6 +56,20 @@ DEFAULT_ENV_VALUES = {
         sorted(DEFAULT_INFERENCE_BACKENDS.keys()),
         separators=(",", ":"),
     ),
+}
+PRODUCTION_ENV_TEMPLATE_VALUES = {
+    "PLEXA_ENV": "production",
+    "PLEXA_DATABASE_URL": "postgresql+asyncpg://<app_user>:<app_password>@<db_host>:5432/<app_database>",
+    "PLEXA_DATABASE_SYNC_URL": "postgresql://<app_user>:<app_password>@<db_host>:5432/<app_database>",
+    "PLEXA_BOOTSTRAP_DATABASE_URL": "postgresql+asyncpg://<bootstrap_user>:<bootstrap_password>@<db_host>:5432/postgres",
+    "PLEXA_BOOTSTRAP_DATABASE_SYNC_URL": "postgresql://<bootstrap_user>:<bootstrap_password>@<db_host>:5432/postgres",
+    "PLEXA_AUTH_MODE": "bearer-jwt",
+    "PLEXA_ADMIN_USER_IDS": '["<admin-user-id>"]',
+    "PLEXA_CORS_ALLOWED_ORIGINS": '["https://app.example.com"]',
+    "PLEXA_LOG_ENCRYPTION_KEY": "<generate-and-store-securely>",
+    "PLEXA_INFERENCE_BACKENDS": '{"primary":{"type":"openai-compatible","base_url":"https://inference.example.com/v1","timeout_s":30.0}}',
+    "PLEXA_INFERENCE_PROFILES": '{"default":{"backend_id":"primary","model":"<model-name>"}}',
+    "PLEXA_INFERENCE_REQUIRED_BACKENDS": '["primary"]',
 }
 
 
@@ -191,6 +206,25 @@ def ensure_bootstrap_environment(env_path: Path | None = None) -> None:
     ensure_log_encryption_key(env_path=env_path)
 
 
+def write_production_env_template(output_path: Path | None = None) -> Path:
+    """Write a placeholder production env template without generating secrets."""
+    target = PRODUCTION_ENV_TEMPLATE_PATH if output_path is None else output_path
+    template_lines = [
+        "# Plexa production environment template",
+        "# Replace every placeholder before deploying.",
+        "# Runtime URLs should use least-privilege application credentials.",
+        "# Bootstrap URLs are optional and only needed when database creation or",
+        "# migration orchestration requires different credentials from normal runtime.",
+        "",
+    ]
+    template_lines.extend(
+        f"{key}={value}" for key, value in PRODUCTION_ENV_TEMPLATE_VALUES.items()
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("\n".join(template_lines) + "\n", encoding="utf-8")
+    return target
+
+
 async def init_dev_database(import_filesystem: bool = False, env_path: Path | None = None) -> None:
     """Initialize the development database and optionally import filesystem data."""
     ensure_bootstrap_environment(env_path=env_path)
@@ -227,6 +261,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Create and migrate the dedicated test database.",
     )
+    parser.add_argument(
+        "--write-prod-template",
+        action="store_true",
+        help="Write a placeholder production env template without generating secrets.",
+    )
     return parser.parse_args()
 
 
@@ -234,7 +273,10 @@ async def main() -> None:
     """Run the requested application bootstrap workflow."""
     args = parse_args()
 
-    if not args.init_dev and not args.init_test:
+    if args.write_prod_template:
+        write_production_env_template()
+
+    if not args.init_dev and not args.init_test and not args.write_prod_template:
         raise SystemExit("Specify at least one of --init-dev or --init-test.")
 
     if args.init_dev:

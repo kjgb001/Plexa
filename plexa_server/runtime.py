@@ -2,12 +2,25 @@ from __future__ import annotations
 
 import os
 import json
+from urllib.parse import urlsplit
 
 from plexa_server.db.config import get_database_config, load_server_env_file
 
 
 class RuntimeConfigurationError(RuntimeError):
     """Raised when application runtime configuration is invalid."""
+
+
+def _is_obviously_dev_database_url(url: str) -> bool:
+    """Return whether a production database URL still contains dev-only markers."""
+    if "plexa_dev_password" in url:
+        return True
+
+    database_name = urlsplit(url).path.lstrip("/").lower()
+    if database_name == "plexa_test":
+        return True
+
+    return False
 
 
 def get_app_environment() -> str:
@@ -36,6 +49,14 @@ def validate_production_runtime_configuration() -> None:
         raise RuntimeConfigurationError(
             "Production runtime requires PLEXA_DATABASE_URL or PLEXA_DATABASE_SYNC_URL."
         )
+    for key, value in (
+        ("PLEXA_DATABASE_URL", database_config.async_url),
+        ("PLEXA_DATABASE_SYNC_URL", database_config.sync_url),
+    ):
+        if value and _is_obviously_dev_database_url(value):
+            raise RuntimeConfigurationError(
+                f"Production runtime rejects obviously development-only database value in {key}."
+            )
 
     auth_mode = (os.getenv("PLEXA_AUTH_MODE") or "").strip().lower()
     if not auth_mode:

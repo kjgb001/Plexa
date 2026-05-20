@@ -159,11 +159,54 @@ In production mode (`VITE_APP_ENV=production`), the client now fails fast when:
 - `VITE_AUTH_MODE` is missing
 - OIDC mode is selected without the required OIDC config
 
+## Mode Switching
+
+Use these settings when switching between local development and production-like client behavior.
+
+### Development mode
+
+Typical local client settings:
+
+```env
+VITE_APP_ENV=development
+VITE_API_BASE_URL=http://localhost:8000
+TARGET_API_VERSION=v1
+VITE_AUTH_MODE=dev
+```
+
+This mode uses:
+- the local dev login screen
+- `localStorage`-backed user state
+- `X-User-Id` request headers
+
+### Production-like mode
+
+Typical production-oriented client settings:
+
+```env
+VITE_APP_ENV=production
+VITE_API_BASE_URL=https://api.example.com
+TARGET_API_VERSION=v1
+VITE_AUTH_MODE=oidc
+VITE_AUTH_AUTHORITY=https://idp.example.com
+VITE_AUTH_CLIENT_ID=plexa-client
+VITE_AUTH_SCOPE=openid profile email
+VITE_AUTH_REDIRECT_URI=https://app.example.com/auth/callback
+VITE_AUTH_LOGOUT_REDIRECT_URI=https://app.example.com/login
+VITE_AUTH_USER_ID_CLAIM=sub
+```
+
+In this mode:
+- startup rejects missing `VITE_API_BASE_URL`
+- startup rejects missing `VITE_AUTH_MODE`
+- startup rejects incomplete OIDC configuration
+- the client sends `Authorization: Bearer ...` to the server instead of `X-User-Id`
+
 ## Routing
 
 Top-level routing is handled inside:
-- [src/App.tsx](/home/kellan/projects/school/plexa/plexa_client/src/App.tsx)
-- [src/app/router.ts](/home/kellan/projects/school/plexa/plexa_client/src/app/router.ts)
+- [src/App.tsx](src/App.tsx)
+- [src/app/router.ts](src/app/router.ts)
 
 Current route flow is centered on:
 - login
@@ -173,7 +216,7 @@ Current route flow is centered on:
 
 ## Styling And Theme
 
-Global styles live in [src/styles.css](/home/kellan/projects/school/plexa/plexa_client/src/styles.css).
+Global styles live in [src/styles.css](src/styles.css).
 
 The client already has:
 - a light and dark theme variable system
@@ -181,8 +224,8 @@ The client already has:
 - screen-level layout styling
 
 Theme wiring lives under:
-- [src/theme/ThemeProvider.tsx](/home/kellan/projects/school/plexa/plexa_client/src/theme/ThemeProvider.tsx)
-- [src/theme/ThemeContext.ts](/home/kellan/projects/school/plexa/plexa_client/src/theme/ThemeContext.ts)
+- [src/theme/ThemeProvider.tsx](src/theme/ThemeProvider.tsx)
+- [src/theme/ThemeContext.ts](src/theme/ThemeContext.ts)
 
 ## Current Development Posture
 

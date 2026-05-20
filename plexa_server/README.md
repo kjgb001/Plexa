@@ -75,6 +75,8 @@ The server-local `.env` file defines the default development and test database U
 Important variables:
 - `PLEXA_DATABASE_URL`
 - `PLEXA_DATABASE_SYNC_URL`
+- `PLEXA_BOOTSTRAP_DATABASE_URL`
+- `PLEXA_BOOTSTRAP_DATABASE_SYNC_URL`
 - `PLEXA_TEST_DATABASE_URL`
 - `PLEXA_TEST_DATABASE_SYNC_URL`
 - `PLEXA_TEST_STORAGE_BACKEND`
@@ -134,6 +136,12 @@ Initialize only the test database:
 
 ```bash
 python -m plexa_server.bootstrap --init-test
+```
+
+Write a production env template with placeholders only:
+
+```bash
+python -m plexa_server.bootstrap --write-prod-template
 ```
 
 The lower-level Postgres-specific helpers remain in [db/bootstrap.py](db/bootstrap.py), but the intended user-facing entrypoint is the top-level bootstrap module.
@@ -229,6 +237,106 @@ PLEXA_UVICORN_RELOAD=true
 ```
 
 The repository does not currently prescribe one deployment stack or process manager beyond that. The important requirement is that production config be injected explicitly rather than relying on bootstrap-generated local defaults.
+
+### Production Database Configuration
+
+For deployed environments, treat database values as explicit infrastructure configuration rather than bootstrap output.
+
+Runtime variables:
+- `PLEXA_DATABASE_URL`
+  - async SQLAlchemy URL used by the application at runtime
+- `PLEXA_DATABASE_SYNC_URL`
+  - sync SQLAlchemy URL used by Alembic and any sync-only tooling
+
+Typical values:
+
+```env
+PLEXA_DATABASE_URL=postgresql+asyncpg://app_user:app_password@db.example.com:5432/plexa
+PLEXA_DATABASE_SYNC_URL=postgresql://app_user:app_password@db.example.com:5432/plexa
+```
+
+Field meanings:
+- `app_user`
+  - the database role the application uses during normal runtime
+- `app_password`
+  - that role's password, injected securely by your deployment system
+- `db.example.com`
+  - the real database host or service name for the deployment
+- `5432`
+  - the Postgres port, unless your environment uses a different one
+- `plexa`
+  - the production application database name
+
+Operational recommendation:
+- production runtime credentials should usually be least-privilege application credentials, not a superuser account
+
+Optional bootstrap-only variables:
+- `PLEXA_BOOTSTRAP_DATABASE_URL`
+- `PLEXA_BOOTSTRAP_DATABASE_SYNC_URL`
+
+Use those only when database creation or migration orchestration needs a different privileged connection than normal runtime. For example:
+
+```env
+PLEXA_BOOTSTRAP_DATABASE_URL=postgresql+asyncpg://bootstrap_user:bootstrap_password@db.example.com:5432/postgres
+PLEXA_BOOTSTRAP_DATABASE_SYNC_URL=postgresql://bootstrap_user:bootstrap_password@db.example.com:5432/postgres
+```
+
+If you do not set the bootstrap URLs, Plexa derives them from the runtime URLs by switching the database name to `postgres`. That is acceptable for local development, but explicit bootstrap credentials are usually clearer in non-dev environments.
+
+Production runtime now rejects obvious development-only database values such as:
+- `plexa_dev_password`
+- the test database name `plexa_test`
+
+Use [`.env.production.example`](.env.production.example) as the placeholder template, not as a source of real secrets.
+
+## Mode Switching
+
+Use these settings when switching between local development and production-like runtime behavior.
+
+### Development mode
+
+Typical local server settings:
+
+```env
+PLEXA_ENV=development
+PLEXA_AUTH_MODE=dev-header
+PLEXA_ADMIN_USER_IDS=["admin"]
+PLEXA_CORS_ALLOWED_ORIGINS=["http://localhost:5173"]
+PLEXA_DATABASE_URL=postgresql+asyncpg://plexa:plexa_dev_password@localhost:5432/plexa
+PLEXA_DATABASE_SYNC_URL=postgresql://plexa:plexa_dev_password@localhost:5432/plexa
+PLEXA_LOG_ENCRYPTION_KEY=...
+PLEXA_INFERENCE_BACKENDS={"ollama-local":{"type":"openai-compatible","base_url":"http://localhost:11434/v1","timeout_s":30.0},"vllm-local":{"type":"openai-compatible","base_url":"http://localhost:8001/v1","timeout_s":30.0}}
+PLEXA_INFERENCE_PROFILES={"default":{"backend_id":"ollama-local","model":"llama3.1"},"fast":{"backend_id":"ollama-local","model":"qwen2.5:7b"},"reasoning":{"backend_id":"vllm-local","model":"deepseek-r1-distill-qwen-7b"}}
+```
+
+This mode allows:
+- `dev-header` auth
+- local bootstrap
+- local DB and localhost inference endpoints
+
+### Production-like mode
+
+Typical production-oriented server settings:
+
+```env
+PLEXA_ENV=production
+PLEXA_AUTH_MODE=bearer-jwt
+PLEXA_ADMIN_USER_IDS=["instructor-admin-1"]
+PLEXA_CORS_ALLOWED_ORIGINS=["https://app.example.com"]
+PLEXA_DATABASE_URL=postgresql+asyncpg://...
+PLEXA_DATABASE_SYNC_URL=postgresql://...
+PLEXA_LOG_ENCRYPTION_KEY=...
+PLEXA_INFERENCE_BACKENDS={"primary":{"type":"openai-compatible","base_url":"https://inference.example.com/v1","timeout_s":30.0}}
+PLEXA_INFERENCE_PROFILES={"default":{"backend_id":"primary","model":"your-model-name"}}
+PLEXA_INFERENCE_REQUIRED_BACKENDS=["primary"]
+```
+
+In this mode:
+- startup rejects `PLEXA_AUTH_MODE=dev-header`
+- startup rejects missing CORS origins
+- startup rejects missing encrypted-log key
+- startup rejects stub inference and stub fallback
+- bootstrap is refused unless `PLEXA_ALLOW_PRODUCTION_BOOTSTRAP=true` is set explicitly
 
 ## Authentication
 
