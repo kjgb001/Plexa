@@ -5,6 +5,7 @@ from plexa_server.inference.base import InferenceConfig
 from plexa_server.models.encrypted_log import EncryptedLogMetadata
 from plexa_server.models.course import Course
 from plexa_server.models.lesson import Lesson
+from plexa_server.models.log_access_audit import EncryptedLogAccessAuditEntry, EncryptedLogAccessAuditAction
 from plexa_server.models.session import Session
 from plexa_server.models.workspace_state import UserCourseState, UserLessonState
 
@@ -100,6 +101,23 @@ class ArtifactStorage(ABC):
         Args:
             instance_id: Identifier for the encrypted log.
         """
+
+    @abstractmethod
+    async def save_encrypted_log_access_audit(
+        self,
+        entry: EncryptedLogAccessAuditEntry,
+    ) -> None:
+        """Persist an audit record for instructor access to encrypted logs."""
+
+    @abstractmethod
+    async def list_encrypted_log_access_audits(
+        self,
+        course_id: str | None = None,
+        session_id: str | None = None,
+        requester_user_id: str | None = None,
+        action: EncryptedLogAccessAuditAction | None = None,
+    ) -> list[EncryptedLogAccessAuditEntry]:
+        """List persisted audit records for encrypted log access."""
 
     @abstractmethod
     async def health_check(self) -> bool:

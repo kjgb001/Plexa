@@ -9,6 +9,7 @@ from plexa_server.models.session import Session
 from plexa_server.models.course import Course
 from plexa_server.inference.base import InferenceConfig
 from plexa_server.models.encrypted_log import EncryptedLogMetadata
+from plexa_server.models.log_access_audit import EncryptedLogAccessAuditAction, EncryptedLogAccessAuditEntry
 from plexa_server.models.workspace_state import UserCourseState, UserLessonState
 from plexa_server.storage.storage_interface import (
     ArtifactStorage,
@@ -49,9 +50,11 @@ class FileSystemArtifactStorage(ArtifactStorage):
         self.base_path = base_path
         self.lessons_path = base_path / "lessons"
         self.logs_path = base_path / "logs"
+        self.log_access_audits_path = base_path / "log_access_audits"
 
         self.lessons_path.mkdir(parents=True, exist_ok=True)
         self.logs_path.mkdir(parents=True, exist_ok=True)
+        self.log_access_audits_path.mkdir(parents=True, exist_ok=True)
 
     async def save_lesson(self, lesson: Lesson) -> None:
         """Persist a lesson document under its lesson id and version.
@@ -207,13 +210,49 @@ class FileSystemArtifactStorage(ArtifactStorage):
         metadata_file = self.logs_path / f"{instance_id}.meta.json"
         metadata_file.unlink(missing_ok=True)
 
+    async def save_encrypted_log_access_audit(
+        self,
+        entry: EncryptedLogAccessAuditEntry,
+    ) -> None:
+        """Persist an audit record for encrypted log access."""
+        path = self.log_access_audits_path / f"{entry.created_at.strftime('%Y%m%dT%H%M%S%fZ')}_{entry.audit_id}.json"
+        _atomic_write(path, entry.model_dump_json(indent=2))
+
+    async def list_encrypted_log_access_audits(
+        self,
+        course_id: str | None = None,
+        session_id: str | None = None,
+        requester_user_id: str | None = None,
+        action: EncryptedLogAccessAuditAction | None = None,
+    ) -> list[EncryptedLogAccessAuditEntry]:
+        """List persisted audit records for encrypted log access."""
+        entries: list[EncryptedLogAccessAuditEntry] = []
+        for path in sorted(self.log_access_audits_path.glob("*.json")):
+            with path.open("r", encoding="utf-8") as f:
+                entry = EncryptedLogAccessAuditEntry.model_validate(json.load(f))
+            if course_id is not None and entry.course_id != course_id:
+                continue
+            if session_id is not None and entry.session_id != session_id:
+                continue
+            if requester_user_id is not None and entry.requester_user_id != requester_user_id:
+                continue
+            if action is not None and entry.action != action:
+                continue
+            entries.append(entry)
+        return entries
+
     async def health_check(self) -> bool:
         """Report whether the artifact filesystem paths are available.
 
         Returns:
             bool: `True` when the expected filesystem paths exist.
         """
-        return self.base_path.exists() and self.lessons_path.exists() and self.logs_path.exists()
+        return (
+            self.base_path.exists()
+            and self.lessons_path.exists()
+            and self.logs_path.exists()
+            and self.log_access_audits_path.exists()
+        )
 
 
 class FileSystemSessionStorage(SessionStorage):

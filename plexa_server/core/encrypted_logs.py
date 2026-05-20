@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import os
+from uuid import uuid4
 
 from plexa_server.core.logging import build_session_log_payload
 from plexa_server.inference.base import InferenceConfig
 from plexa_server.models.encrypted_log import EncryptedLogEventType, EncryptedLogMetadata
+from plexa_server.models.log_access_audit import EncryptedLogAccessAuditEntry
 from plexa_server.models.session import Session
 from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage
 from plexa_server.utils.cryptography import decrypt_json, encrypt_json
@@ -122,10 +124,23 @@ class EncryptedLogService:
         encrypted_blob = await self._artifact_storage.load_encrypted_log(session_id)
         if encrypted_blob is None:
             return None
-        return decrypt_json(
+        payload = decrypt_json(
             encrypted_blob,
             key_resolver=self._resolve_key,
         )
+        await self._artifact_storage.save_encrypted_log_access_audit(
+            EncryptedLogAccessAuditEntry(
+                audit_id=uuid4().hex,
+                requester_user_id=requester_user_id,
+                course_id=metadata.course_id,
+                session_id=metadata.instance_id,
+                lesson_id=metadata.lesson_id,
+                lesson_version=metadata.lesson_version,
+                target_user_id=metadata.user_id,
+                action="payload_read",
+            )
+        )
+        return payload
 
     async def list_session_log_metadata_for_requester(
         self,
@@ -157,6 +172,25 @@ class EncryptedLogService:
         for record in metadata:
             if await self._requester_can_access_metadata(record, requester_user_id):
                 visible.append(record)
+        if course_id is not None:
+            await self._artifact_storage.save_encrypted_log_access_audit(
+                EncryptedLogAccessAuditEntry(
+                    audit_id=uuid4().hex,
+                    requester_user_id=requester_user_id,
+                    course_id=course_id,
+                    lesson_id=lesson_id,
+                    lesson_version=lesson_version,
+                    target_user_id=user_id,
+                    action="metadata_list",
+                    details={
+                        "course_id": course_id,
+                        "lesson_id": lesson_id,
+                        "lesson_version": lesson_version,
+                        "user_id": user_id,
+                        "result_count": len(visible),
+                    },
+                )
+            )
         return visible
 
     async def delete_session_log(self, session_id: str) -> None:

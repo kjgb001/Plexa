@@ -107,6 +107,11 @@ def test_encrypted_log_service_roundtrip(artifact_storage, storage_backend):
     assert metadata[0].instance_id == "s1"
     assert metadata[0].key_id == EncryptedLogService.SERVER_MANAGED_KEY_ID
     assert run(service.list_session_log_metadata_for_requester("student-1", course_id="CS101")) == []
+    audits = run(artifact_storage.list_encrypted_log_access_audits(course_id="CS101"))
+    assert len(audits) == 4
+    assert [entry.action for entry in audits] == ["payload_read", "payload_read", "metadata_list", "metadata_list"]
+    assert audits[-2].details["result_count"] == 1
+    assert audits[-1].details["result_count"] == 0
 
     run(service.delete_session_log("s1"))
     assert run(artifact_storage.load_encrypted_log("s1")) is None
@@ -158,6 +163,8 @@ def test_encrypted_log_access_uses_current_course_ownership(artifact_storage, st
     assert len(visible) == 1
     assistant_visible = run(service.list_session_log_metadata_for_requester("assistant-2", course_id="CS101"))
     assert len(assistant_visible) == 1
+    audits = run(artifact_storage.list_encrypted_log_access_audits(course_id="CS101"))
+    assert len(audits) == 3
 
 
 def test_session_manager_persists_and_deletes_encrypted_logs(

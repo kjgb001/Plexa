@@ -3,6 +3,7 @@ import pytest
 
 from plexa_server.inference.base import InferenceConfig
 from plexa_server.models.encrypted_log import EncryptedLogMetadata
+from plexa_server.models.log_access_audit import EncryptedLogAccessAuditEntry
 from plexa_server.models.course import Course
 from plexa_server.models.lesson import Lesson
 from plexa_server.models.message import Message
@@ -194,3 +195,28 @@ def test_postgres_workspace_state_roundtrip(
     assert listed_course_states[0].course_id == course.course_id
     assert len(listed_lesson_states) == 1
     assert listed_lesson_states[0].lesson_version == lesson.identity.version
+
+
+def test_postgres_encrypted_log_access_audit_roundtrip(
+    artifact_storage,
+    storage_backend,
+):
+    entry = EncryptedLogAccessAuditEntry(
+        audit_id="audit-1",
+        requester_user_id="assistant-1",
+        course_id="CS101",
+        session_id="session-1",
+        lesson_id="lesson-1",
+        lesson_version="0.1.0",
+        target_user_id="tester",
+        action="payload_read",
+        details={"result_count": 1},
+    )
+
+    run(artifact_storage.save_encrypted_log_access_audit(entry))
+
+    loaded = run(artifact_storage.list_encrypted_log_access_audits(course_id="CS101"))
+    assert len(loaded) == 1
+    assert loaded[0].audit_id == "audit-1"
+    assert loaded[0].requester_user_id == "assistant-1"
+    assert loaded[0].action == "payload_read"

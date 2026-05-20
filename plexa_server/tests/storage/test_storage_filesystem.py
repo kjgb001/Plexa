@@ -14,6 +14,7 @@ from plexa_server.models.lesson import Lesson
 from plexa_server.models.session import Session
 from plexa_server.models.course import Course
 from plexa_server.models.encrypted_log import EncryptedLogMetadata
+from plexa_server.models.log_access_audit import EncryptedLogAccessAuditEntry
 from plexa_server.inference.base import InferenceConfig
 from plexa_server.tests.fixtures import make_valid_lesson_payload
 
@@ -112,6 +113,29 @@ def test_artifact_storage_log_delete(tmp_path: Path):
 
     assert run(storage.load_encrypted_log("abc")) is None
     assert run(storage.load_encrypted_log_metadata("abc")) is None
+
+
+def test_artifact_storage_log_access_audit_roundtrip(tmp_path: Path):
+    storage = FileSystemArtifactStorage(tmp_path)
+    entry = EncryptedLogAccessAuditEntry(
+        audit_id="audit-1",
+        requester_user_id="assistant-1",
+        course_id="CS101",
+        session_id="session-1",
+        lesson_id="lesson-1",
+        lesson_version="0.1.0",
+        target_user_id="tester",
+        action="payload_read",
+        details={"result_count": 1},
+    )
+
+    run(storage.save_encrypted_log_access_audit(entry))
+
+    loaded = run(storage.list_encrypted_log_access_audits(course_id="CS101"))
+    assert len(loaded) == 1
+    assert loaded[0].audit_id == "audit-1"
+    assert loaded[0].requester_user_id == "assistant-1"
+    assert loaded[0].action == "payload_read"
 
 
 def test_session_storage_roundtrip(tmp_path: Path):

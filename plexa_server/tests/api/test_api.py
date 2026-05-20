@@ -1,7 +1,13 @@
+import asyncio
+
 from fastapi.testclient import TestClient
 
 from plexa_server.storage.filesystem import FileSystemArtifactStorage
 from plexa_server.models.lesson import Lesson, LessonIdentity
+
+
+def run(coro):
+    return asyncio.run(coro)
 
 
 def test_app_builds(client, api_prefix, storage_backend):
@@ -540,7 +546,7 @@ def test_owner_cannot_be_removed_from_instructor_list(client, course_factory, ap
     assert response.json()["detail"] == "Owner cannot be removed from instructor list"
 
 
-def test_instructor_log_access_boundary(client, session_factory, api_prefix, storage_backend):
+def test_instructor_log_access_boundary(client, session_factory, artifact_storage, api_prefix, storage_backend):
     session_id, lesson_id, lesson_version = session_factory()
     course_id = "CS101"
 
@@ -589,6 +595,10 @@ def test_instructor_log_access_boundary(client, session_factory, api_prefix, sto
         headers={"X-User-Id": "outsider"},
     )
     assert outsider_log.status_code == 404
+    audits = run(artifact_storage.list_encrypted_log_access_audits(course_id=course_id))
+    assert len(audits) == 3
+    assert [entry.action for entry in audits] == ["metadata_list", "metadata_list", "payload_read"]
+    assert all(entry.requester_user_id in {"ignored", "assistant-1"} for entry in audits)
 
 
 def test_parallel_instructor_can_create_own_session_but_list_only_their_own(

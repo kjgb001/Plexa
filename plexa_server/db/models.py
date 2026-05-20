@@ -257,3 +257,21 @@ class EncryptedLogRecord(Base):
     key_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     encrypted_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class EncryptedLogAccessAuditRecord(Base):
+    """Audit row for instructor access to encrypted session logs."""
+
+    __tablename__ = "encrypted_log_access_audits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    audit_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    requester_user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    course_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    session_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    lesson_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    lesson_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    target_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    action: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False, index=True)

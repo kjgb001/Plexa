@@ -13,6 +13,7 @@ from plexa_server.db.models import (
     CourseLessonRecord,
     CoursePendingRequestRecord,
     CourseRecord,
+    EncryptedLogAccessAuditRecord,
     EncryptedLogRecord,
     LessonRecord,
     MessageRecord,
@@ -23,6 +24,7 @@ from plexa_server.db.models import (
 )
 from plexa_server.inference.base import InferenceConfig
 from plexa_server.models.encrypted_log import EncryptedLogMetadata
+from plexa_server.models.log_access_audit import EncryptedLogAccessAuditAction, EncryptedLogAccessAuditEntry
 from plexa_server.models.course import Course
 from plexa_server.models.lesson import Lesson
 from plexa_server.models.message import Message
@@ -440,6 +442,64 @@ class PostgresArtifactStorage(PostgresStorageMixin, ArtifactStorage):
                 delete(EncryptedLogRecord).where(EncryptedLogRecord.instance_id == instance_id)
             )
             await session.commit()
+
+    async def save_encrypted_log_access_audit(
+        self,
+        entry: EncryptedLogAccessAuditEntry,
+    ) -> None:
+        """Persist an audit record for encrypted log access."""
+        async with self._session_factory() as session:
+            session.add(
+                EncryptedLogAccessAuditRecord(
+                    audit_id=entry.audit_id,
+                    requester_user_id=entry.requester_user_id,
+                    course_id=entry.course_id,
+                    session_id=entry.session_id,
+                    lesson_id=entry.lesson_id,
+                    lesson_version=entry.lesson_version,
+                    target_user_id=entry.target_user_id,
+                    action=entry.action,
+                    details=entry.details,
+                    created_at=entry.created_at,
+                )
+            )
+            await session.commit()
+
+    async def list_encrypted_log_access_audits(
+        self,
+        course_id: str | None = None,
+        session_id: str | None = None,
+        requester_user_id: str | None = None,
+        action: EncryptedLogAccessAuditAction | None = None,
+    ) -> list[EncryptedLogAccessAuditEntry]:
+        """List persisted audit records for encrypted log access."""
+        async with self._session_factory() as session:
+            stmt = select(EncryptedLogAccessAuditRecord)
+            if course_id is not None:
+                stmt = stmt.where(EncryptedLogAccessAuditRecord.course_id == course_id)
+            if session_id is not None:
+                stmt = stmt.where(EncryptedLogAccessAuditRecord.session_id == session_id)
+            if requester_user_id is not None:
+                stmt = stmt.where(EncryptedLogAccessAuditRecord.requester_user_id == requester_user_id)
+            if action is not None:
+                stmt = stmt.where(EncryptedLogAccessAuditRecord.action == action)
+            stmt = stmt.order_by(EncryptedLogAccessAuditRecord.created_at.asc())
+            result = await session.execute(stmt)
+            return [
+                EncryptedLogAccessAuditEntry(
+                    audit_id=record.audit_id,
+                    requester_user_id=record.requester_user_id,
+                    course_id=record.course_id,
+                    session_id=record.session_id,
+                    lesson_id=record.lesson_id,
+                    lesson_version=record.lesson_version,
+                    target_user_id=record.target_user_id,
+                    action=record.action,  # type: ignore[arg-type]
+                    details=record.details,
+                    created_at=record.created_at,
+                )
+                for record in result.scalars().all()
+            ]
 
     async def health_check(self) -> bool:
         """Report whether artifact storage is reachable.
