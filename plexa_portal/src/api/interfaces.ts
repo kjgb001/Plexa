@@ -41,6 +41,63 @@ export interface Lesson {
   tags?: string[]
 }
 
+export interface LessonIdentity {
+  lesson_id: string
+  version: string
+  title: string
+  author: string
+  course?: string | null
+  unit?: string | null
+  license: string
+  created_at?: string | null
+  tags?: string[] | null
+}
+
+export interface LessonIntent {
+  learning_objective: string
+  behavioral_focus: string
+  discipline?: string[] | null
+  difficulty?: string | null
+  prerequisites?: string[] | null
+  approximate_time?: string | null
+}
+
+export interface LessonCapabilities {
+  tools_enabled?: boolean
+  browsing_enabled?: boolean
+}
+
+export interface LessonExecution {
+  system_prompt: string
+  initial_assistant_message?: string | null
+  profile: string
+  parameters?: Record<string, unknown> | null
+  capabilities?: LessonCapabilities | null
+}
+
+export interface LessonConstraints {
+  input_mode: string
+  turn_limit?: number | null
+  allowed_actions?: string[] | null
+  termination_condition?: string | null
+}
+
+export interface LessonReflection {
+  reflection_prompts: string[]
+  reflection_timing?: string | null
+  logging_policy?: string | null
+  attached_metadata?: Record<string, unknown> | null
+}
+
+export interface LessonDocument {
+  schema_version: string
+  identity: LessonIdentity
+  intent: LessonIntent
+  execution: LessonExecution
+  constraints: LessonConstraints
+  reflection: LessonReflection
+}
+
 export interface CreateSessionResult {
   session: Session
   messages: Message[]
@@ -91,4 +148,11 @@ export interface CourseRequestsResult {
 
 export interface EncryptedLogPayload {
   [key: string]: unknown
+}
+
+export interface UploadLessonResult {
+  status: string
+  lesson_id: string
+  version: string
+  overwritten: boolean
 }

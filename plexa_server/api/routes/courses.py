@@ -40,13 +40,13 @@ def get_course_router(
     async def list_discoverable_courses(
         _: UserIdentity = Depends(require_identity)
     ):
-        """List courses that are currently marked discoverable.
+        """List courses visible to the caller in the student portal.
 
         Args:
             user_id: Caller identity resolved from the request header.
 
         Returns:
-            dict: Mapping containing discoverable course documents.
+            dict: Mapping containing course documents visible to the caller.
         """
         courses = await course_storage.list_courses()
         course_states = []
@@ -55,7 +55,10 @@ def get_course_router(
 
         visible = [
             c for c in courses
-            if c.discoverable
+            if (
+                c.discoverable
+                or c.has_instructor_access(_.user_id)
+            )
         ]
         visible = order_courses_for_user(visible, course_states)
 

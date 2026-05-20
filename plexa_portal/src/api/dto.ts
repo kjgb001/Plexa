@@ -84,6 +84,42 @@ export interface ApiLessonDocument {
   intent: ApiLessonIntent
 }
 
+export interface ApiLessonCapabilities {
+  tools_enabled?: boolean | null
+  browsing_enabled?: boolean | null
+}
+
+export interface ApiLessonExecution {
+  system_prompt: string
+  initial_assistant_message?: string | null
+  profile: string
+  parameters?: Record<string, unknown> | null
+  capabilities?: ApiLessonCapabilities | null
+}
+
+export interface ApiLessonConstraints {
+  input_mode: string
+  turn_limit?: number | null
+  allowed_actions?: string[] | null
+  termination_condition?: string | null
+}
+
+export interface ApiLessonReflection {
+  reflection_prompts: string[]
+  reflection_timing?: string | null
+  logging_policy?: string | null
+  attached_metadata?: Record<string, unknown> | null
+}
+
+export interface ApiLessonFullDocument {
+  schema_version: string
+  identity: ApiLessonIdentity
+  intent: ApiLessonIntent
+  execution: ApiLessonExecution
+  constraints: ApiLessonConstraints
+  reflection: ApiLessonReflection
+}
+
 export interface ApiCourseLessonsResponse {
   lessons: ApiLessonDocument[]
   pinned_lesson_id?: string | null
@@ -125,4 +161,11 @@ export interface ApiEncryptedLogListResponse {
 
 export interface ApiCourseRequestsResponse {
   pending_requests: string[]
+}
+
+export interface ApiUploadLessonResponse {
+  status: string
+  lesson_id: string
+  version: string
+  overwritten: boolean
 }

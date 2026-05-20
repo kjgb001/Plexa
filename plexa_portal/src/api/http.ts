@@ -28,7 +28,7 @@ export class HttpClient {
 
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
-      throw this.mapError(response.status, body.detail)
+      throw this.mapError(response.status, body)
     }
 
     const contentType = response.headers.get("content-type")
@@ -39,17 +39,38 @@ export class HttpClient {
     return undefined as T
   }
 
-  private mapError(status: number, detail?: string): Error {
+  private mapError(status: number, body?: unknown): Error {
+    const detail = this.extractDetail(body)
     switch (status) {
       case 401:
-        return new UnauthorizedError(status, detail)
+        return new UnauthorizedError(status, detail, body)
       case 404:
-        return new NotFoundError(status, detail)
+        return new NotFoundError(status, detail, body)
       case 409:
-        return new ConflictError(status, detail)
+        return new ConflictError(status, detail, body)
       default:
-        return new ApiError(status, detail)
+        return new ApiError(status, detail, body)
     }
+  }
+
+  private extractDetail(body: unknown): string | undefined {
+    if (typeof body === "string") {
+      return body
+    }
+
+    if (!body || typeof body !== "object") {
+      return undefined
+    }
+
+    if ("detail" in body && typeof body.detail === "string") {
+      return body.detail
+    }
+
+    if ("message" in body && typeof body.message === "string") {
+      return body.message
+    }
+
+    return undefined
   }
 
   UNVERSIONED_ENDPOINTS = new Set([

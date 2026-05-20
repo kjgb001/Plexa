@@ -14,7 +14,12 @@ export type StudentRoute =
 
 export type InstructorRoute =
   | { surface: "instructor"; kind: "home" }
-  | { surface: "instructor"; kind: "course"; courseId: string }
+  | {
+    surface: "instructor"
+    kind: "course"
+    courseId: string
+    mode: "overview" | "lessons" | "builder" | "logs" | "analytics" | "roster"
+  }
 
 export type AppRoute =
   | { kind: "login" }
@@ -65,8 +70,11 @@ export const studentPaths = {
 
 export const instructorPaths = {
   home: () => "/instructor",
-  course: (courseId: string) =>
-    `/instructor/courses/${encodeURIComponent(courseId)}`,
+  course: (
+    courseId: string,
+    mode: "overview" | "lessons" | "builder" | "logs" | "analytics" | "roster" = "overview",
+  ) =>
+    `/instructor/courses/${encodeURIComponent(courseId)}/${mode}`,
 }
 
 function parseStudentRoute(parts: string[]): StudentRoute | null {
@@ -148,6 +156,25 @@ function parseInstructorRoute(parts: string[]): InstructorRoute | null {
       surface: "instructor",
       kind: "course",
       courseId: decodeURIComponent(parts[2]),
+      mode: "overview",
+    }
+  }
+
+  if (
+    parts.length === 4 &&
+    parts[0] === "instructor" &&
+    parts[1] === "courses"
+  ) {
+    const mode = parts[3]
+    if (!["overview", "lessons", "builder", "logs", "analytics", "roster"].includes(mode)) {
+      return null
+    }
+
+    return {
+      surface: "instructor",
+      kind: "course",
+      courseId: decodeURIComponent(parts[2]),
+      mode: mode as "overview" | "lessons" | "builder" | "logs" | "analytics" | "roster",
     }
   }
 

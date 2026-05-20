@@ -13,6 +13,7 @@ from plexa_server.tests.fixtures import (
     SEEDED_COURSE_SPECS,
     SEEDED_LESSON_SPECS,
     make_seeded_lesson_payload,
+    seeded_course_base_payload,
     valid_course,
 )
 from plexa_server.utils.filesystem_data_dir import get_data_dir_path
@@ -52,15 +53,21 @@ async def seed_course(
     course_title: str,
     course_desc: str,
     lesson_timeline: list[dict],
+    owner_id: str | None,
+    instructor_name: str | None,
     course_storage: CourseStorage,
 ) -> None:
     """Create a fixture-backed course and bind the supplied lesson versions."""
-    payload = valid_course()
+    payload = seeded_course_base_payload()
     if course_title != "default":
         payload["course_id"] = course_title
         payload["title"] = course_title
     if course_desc != "default":
         payload["description"] = course_desc
+    if owner_id:
+        payload["owner_id"] = owner_id
+    if instructor_name:
+        payload["instructor"] = instructor_name
 
     for lesson in lessons:
         payload["lessons"][lesson.identity.lesson_id] = lesson.identity.version
@@ -102,6 +109,8 @@ async def seed_target(target: str) -> None:
             course_title=course_spec["course_title"],
             course_desc=course_spec["course_description"],
             lesson_timeline=course_spec.get("lesson_timeline", []),
+            owner_id=course_spec.get("owner_id"),
+            instructor_name=course_spec.get("instructor"),
             course_storage=course_storage,
         )
 

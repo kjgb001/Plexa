@@ -1,8 +1,9 @@
 import { cloneElement, isValidElement, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement, type ReactNode } from "react"
 import { useApis } from "../api"
 import type { Course, Lesson, Session } from "../api/interfaces"
+import { getRememberedPortalChoice } from "../auth/portalEntry"
 import { useTheme } from "../theme/useTheme"
-import { navigate, studentPaths, type StudentRoute } from "./router"
+import { instructorPaths, navigate, studentPaths, type StudentRoute } from "./router"
 
 interface StudentShellProps {
   route: StudentRoute
@@ -73,6 +74,7 @@ export default function StudentShell({
   const [lessonsExpanded, setLessonsExpanded] = useState(false)
   const [sessionsExpanded, setSessionsExpanded] = useState(false)
   const [railCollapsed, setRailCollapsed] = useState(false)
+  const canSwitchToInstructorPortal = getRememberedPortalChoice() === "instructor"
 
   const selectedCourseId = route.kind === "courses" ? null : route.courseId
   const selectedLessonId = route.kind === "chat" ? route.lessonId : null
@@ -437,6 +439,14 @@ export default function StudentShell({
           <div className="rail__brand-copy">
             <p className="eyebrow">Student Workspace</p>
             <h1>Plexa Portal</h1>
+            {canSwitchToInstructorPortal ? (
+              <button
+                className="ghost-button rail__inline-action rail__portal-switch"
+                onClick={() => navigate(instructorPaths.home())}
+              >
+                Instructor portal
+              </button>
+            ) : null}
             <div className="rail__brand-inline-actions">
               <button
                 className="ghost-button rail__inline-action"

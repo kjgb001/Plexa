@@ -14,10 +14,10 @@ export function InstructorApp({
 }) {
   const content = route.kind === "home" ? (
     <InstructorHomeScreen
-      onOpenCourse={(courseId) => navigate(instructorPaths.course(courseId))}
+      onOpenCourse={(courseId) => navigate(instructorPaths.course(courseId, "overview"))}
     />
   ) : (
-    <InstructorCourseScreen courseId={route.courseId} />
+    <InstructorCourseScreen courseId={route.courseId} mode={route.mode} />
   )
 
   return (

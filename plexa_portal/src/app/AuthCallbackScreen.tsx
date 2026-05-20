@@ -1,4 +1,5 @@
 import { useEffect } from "react"
+import { consumePostLoginPath } from "../auth/portalEntry"
 import { useAuth } from "../auth/useAuth"
 import { navigate, studentPaths } from "./router"
 
@@ -13,7 +14,7 @@ export default function AuthCallbackScreen() {
         await handleCallback()
 
         if (active) {
-          navigate(studentPaths.courses(), { replace: true })
+          navigate(consumePostLoginPath() ?? studentPaths.courses(), { replace: true })
         }
       } catch {
         if (active) {

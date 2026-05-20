@@ -41,8 +41,7 @@ export function InstructorHomeScreen({
         <p className="eyebrow">Instructor Workspace</p>
         <h1 id="instructor-home-title">Course operations</h1>
         <p className="portal-stage__summary">
-          This portal surface is being split out from the student app. The first slice
-          focuses on course control, lesson visibility, log review, and instructor management.
+          Open a course to work inside explicit instructor tools: Overview, Lessons, Builder, Logs, Analytics, and Roster.
         </p>
       </header>
 

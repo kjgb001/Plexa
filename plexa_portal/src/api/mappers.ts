@@ -7,10 +7,12 @@ import type {
   ApiEncryptedLogMetadata,
   ApiDeleteSessionResponse,
   ApiLessonDocument,
+  ApiLessonFullDocument,
   ApiListSessionsResponse,
   ApiMessage,
   ApiSendMessageResponse,
   ApiSessionResponse,
+  ApiUploadLessonResponse,
 } from "./dto"
 import type {
   Course,
@@ -20,10 +22,12 @@ import type {
   DeleteSessionResult,
   EncryptedLogMetadata,
   Lesson,
+  LessonDocument,
   ListSessionsResult,
   Message,
   SendMessageResult,
   Session,
+  UploadLessonResult,
 } from "./interfaces"
 
 export function mapMessage(message: ApiMessage): Message {
@@ -73,6 +77,33 @@ export function mapLessonSummary(lesson: ApiLessonDocument): Lesson {
     difficulty: lesson.intent.difficulty ?? undefined,
     approximate_time: lesson.intent.approximate_time ?? undefined,
     tags: lesson.identity.tags ?? undefined,
+  }
+}
+
+export function mapLessonDocument(lesson: ApiLessonFullDocument): LessonDocument {
+  return {
+    schema_version: lesson.schema_version,
+    identity: { ...lesson.identity },
+    intent: { ...lesson.intent },
+    execution: {
+      ...lesson.execution,
+      capabilities: lesson.execution.capabilities
+        ? {
+            tools_enabled: lesson.execution.capabilities.tools_enabled ?? undefined,
+            browsing_enabled: lesson.execution.capabilities.browsing_enabled ?? undefined,
+          }
+        : undefined,
+      parameters: lesson.execution.parameters
+        ? { ...lesson.execution.parameters }
+        : undefined,
+    },
+    constraints: { ...lesson.constraints },
+    reflection: {
+      ...lesson.reflection,
+      attached_metadata: lesson.reflection.attached_metadata
+        ? { ...lesson.reflection.attached_metadata }
+        : undefined,
+    },
   }
 }
 
@@ -138,4 +169,10 @@ export function mapCourseRequests(
   return {
     pending_requests: result.pending_requests,
   }
+}
+
+export function mapUploadLessonResult(
+  result: ApiUploadLessonResponse,
+): UploadLessonResult {
+  return { ...result }
 }

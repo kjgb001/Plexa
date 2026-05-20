@@ -6,38 +6,42 @@ export default function LoginScreen({
   onLogin,
 }: {
   mode: AuthMode
-  onLogin: (userId?: string) => Promise<void>
+  onLogin: (options: { userId?: string; portal: "student" | "instructor" }) => Promise<void>
 }) {
-  const [userId, setUserId] = useState("")
+  const [selectedPortal, setSelectedPortal] = useState<"student" | "instructor" | null>(null)
 
-  async function handleLogin() {
+  async function handleLogin(portal: "student" | "instructor") {
     if (mode === "dev") {
-      if (!userId.trim()) return
-      await onLogin(userId.trim())
+      const userId = window.prompt("Enter dev user ID")
+      if (!userId?.trim()) return
+      await onLogin({ userId: userId.trim(), portal })
       return
     }
-    await onLogin()
+    await onLogin({ portal })
   }
 
   return (
     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
       <h1>Plexa Portal</h1>
-      {mode === "dev" ? (
+      {selectedPortal === null ? (
         <>
-          <p>Enter a dev user ID:</p>
-
-          <input
-            value={userId}
-            onChange={e => setUserId(e.target.value)}
-            placeholder="student1"
-          />
-
-          <button onClick={() => void handleLogin()}>Login</button>
+          <p>Select a portal.</p>
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+            <button onClick={() => setSelectedPortal("student")}>Student portal</button>
+            <button onClick={() => setSelectedPortal("instructor")}>Instructor portal</button>
+          </div>
         </>
       ) : (
         <>
-          <p>Sign in with your configured identity provider.</p>
-          <button onClick={() => void handleLogin()}>Sign in</button>
+          <p>
+            {mode === "dev"
+              ? `Continue to the ${selectedPortal} portal.`
+              : `Continue to your configured identity provider for ${selectedPortal} portal access.`}
+          </p>
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+            <button onClick={() => void handleLogin(selectedPortal)}>Login</button>
+            <button onClick={() => setSelectedPortal(null)}>Back</button>
+          </div>
         </>
       )}
     </div>

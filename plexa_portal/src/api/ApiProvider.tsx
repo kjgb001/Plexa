@@ -3,6 +3,7 @@ import {
   type ReactNode,
 } from "react"
 import { useAuth } from "../auth/useAuth"
+import { AdminApi } from "./admin"
 import { HttpClient } from "./http"
 import { CourseApi } from "./courses"
 import { InstructorApi } from "./instructor"
@@ -13,6 +14,7 @@ export function ApiProvider({ children }: { children: ReactNode }) {
   const { authService } = useAuth()
   const [http] = useState(() => new HttpClient(() => authService.getAuthHeaders()))
   const [apis] = useState<ApiContextValue>(() => ({
+    adminApi: new AdminApi(http),
     courseApi: new CourseApi(http),
     instructorApi: new InstructorApi(http),
     sessionApi: new SessionApi(http),

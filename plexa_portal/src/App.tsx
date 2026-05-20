@@ -1,7 +1,7 @@
-import { useEffect } from "react"
 import BootScreen from "./app/BootScreen"
 import AuthCallbackScreen from "./app/AuthCallbackScreen"
-import { navigate, parseRoute, studentPaths, useCurrentPathname } from "./app/router"
+import { navigate, instructorPaths, parseRoute, studentPaths, useCurrentPathname } from "./app/router"
+import { getRememberedPortalChoice, rememberPortalChoice, rememberPostLoginPath } from "./auth/portalEntry"
 import { useAuth } from "./auth/useAuth"
 import { ApiProvider } from "./api"
 import LoginScreen from "./screens/LoginScreen"
@@ -21,11 +21,15 @@ function AppView() {
   const route = parseRoute(pathname)
   const { mode, status, user, error, login, logout } = useAuth()
 
-  useEffect(() => {
-    if (status === "authenticated" && route.kind === "login") {
-      navigate(studentPaths.courses(), { replace: true })
-    }
-  }, [route.kind, status])
+  if (status === "authenticated" && route.kind === "login") {
+    navigate(
+      getRememberedPortalChoice() === "instructor"
+        ? instructorPaths.home()
+        : studentPaths.courses(),
+      { replace: true },
+    )
+    return null
+  }
 
   if (status === "booting") {
     return <BootScreen />
@@ -49,7 +53,12 @@ function AppView() {
     return (
       <LoginScreen
         mode={mode}
-        onLogin={async (userId) => {
+        onLogin={async ({ userId, portal }) => {
+          const nextPath = portal === "instructor"
+            ? instructorPaths.home()
+            : studentPaths.courses()
+          rememberPortalChoice(portal)
+          rememberPostLoginPath(nextPath)
           await login(userId)
         }}
       />

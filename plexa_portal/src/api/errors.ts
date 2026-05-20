@@ -1,11 +1,13 @@
 export class ApiError extends Error {
   status: number
   detail?: string
+  payload?: unknown
 
-  constructor(status: number, detail?: string) {
+  constructor(status: number, detail?: string, payload?: unknown) {
     super(detail ?? "API Error")
     this.status = status
     this.detail = detail
+    this.payload = payload
   }
 }
 

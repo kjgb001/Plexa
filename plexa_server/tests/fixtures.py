@@ -6,6 +6,7 @@ SEEDED_LESSON_SPECS = {
     "The Danger of Hallucinations": {"version": "0.1.0", "profile": "reasoning"},
     "The Power of Prompt Engineering": {"version": "0.3.0", "profile": "default"},
     "Managing Context Decay": {"version": "0.2.0", "profile": "reasoning"},
+    "Context Windows and Tradeoffs": {"version": "0.1.0", "profile": "fast"},
     "Prompt Engineering for Data Viz": {"version": "0.2.0", "profile": "fast"},
     "LLM Assisted Data Evaluation": {"version": "0.4.0", "profile": "reasoning"},
 }
@@ -14,11 +15,14 @@ SEEDED_COURSE_SPECS = [
     {
         "course_title": "default",
         "course_description": "default",
+        "owner_id": "instructor",
+        "instructor": "instructor",
         "lesson_ids": [
             "default",
             "The Danger of Hallucinations",
             "The Power of Prompt Engineering",
             "Managing Context Decay",
+            "Context Windows and Tradeoffs",
         ],
         "lesson_timeline": [
             {
@@ -31,10 +35,36 @@ SEEDED_COURSE_SPECS = [
     {
         "course_title": "Data Visualization",
         "course_description": "Using AI for accelerated visualization",
+        "owner_id": "instructor",
+        "instructor": "instructor",
         "lesson_ids": [
             "Prompt Engineering for Data Viz",
             "LLM Assisted Data Evaluation",
         ],
+        "lesson_timeline": [],
+    },
+    {
+        "course_title": "AI Writing Studio",
+        "course_description": "An empty course for portal navigation testing",
+        "owner_id": "instructor",
+        "instructor": "instructor",
+        "lesson_ids": [],
+        "lesson_timeline": [],
+    },
+    {
+        "course_title": "Prompt Lab",
+        "course_description": "An empty course for sidebar overflow testing",
+        "owner_id": "instructor",
+        "instructor": "instructor",
+        "lesson_ids": [],
+        "lesson_timeline": [],
+    },
+    {
+        "course_title": "Reasoning Workshop",
+        "course_description": "An empty course for instructor portal layout testing",
+        "owner_id": "instructor",
+        "instructor": "instructor",
+        "lesson_ids": [],
         "lesson_timeline": [],
     },
 ]
@@ -52,6 +82,15 @@ def valid_course():
         "discoverable": True,
         "lessons": {},
     }
+
+
+def seeded_course_base_payload():
+    payload = valid_course()
+    payload["owner_id"] = "instructor"
+    payload["instructor"] = "instructor"
+    if "tester" not in payload["enrolled_users"]:
+        payload["enrolled_users"].append("tester")
+    return payload
 
 
 def valid_lesson():

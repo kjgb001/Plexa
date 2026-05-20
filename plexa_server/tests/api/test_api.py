@@ -261,6 +261,38 @@ def test_invite_only_hidden_from_listing(client, admin_headers, valid_course_pay
     assert all(c["course_id"] != f"{course_id}" for c in courses)
 
 
+def test_owner_sees_invite_only_course_in_listing(client, admin_headers, valid_course_payload, api_prefix, storage_backend):
+    payload = dict(valid_course_payload)
+    payload["discoverable"] = False
+    payload["owner_id"] = "instructor"
+    payload["instructor_ids"] = ["instructor"]
+    course_id = payload["course_id"]
+
+    client.post(f"{api_prefix}/admin/courses", json=payload, headers=admin_headers)
+
+    response = client.get(f"{api_prefix}/courses", headers={"X-User-Id": "instructor"})
+
+    assert response.status_code == 200
+    courses = response.json()["courses"]
+    assert any(c["course_id"] == course_id for c in courses)
+
+
+def test_parallel_instructor_sees_invite_only_course_in_listing(client, admin_headers, valid_course_payload, api_prefix, storage_backend):
+    payload = dict(valid_course_payload)
+    payload["discoverable"] = False
+    payload["owner_id"] = "owner-1"
+    payload["instructor_ids"] = ["owner-1", "assistant-1"]
+    course_id = payload["course_id"]
+
+    client.post(f"{api_prefix}/admin/courses", json=payload, headers=admin_headers)
+
+    response = client.get(f"{api_prefix}/courses", headers={"X-User-Id": "assistant-1"})
+
+    assert response.status_code == 200
+    courses = response.json()["courses"]
+    assert any(c["course_id"] == course_id for c in courses)
+
+
 def test_enrollment_request_flow(client, course_factory, api_prefix, storage_backend):
     course_id = course_factory()
 
