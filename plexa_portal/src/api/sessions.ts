@@ -12,6 +12,7 @@ import type {
   ListSessionsResult,
   SendMessageResult,
   Session,
+  UpdateSessionResult,
 } from "./interfaces"
 import {
   mapCreateSessionResult,
@@ -118,5 +119,62 @@ export class SessionApi {
     )
 
     return mapDeleteSessionResult(result)
+  }
+
+  async beginCompletion(
+    courseId: string,
+    lessonId: string,
+    lessonVersion: string,
+    sessionId: string,
+  ): Promise<UpdateSessionResult> {
+    const result = await this.http.request<ApiSessionResponse>(
+      `courses/${courseId}/lessons/${lessonId}/${lessonVersion}/sessions/${sessionId}/complete`,
+      { method: "POST" },
+    )
+    return { session: mapSession(result) }
+  }
+
+  async resumeAfterCompletion(
+    courseId: string,
+    lessonId: string,
+    lessonVersion: string,
+    sessionId: string,
+  ): Promise<UpdateSessionResult> {
+    const result = await this.http.request<ApiSessionResponse>(
+      `courses/${courseId}/lessons/${lessonId}/${lessonVersion}/sessions/${sessionId}/resume`,
+      { method: "POST" },
+    )
+    return { session: mapSession(result) }
+  }
+
+  async saveReflectionResponse(
+    courseId: string,
+    lessonId: string,
+    lessonVersion: string,
+    sessionId: string,
+    hookId: string,
+    responseText: string,
+  ): Promise<UpdateSessionResult> {
+    const result = await this.http.request<ApiSessionResponse>(
+      `courses/${courseId}/lessons/${lessonId}/${lessonVersion}/sessions/${sessionId}/reflections/${hookId}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ response_text: responseText }),
+      },
+    )
+    return { session: mapSession(result) }
+  }
+
+  async turnInSession(
+    courseId: string,
+    lessonId: string,
+    lessonVersion: string,
+    sessionId: string,
+  ): Promise<UpdateSessionResult> {
+    const result = await this.http.request<ApiSessionResponse>(
+      `courses/${courseId}/lessons/${lessonId}/${lessonVersion}/sessions/${sessionId}/turn-in`,
+      { method: "POST" },
+    )
+    return { session: mapSession(result) }
   }
 }

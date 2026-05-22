@@ -5,8 +5,9 @@ from datetime import datetime, UTC
 from uuid import uuid4
 
 from plexa_server.models.session import Session
+from plexa_server.models.session import SessionReflectionHook
 from plexa_server.models.message import Message
-from plexa_server.models.lesson import Lesson
+from plexa_server.models.lesson import Lesson, LessonReflectionHook
 from plexa_server.inference.base import (
     InferenceBackend,
     InferenceError,
@@ -40,6 +41,11 @@ class TurnLimitExceededError(Exception):
 
 class SessionNotFoundError(Exception):
     """Raised when session storage has no record for the requested session."""
+    pass
+
+
+class SessionCompletionError(Exception):
+    """Raised when completion or reflection actions are invalid for session state."""
     pass
 
 
@@ -138,6 +144,18 @@ class SessionManager:
             updated_at=datetime.now(UTC),
             closed_at=None,
             is_active=True,
+            logging_policy=lesson.reflection.logging_policy or "default",
+            reflection_hooks=[
+                SessionReflectionHook(
+                    hook_id=hook.hook_id,
+                    prompt=hook.prompt,
+                    phase=hook.phase,
+                    order_index=hook.order_index,
+                    trigger_turn=self._resolve_reflection_trigger_turn(hook, turn_limit),
+                    carry_to_post=hook.carry_to_post,
+                )
+                for hook in lesson.reflection.hooks
+            ],
         )
         session.title = default_session_title(session)
 
@@ -216,6 +234,101 @@ class SessionManager:
             inference_config = await self._storage.get_inference_config(session_id)
             await self._persist_encrypted_log(session, inference_config, event_type="closed")
             self._lock_manager.release_lock(session_id)
+
+    async def begin_completion(self, session_id: str) -> Session:
+        """Enter soft-completion mode and trigger post reflections."""
+        lock = self._lock_manager.get_lock(session_id)
+
+        with lock:
+            session = await self.get_session(session_id)
+            if session.is_finalized:
+                raise SessionCompletionError("Session is already turned in.")
+
+            session.is_completion_started = True
+            if session.completed_at is None:
+                session.completed_at = datetime.now(UTC)
+            self._trigger_completion_reflections(session)
+            session.updated_at = datetime.now(UTC)
+            await self._storage.save_session(session)
+            inference_config = await self._storage.get_inference_config(session_id)
+            await self._persist_encrypted_log(session, inference_config, event_type="message_commit")
+            return session
+
+    async def resume_after_completion(self, session_id: str) -> Session:
+        """Exit soft-completion mode while the session is still chat-editable."""
+        lock = self._lock_manager.get_lock(session_id)
+
+        with lock:
+            session = await self.get_session(session_id)
+            if session.is_finalized:
+                raise SessionCompletionError("Turned-in sessions cannot be reopened.")
+            if not session.is_active:
+                raise SessionCompletionError("Closed sessions cannot resume chat work.")
+
+            session.is_completion_started = False
+            session.updated_at = datetime.now(UTC)
+            await self._storage.save_session(session)
+            inference_config = await self._storage.get_inference_config(session_id)
+            await self._persist_encrypted_log(session, inference_config, event_type="message_commit")
+            return session
+
+    async def save_reflection_response(
+        self,
+        session_id: str,
+        hook_id: str,
+        response_text: str,
+    ) -> Session:
+        """Create or update a reflection response for a triggered hook."""
+        lock = self._lock_manager.get_lock(session_id)
+
+        with lock:
+            session = await self.get_session(session_id)
+            if session.is_finalized:
+                raise SessionCompletionError("Turned-in sessions cannot edit reflections.")
+
+            hook = next((item for item in session.reflection_hooks if item.hook_id == hook_id), None)
+            if hook is None:
+                raise SessionCompletionError("Reflection hook not found.")
+            if hook.triggered_at is None:
+                raise SessionCompletionError("Reflection hook has not been triggered.")
+
+            now = datetime.now(UTC)
+            if hook.first_answered_at is None:
+                hook.first_answered_at = now
+            hook.last_updated_at = now
+            hook.response_text = response_text
+            session.updated_at = now
+
+            await self._storage.save_session(session)
+            inference_config = await self._storage.get_inference_config(session_id)
+            await self._persist_encrypted_log(session, inference_config, event_type="message_commit")
+            return session
+
+    async def turn_in_session(self, session_id: str) -> Session:
+        """Finalize and lock a session after required reflections are complete."""
+        lock = self._lock_manager.get_lock(session_id)
+
+        with lock:
+            session = await self.get_session(session_id)
+            if session.is_finalized:
+                return session
+            if not session.is_completion_started:
+                raise SessionCompletionError("Completion must begin before turn-in.")
+            if not self._required_reflections_answered(session):
+                raise SessionCompletionError("All triggered reflections must be answered before turn-in.")
+
+            now = datetime.now(UTC)
+            session.is_finalized = True
+            session.turned_in_at = now
+            session.is_active = False
+            if session.closed_at is None:
+                session.closed_at = now
+            session.updated_at = now
+
+            await self._storage.save_session(session)
+            inference_config = await self._storage.get_inference_config(session_id)
+            await self._persist_encrypted_log(session, inference_config, event_type="closed")
+            return session
 
     async def delete_session(self, session_id: str) -> None:
         """Delete a persisted session and its associated inference config.
@@ -309,6 +422,8 @@ class SessionManager:
                 if generated_title is not None and generated_title.strip():
                     session.title = generated_title.strip()
 
+            self._trigger_mid_reflections(session)
+
             if session.turn_count >= session.max_turns:
                 session.is_active = False
                 session.closed_at = datetime.now(UTC)
@@ -317,6 +432,51 @@ class SessionManager:
             await self._persist_encrypted_log(session, inference_config, event_type="message_commit")
 
             return assistant_message
+
+    def _trigger_mid_reflections(self, session: Session) -> None:
+        """Trigger any mid-session reflections due at the current turn count."""
+        now = datetime.now(UTC)
+        for hook in session.reflection_hooks:
+            if hook.phase != "mid":
+                continue
+            if hook.triggered_at is not None:
+                continue
+            if hook.trigger_turn is None:
+                continue
+            if session.turn_count >= hook.trigger_turn:
+                hook.triggered_at = now
+                hook.trigger_source = "mid_turn"
+
+    def _resolve_reflection_trigger_turn(self, hook: LessonReflectionHook, turn_limit: int) -> int | None:
+        """Return the concrete turn for mid-session hooks."""
+        if hook.phase != "mid":
+            return None
+        if hook.trigger_turn is not None:
+            return hook.trigger_turn
+        return max(1, (turn_limit + 1) // 2)
+
+    def _trigger_completion_reflections(self, session: Session) -> None:
+        """Trigger post reflections and any carry-forward mid reflections."""
+        now = datetime.now(UTC)
+        for hook in session.reflection_hooks:
+            if hook.triggered_at is not None:
+                continue
+            if hook.phase == "post":
+                hook.triggered_at = now
+                hook.trigger_source = "soft_complete"
+                continue
+            if hook.phase == "mid" and hook.carry_to_post:
+                hook.triggered_at = now
+                hook.trigger_source = "carry_to_post"
+                hook.carried_to_post = True
+
+    def _required_reflections_answered(self, session: Session) -> bool:
+        """Return whether all triggered hooks have responses."""
+        return all(
+            hook.response_text is not None and hook.response_text.strip()
+            for hook in session.reflection_hooks
+            if hook.triggered_at is not None
+        )
 
     async def _persist_encrypted_log(
         self,

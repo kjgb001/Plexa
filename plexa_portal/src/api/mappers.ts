@@ -50,6 +50,12 @@ export function mapSession(session: ApiSessionResponse): Session {
     turn_count: session.turn_count,
     max_turns: session.max_turns,
     is_active: session.is_active,
+    is_completion_started: session.is_completion_started,
+    completed_at: session.completed_at,
+    is_finalized: session.is_finalized,
+    turned_in_at: session.turned_in_at,
+    logging_policy: session.logging_policy,
+    reflection_hooks: session.reflection_hooks.map((hook) => ({ ...hook })),
   }
 }
 
@@ -100,9 +106,7 @@ export function mapLessonDocument(lesson: ApiLessonFullDocument): LessonDocument
     constraints: { ...lesson.constraints },
     reflection: {
       ...lesson.reflection,
-      attached_metadata: lesson.reflection.attached_metadata
-        ? { ...lesson.reflection.attached_metadata }
-        : undefined,
+      hooks: lesson.reflection.hooks.map((hook) => ({ ...hook })),
     },
   }
 }

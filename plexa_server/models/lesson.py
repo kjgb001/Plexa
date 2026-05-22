@@ -71,12 +71,47 @@ class LessonConstraints(BaseModel):
 # Reflection
 
 class LessonReflection(BaseModel):
-    """Post-lesson reflection prompts and logging metadata."""
+    """Ordered reflection hooks and logging metadata."""
 
-    reflection_prompts: List[str]
-    reflection_timing: Optional[Literal["post", "mid", "mixed"]] = None
+    hooks: List["LessonReflectionHook"] = Field(default_factory=list)
     logging_policy: Optional[Literal["default", "metadata_only", "disabled"]] = None
-    attached_metadata: Optional[Dict[str, Any]] = None
+
+    @model_validator(mode="after")
+    def validate_hooks(self) -> "LessonReflection":
+        """Ensure hook ordering and ids are coherent."""
+        seen_ids: set[str] = set()
+        normalized = sorted(self.hooks, key=lambda hook: (hook.order_index, hook.hook_id))
+        for hook in normalized:
+            if hook.hook_id in seen_ids:
+                raise ValueError("Reflection hook ids must be unique within a lesson.")
+            seen_ids.add(hook.hook_id)
+        self.hooks = normalized
+        return self
+
+
+class LessonReflectionHook(BaseModel):
+    """A structured reflection hook shown during or after a session."""
+
+    hook_id: str = Field(default_factory=lambda: str(uuid4()))
+    prompt: str
+    phase: Literal["mid", "post"]
+    order_index: int
+    trigger_turn: Optional[int] = None
+    carry_to_post: bool = False
+
+    @model_validator(mode="after")
+    def validate_hook(self) -> "LessonReflectionHook":
+        """Ensure timing-specific fields are coherent."""
+        if self.phase == "mid":
+            if self.trigger_turn is not None and self.trigger_turn <= 0:
+                raise ValueError("Mid reflection hooks must use a positive trigger_turn.")
+            return self
+
+        if self.trigger_turn is not None:
+            raise ValueError("Post reflection hooks may not define trigger_turn.")
+        if self.carry_to_post:
+            raise ValueError("Post reflection hooks may not enable carry_to_post.")
+        return self
 
 
 # Top-level Lesson

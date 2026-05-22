@@ -115,9 +115,19 @@ def valid_lesson():
             "turn_limit": 5,
         },
         "reflection": {
-            "reflection_prompts": [
-                "What did you learn?",
-                "What surprised you?"
+            "hooks": [
+                {
+                    "hook_id": "post-summary",
+                    "prompt": "What did you learn?",
+                    "phase": "post",
+                    "order_index": 0,
+                },
+                {
+                    "hook_id": "post-surprise",
+                    "prompt": "What surprised you?",
+                    "phase": "post",
+                    "order_index": 1,
+                },
             ]
         },
         "schema_version": "1.0"
@@ -159,10 +169,29 @@ def make_valid_lesson_payload() -> Lesson:
             "turn_limit": 2,
         },
         "reflection": {
-            "reflection_prompts": [
-                "Where did the model express uncertainty appropriately?",
-                "Where was it overconfident?",
-            ]
+            "hooks": [
+                {
+                    "hook_id": "mid-checkpoint",
+                    "prompt": "Pause and assess where uncertainty is being handled well so far.",
+                    "phase": "mid",
+                    "order_index": 0,
+                    "trigger_turn": 1,
+                    "carry_to_post": True,
+                },
+                {
+                    "hook_id": "post-confidence",
+                    "prompt": "Where did the model express uncertainty appropriately?",
+                    "phase": "post",
+                    "order_index": 1,
+                },
+                {
+                    "hook_id": "post-overconfidence",
+                    "prompt": "Where was it overconfident?",
+                    "phase": "post",
+                    "order_index": 2,
+                },
+            ],
+            "logging_policy": "default",
         },
     }
 

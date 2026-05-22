@@ -5,11 +5,15 @@ from datetime import UTC, datetime
 import pytest
 
 from plexa_server.core.encrypted_logs import EncryptedLogService
+from plexa_server.core.logging import build_session_log_payload
 from plexa_server.core.sessions import SessionManager
+from plexa_server.inference.base import InferenceConfig
 from plexa_server.inference.stub import StubInference
 from plexa_server.models.course import Course
 from plexa_server.models.encrypted_log import EncryptedLogMetadata
 from plexa_server.models.lesson import Lesson
+from plexa_server.models.message import Message
+from plexa_server.models.session import Session, SessionReflectionHook
 from plexa_server.tests.fixtures import make_valid_lesson_payload
 from plexa_server.utils.cryptography import decrypt_json, encrypt_json, generate_encryption_key
 
@@ -35,6 +39,73 @@ def test_encrypt_json_roundtrip():
     loaded = decrypt_json(blob, lambda key_id: key if key_id == "test-key" else "")
 
     assert loaded == payload
+
+
+def test_default_session_log_payload_includes_transcript_and_reflections():
+    session = Session(
+        session_id="s1",
+        user_id="tester",
+        course_id="CS101",
+        lesson_id="lesson-1",
+        lesson_version="0.1.0",
+        messages=[
+            Message(message_id="m1", session_id="s1", role="system", content="System prompt"),
+        ],
+        reflection_hooks=[
+            SessionReflectionHook(
+                hook_id="post-summary",
+                prompt="What did you learn?",
+                phase="post",
+                order_index=0,
+                triggered_at=datetime(2026, 1, 1, tzinfo=UTC),
+                trigger_source="soft_complete",
+                response_text="A lot.",
+            )
+        ],
+    )
+    config = InferenceConfig(profile="kl3m_safe")
+
+    payload = build_session_log_payload(session, config)
+
+    assert payload["logging_policy"] == "default"
+    assert payload["session"]["session_id"] == "s1"
+    assert "messages" not in payload["session"]
+    assert "reflection_hooks" not in payload["session"]
+    assert payload["transcript"][0]["role"] == "system"
+    assert payload["reflections"][0]["hook_id"] == "post-summary"
+    assert payload["inference_config"]["profile"] == "kl3m_safe"
+
+
+def test_metadata_only_session_log_payload_excludes_transcript_and_reflections():
+    session = Session(
+        session_id="s1",
+        user_id="tester",
+        course_id="CS101",
+        lesson_id="lesson-1",
+        lesson_version="0.1.0",
+        logging_policy="metadata_only",
+        messages=[
+            Message(message_id="m1", session_id="s1", role="system", content="System prompt"),
+        ],
+        reflection_hooks=[
+            SessionReflectionHook(
+                hook_id="post-summary",
+                prompt="What did you learn?",
+                phase="post",
+                order_index=0,
+                response_text="A lot.",
+            )
+        ],
+    )
+    config = InferenceConfig(profile="kl3m_safe")
+
+    payload = build_session_log_payload(session, config)
+
+    assert payload["logging_policy"] == "metadata_only"
+    assert payload["session"]["session_id"] == "s1"
+    assert "transcript" not in payload
+    assert "reflections" not in payload
+    assert "inference_config" not in payload
 
 
 class _StaticCourseStorage:
@@ -216,7 +287,7 @@ def test_session_manager_persists_and_deletes_encrypted_logs(
     created_log = run(service.load_session_log_for_requester("session-log-1", "test-owner"))
     assert created_log is not None
     assert created_log["session"]["session_id"] == created.session_id
-    assert created_log["session"]["messages"][0]["role"] == "system"
+    assert created_log["transcript"][0]["role"] == "system"
     assert created_log["inference_config"]["profile"] == lesson.execution.profile
 
     created_metadata = run(artifact_storage.load_encrypted_log_metadata("session-log-1"))
@@ -231,8 +302,8 @@ def test_session_manager_persists_and_deletes_encrypted_logs(
     updated_log = run(service.load_session_log_for_requester("session-log-1", "test-owner"))
     assert updated_log is not None
     assert updated_log["session"]["turn_count"] == 1
-    assert len(updated_log["session"]["messages"]) == 3
-    assert updated_log["session"]["messages"][-1]["role"] == "assistant"
+    assert len(updated_log["transcript"]) == 3
+    assert updated_log["transcript"][-1]["role"] == "assistant"
     updated_metadata = run(artifact_storage.load_encrypted_log_metadata("session-log-1"))
     assert updated_metadata is not None
     assert updated_metadata.last_event_type == "message_commit"

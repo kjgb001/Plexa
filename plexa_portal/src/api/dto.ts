@@ -19,6 +19,27 @@ export interface ApiSessionResponse {
   is_active: boolean
   turn_count: number
   max_turns: number
+  is_completion_started: boolean
+  completed_at?: string | null
+  is_finalized: boolean
+  turned_in_at?: string | null
+  logging_policy: string
+  reflection_hooks: ApiSessionReflectionHook[]
+}
+
+export interface ApiSessionReflectionHook {
+  hook_id: string
+  prompt: string
+  phase: "mid" | "post"
+  order_index: number
+  trigger_turn?: number | null
+  carry_to_post: boolean
+  carried_to_post: boolean
+  triggered_at?: string | null
+  trigger_source?: "mid_turn" | "soft_complete" | "carry_to_post" | null
+  response_text?: string | null
+  first_answered_at?: string | null
+  last_updated_at?: string | null
 }
 
 export interface ApiCreateSessionResponse {
@@ -105,10 +126,17 @@ export interface ApiLessonConstraints {
 }
 
 export interface ApiLessonReflection {
-  reflection_prompts: string[]
-  reflection_timing?: string | null
+  hooks: ApiLessonReflectionHook[]
   logging_policy?: string | null
-  attached_metadata?: Record<string, unknown> | null
+}
+
+export interface ApiLessonReflectionHook {
+  hook_id: string
+  prompt: string
+  phase: "mid" | "post"
+  order_index: number
+  trigger_turn?: number | null
+  carry_to_post: boolean
 }
 
 export interface ApiLessonFullDocument {

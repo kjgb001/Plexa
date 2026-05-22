@@ -3,11 +3,12 @@ from uuid import uuid4
 
 from plexa_server.core.sessions import (
     SessionClosedError,
-    TurnLimitExceededError
+    TurnLimitExceededError,
+    SessionCompletionError,
 )
 from plexa_server.models.session import Session
 from plexa_server.inference.base import InferenceError
-from plexa_server.api.schemas.requests import SendMessageRequest
+from plexa_server.api.schemas.requests import SendMessageRequest, ReflectionResponseRequest
 
 from plexa_server.api.schemas.responses import (
     SessionResponse,
@@ -351,6 +352,100 @@ def get_sessions_router(
 
         except SessionClosedError:
             raise HTTPException(status_code=409, detail="Session already closed")
+
+
+    @router.post(
+        "/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}/complete",
+        response_model=SessionResponse,
+    )
+    async def begin_completion(
+        session_id: str,
+        course_id: str,
+        lesson_id: str,
+        lesson_version: str,
+        identity: UserIdentity = Depends(require_identity),
+    ) -> SessionResponse:
+        session = await get_owned_session(session_manager, session_id, identity)
+        check_session_path(session, course_id, lesson_id, lesson_version)
+
+        try:
+            session = await session_manager.begin_completion(session_id)
+            await touch_course_and_lesson(identity, course_id, lesson_id, lesson_version)
+            return SessionResponse.from_session(session)
+        except SessionCompletionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+
+
+    @router.post(
+        "/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}/resume",
+        response_model=SessionResponse,
+    )
+    async def resume_after_completion(
+        session_id: str,
+        course_id: str,
+        lesson_id: str,
+        lesson_version: str,
+        identity: UserIdentity = Depends(require_identity),
+    ) -> SessionResponse:
+        session = await get_owned_session(session_manager, session_id, identity)
+        check_session_path(session, course_id, lesson_id, lesson_version)
+
+        try:
+            session = await session_manager.resume_after_completion(session_id)
+            await touch_course_and_lesson(identity, course_id, lesson_id, lesson_version)
+            return SessionResponse.from_session(session)
+        except SessionCompletionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+
+
+    @router.post(
+        "/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}/reflections/{hook_id}",
+        response_model=SessionResponse,
+    )
+    async def save_reflection_response(
+        session_id: str,
+        course_id: str,
+        lesson_id: str,
+        lesson_version: str,
+        hook_id: str,
+        request: ReflectionResponseRequest,
+        identity: UserIdentity = Depends(require_identity),
+    ) -> SessionResponse:
+        session = await get_owned_session(session_manager, session_id, identity)
+        check_session_path(session, course_id, lesson_id, lesson_version)
+
+        try:
+            session = await session_manager.save_reflection_response(
+                session_id,
+                hook_id,
+                request.response_text,
+            )
+            await touch_course_and_lesson(identity, course_id, lesson_id, lesson_version)
+            return SessionResponse.from_session(session)
+        except SessionCompletionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+
+
+    @router.post(
+        "/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}/turn-in",
+        response_model=SessionResponse,
+    )
+    async def turn_in_session(
+        session_id: str,
+        course_id: str,
+        lesson_id: str,
+        lesson_version: str,
+        identity: UserIdentity = Depends(require_identity),
+    ) -> SessionResponse:
+        session = await get_owned_session(session_manager, session_id, identity)
+        check_session_path(session, course_id, lesson_id, lesson_version)
+
+        try:
+            session = await session_manager.turn_in_session(session_id)
+            await touch_course_and_lesson(identity, course_id, lesson_id, lesson_version)
+            return SessionResponse.from_session(session)
+        except SessionCompletionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
 
 
     # Delete Session

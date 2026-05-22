@@ -203,6 +203,12 @@ class SessionRecord(Base):
     turn_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     max_turns: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_completion_started: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_finalized: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    turned_in_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    logging_policy: Mapped[str] = mapped_column(String(32), nullable=False, default="default")
+    reflection_hooks: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
     frozen_inference_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     user: Mapped[UserRecord] = relationship()

@@ -6,12 +6,12 @@ import {
   createDefaultLessonDraft,
   csvToList,
   duplicateLessonDraft,
-  jsonToText,
   listToCsv,
   listToMultiline,
   multilineToList,
+  newReflectionHook,
+  renumberReflectionHooks,
   serializeLessonDraft,
-  textToJsonObject,
 } from "../lessonBuilder"
 
 function formatError(error: unknown): string {
@@ -51,14 +51,12 @@ function buildDraftFromEditor(
     tagsText: string
     disciplineText: string
     prerequisitesText: string
-    reflectionPromptsText: string
     allowedActionsText: string
     temperatureText: string
     topPText: string
     maxTokensText: string
     timeoutSecondsText: string
     seedText: string
-    attachedMetadataText: string
   },
 ): LessonDocument {
   const preservedParameters = Object.fromEntries(
@@ -106,11 +104,6 @@ function buildDraftFromEditor(
       ...draft.constraints,
       allowed_actions: multilineToList(fields.allowedActionsText),
     },
-    reflection: {
-      ...draft.reflection,
-      reflection_prompts: multilineToList(fields.reflectionPromptsText),
-      attached_metadata: textToJsonObject(fields.attachedMetadataText),
-    },
   }
 }
 
@@ -129,14 +122,12 @@ export function InstructorBuilderPanel({
   const [tagsText, setTagsText] = useState("")
   const [disciplineText, setDisciplineText] = useState("")
   const [prerequisitesText, setPrerequisitesText] = useState("")
-  const [reflectionPromptsText, setReflectionPromptsText] = useState("")
   const [allowedActionsText, setAllowedActionsText] = useState("")
   const [temperatureText, setTemperatureText] = useState("0.2")
   const [topPText, setTopPText] = useState("1")
   const [maxTokensText, setMaxTokensText] = useState("800")
   const [timeoutSecondsText, setTimeoutSecondsText] = useState("")
   const [seedText, setSeedText] = useState("")
-  const [attachedMetadataText, setAttachedMetadataText] = useState("{}")
   const [busy, setBusy] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -146,7 +137,6 @@ export function InstructorBuilderPanel({
     setTagsText(listToCsv(next.identity.tags))
     setDisciplineText(listToMultiline(next.intent.discipline))
     setPrerequisitesText(listToMultiline(next.intent.prerequisites))
-    setReflectionPromptsText(listToMultiline(next.reflection.reflection_prompts))
     setAllowedActionsText(listToMultiline(next.constraints.allowed_actions))
     setTemperatureText(
       next.execution.parameters?.temperature !== undefined
@@ -173,9 +163,59 @@ export function InstructorBuilderPanel({
         ? String(next.execution.parameters.seed)
         : "",
     )
-    setAttachedMetadataText(jsonToText(next.reflection.attached_metadata ?? {}))
     setStatusMessage(null)
     setErrorMessage(null)
+  }
+
+  function updateReflectionHooks(
+    updater: (current: LessonDocument["reflection"]["hooks"]) => LessonDocument["reflection"]["hooks"],
+  ) {
+    setDraft((current) =>
+      renumberReflectionHooks({
+        ...current,
+        reflection: {
+          ...current.reflection,
+          hooks: updater(current.reflection.hooks),
+        },
+      }),
+    )
+  }
+
+  function addReflectionHook() {
+    updateReflectionHooks((current) => [...current, newReflectionHook(current.length)])
+  }
+
+  function updateReflectionHook(index: number, updates: Partial<LessonDocument["reflection"]["hooks"][number]>) {
+    updateReflectionHooks((current) =>
+      current.map((hook, hookIndex) => {
+        if (hookIndex !== index) {
+          return hook
+        }
+        const next = { ...hook, ...updates }
+        if (next.phase === "post") {
+          next.trigger_turn = null
+          next.carry_to_post = false
+        }
+        return next
+      }),
+    )
+  }
+
+  function moveReflectionHook(index: number, direction: -1 | 1) {
+    updateReflectionHooks((current) => {
+      const target = index + direction
+      if (target < 0 || target >= current.length) {
+        return current
+      }
+      const next = [...current]
+      const [moved] = next.splice(index, 1)
+      next.splice(target, 0, moved)
+      return next
+    })
+  }
+
+  function removeReflectionHook(index: number) {
+    updateReflectionHooks((current) => current.filter((_, hookIndex) => hookIndex !== index))
   }
 
   async function handleLoadSelectedLesson() {
@@ -211,14 +251,12 @@ export function InstructorBuilderPanel({
         tagsText,
         disciplineText,
         prerequisitesText,
-        reflectionPromptsText,
         allowedActionsText,
         temperatureText,
         topPText,
         maxTokensText,
         timeoutSecondsText,
         seedText,
-        attachedMetadataText,
       })
       return { document: compiled, error: null }
     } catch (error) {
@@ -266,14 +304,12 @@ export function InstructorBuilderPanel({
     tagsText,
     disciplineText,
     prerequisitesText,
-    reflectionPromptsText,
     allowedActionsText,
     temperatureText,
     topPText,
     maxTokensText,
     timeoutSecondsText,
     seedText,
-    attachedMetadataText,
   ])
 
   return (
@@ -379,13 +415,37 @@ export function InstructorBuilderPanel({
           <article className="portal-card">
             <header className="portal-card__header"><h2>Reflection</h2></header>
             <div className="portal-form-grid">
-              <label className="portal-form-grid__span-2"><span>Reflection prompts</span><textarea value={reflectionPromptsText} onChange={(event) => setReflectionPromptsText(event.target.value)} rows={4} placeholder="One per line" /></label>
-              <label><span>Reflection timing</span><select value={draft.reflection.reflection_timing ?? "post"} onChange={(event) => setDraft((current) => ({ ...current, reflection: { ...current.reflection, reflection_timing: event.target.value } }))}><option value="post">After the lesson</option><option value="mid">During the lesson</option><option value="mixed">During and after</option></select></label>
               <label><span>Logging policy</span><select value={draft.reflection.logging_policy ?? "default"} onChange={(event) => setDraft((current) => ({ ...current, reflection: { ...current.reflection, logging_policy: event.target.value } }))}><option value="default">Default logging</option><option value="metadata_only">Metadata only</option><option value="disabled">Disabled</option></select></label>
-              <label className="portal-form-grid__span-2"><span>Attached metadata JSON</span><textarea value={attachedMetadataText} onChange={(event) => setAttachedMetadataText(event.target.value)} rows={5} /></label>
             </div>
+            <div className="portal-list">
+              {draft.reflection.hooks.map((hook, index) => (
+                <article key={hook.hook_id} className="portal-list__item portal-list__item--stack">
+                  <div className="portal-card__header">
+                    <h2>Hook {index + 1}</h2>
+                    <div className="portal-inline-actions">
+                      <button className="ghost-button" type="button" onClick={() => moveReflectionHook(index, -1)} disabled={index === 0}>Up</button>
+                      <button className="ghost-button" type="button" onClick={() => moveReflectionHook(index, 1)} disabled={index === draft.reflection.hooks.length - 1}>Down</button>
+                      <button className="ghost-button ghost-button--danger" type="button" onClick={() => removeReflectionHook(index)} disabled={draft.reflection.hooks.length <= 1}>Remove</button>
+                    </div>
+                  </div>
+                  <div className="portal-form-grid">
+                    <label className="portal-form-grid__span-2"><span>Prompt</span><textarea value={hook.prompt} onChange={(event) => updateReflectionHook(index, { prompt: event.target.value })} rows={4} /></label>
+                    <label><span>Timing</span><select value={hook.phase} onChange={(event) => updateReflectionHook(index, { phase: event.target.value as "mid" | "post" })}><option value="post">Post-completion</option><option value="mid">Mid-session</option></select></label>
+                    {hook.phase === "mid" ? (
+                      <>
+                        <label><span>Trigger turn</span><input type="number" min="1" value={hook.trigger_turn ?? ""} onChange={(event) => updateReflectionHook(index, { trigger_turn: event.target.value ? Number(event.target.value) : null })} placeholder="Defaults to halfway point" /></label>
+                        <label className="portal-form-grid__span-2 portal-checkbox-row"><input type="checkbox" checked={hook.carry_to_post} onChange={(event) => updateReflectionHook(index, { carry_to_post: event.target.checked })} /> Carry this reflection into post-completion if it was never triggered during the session</label>
+                      </>
+                    ) : null}
+                  </div>
+                </article>
+              ))}
+            </div>
+            <button className="ghost-button" type="button" onClick={addReflectionHook}>
+              Add reflection hook
+            </button>
             <p className="portal-note">
-              Reflection timing is lesson metadata for authoring and review. Logging policy is curated at the lesson level and stored explicitly in the lesson document.
+              Reflection hooks run in the order shown here. Mid-session hooks may trigger during the chat flow; post-completion hooks are shown when the student enters completion mode.
             </p>
           </article>
         </div>

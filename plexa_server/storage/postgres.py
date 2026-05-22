@@ -88,6 +88,12 @@ def _session_from_record(record: SessionRecord) -> Session:
         turn_count=record.turn_count,
         max_turns=record.max_turns,
         is_active=record.is_active,
+        is_completion_started=record.is_completion_started,
+        completed_at=record.completed_at,
+        is_finalized=record.is_finalized,
+        turned_in_at=record.turned_in_at,
+        logging_policy=record.logging_policy,
+        reflection_hooks=record.reflection_hooks,
     )
 
 
@@ -786,6 +792,12 @@ class PostgresSessionStorage(PostgresStorageMixin, SessionStorage):
             record.turn_count = session_model.turn_count
             record.max_turns = session_model.max_turns
             record.is_active = session_model.is_active
+            record.is_completion_started = session_model.is_completion_started
+            record.completed_at = session_model.completed_at
+            record.is_finalized = session_model.is_finalized
+            record.turned_in_at = session_model.turned_in_at
+            record.logging_policy = session_model.logging_policy
+            record.reflection_hooks = [hook.model_dump(mode="json") for hook in session_model.reflection_hooks]
 
             await session.flush()
 

@@ -6,3 +6,9 @@ class SendMessageRequest(BaseModel):
 
     content: str
     message_id: str | None = None
+
+
+class ReflectionResponseRequest(BaseModel):
+    """Request body for saving a reflection response."""
+
+    response_text: str

@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useApis } from "../api"
-import type { Message, Session } from "../api/interfaces"
+import type { Message, Session, SessionReflectionHook } from "../api/interfaces"
 import { navigate, studentPaths } from "../app/router"
 
 interface Props {
@@ -52,7 +52,18 @@ export default function ChatScreen({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [bootError, setBootError] = useState<string | null>(null)
   const [interactionError, setInteractionError] = useState<string | null>(null)
+  const [reflectionDrafts, setReflectionDrafts] = useState<Record<string, string>>({})
   const visibleMessages = messages.filter((message) => message.role !== "system")
+  const triggeredReflectionHooks = useMemo(
+    () =>
+      [...(session?.reflection_hooks ?? [])]
+        .filter((hook) => hook.triggered_at)
+        .sort((left, right) => left.order_index - right.order_index),
+    [session],
+  )
+  const allTriggeredReflectionsAnswered = triggeredReflectionHooks.every(
+    (hook) => (reflectionDrafts[hook.hook_id] ?? hook.response_text ?? "").trim() !== "",
+  )
 
   useEffect(() => {
     latestSessionRef.current = session
@@ -93,6 +104,11 @@ export default function ChatScreen({
         if (active) {
           setSession(result.session)
           setMessages(result.messages)
+          setReflectionDrafts(
+            Object.fromEntries(
+              result.session.reflection_hooks.map((hook) => [hook.hook_id, hook.response_text ?? ""]),
+            ),
+          )
         }
       } catch (error) {
         console.error("Failed to load session", error)
@@ -166,6 +182,20 @@ export default function ChatScreen({
       focusComposerIfAllowed(true)
     }
   }, [booting, deleting, session, sessionId])
+
+  useEffect(() => {
+    if (session === null) {
+      setReflectionDrafts({})
+      return
+    }
+    setReflectionDrafts((current) => {
+      const next: Record<string, string> = {}
+      for (const hook of session.reflection_hooks) {
+        next[hook.hook_id] = current[hook.hook_id] ?? hook.response_text ?? ""
+      }
+      return next
+    })
+  }, [session])
 
   useEffect(() => {
     const sessionIdAtMount = sessionId
@@ -248,8 +278,108 @@ export default function ChatScreen({
     }
   }
 
+  async function handleBeginCompletion() {
+    if (session === null) {
+      return
+    }
+    setInteractionError(null)
+    setLoading(true)
+    try {
+      const result = await sessionApi.beginCompletion(courseId, lessonId, lessonVersion, session.session_id)
+      setSession(result.session)
+      dispatchSessionChanged(courseId, lessonId, lessonVersion, {
+        type: "upsert",
+        session: result.session,
+      })
+    } catch (error) {
+      console.error("Failed to begin completion", error)
+      setInteractionError("Could not start completion right now.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleResumeWork() {
+    if (session === null) {
+      return
+    }
+    setInteractionError(null)
+    setLoading(true)
+    try {
+      const result = await sessionApi.resumeAfterCompletion(courseId, lessonId, lessonVersion, session.session_id)
+      setSession(result.session)
+      dispatchSessionChanged(courseId, lessonId, lessonVersion, {
+        type: "upsert",
+        session: result.session,
+      })
+      focusComposerIfAllowed(true)
+    } catch (error) {
+      console.error("Failed to resume work", error)
+      setInteractionError("Could not return this session to work mode.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleSaveReflection(hook: SessionReflectionHook) {
+    if (session === null) {
+      return
+    }
+    const responseText = reflectionDrafts[hook.hook_id] ?? ""
+    setInteractionError(null)
+    setLoading(true)
+    try {
+      const result = await sessionApi.saveReflectionResponse(
+        courseId,
+        lessonId,
+        lessonVersion,
+        session.session_id,
+        hook.hook_id,
+        responseText,
+      )
+      setSession(result.session)
+      dispatchSessionChanged(courseId, lessonId, lessonVersion, {
+        type: "upsert",
+        session: result.session,
+      })
+    } catch (error) {
+      console.error("Failed to save reflection", error)
+      setInteractionError("Could not save that reflection response.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleTurnIn() {
+    if (session === null) {
+      return
+    }
+    setInteractionError(null)
+    setLoading(true)
+    try {
+      const result = await sessionApi.turnInSession(courseId, lessonId, lessonVersion, session.session_id)
+      setSession(result.session)
+      dispatchSessionChanged(courseId, lessonId, lessonVersion, {
+        type: "upsert",
+        session: result.session,
+      })
+    } catch (error) {
+      console.error("Failed to turn in session", error)
+      setInteractionError("Could not turn this session in yet.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function sendMessage() {
-    if (session === null || input.trim() === "" || loading || session.is_active === false) {
+    if (
+      session === null ||
+      input.trim() === "" ||
+      loading ||
+      session.is_active === false ||
+      session.is_finalized ||
+      session.is_completion_started
+    ) {
       return
     }
 
@@ -370,7 +500,15 @@ export default function ChatScreen({
                 </div>
                 <div>
                   <dt>Status</dt>
-                  <dd>{session.is_active ? "Active" : "Closed"}</dd>
+                  <dd>
+                    {session.is_finalized
+                      ? "Turned in"
+                      : session.is_completion_started
+                        ? "Completion in progress"
+                        : session.is_active
+                          ? "Active"
+                          : "Closed"}
+                  </dd>
                 </div>
               </dl>
               <button
@@ -385,11 +523,51 @@ export default function ChatScreen({
         </header>
 
         <section className="conversation-stage__frame" aria-label="Conversation transcript">
+          <section className="portal-card">
+            <header className="portal-card__header">
+              <h2>Completion</h2>
+            </header>
+            <p className="portal-note">
+              {session.is_finalized
+                ? "This session has been finalized and turned in."
+                : session.is_completion_started
+                  ? "Completion mode is active. Finish any required reflections, then turn the session in."
+                  : session.is_active
+                    ? "When your work is ready for reflection, move this session into completion mode."
+                    : "Chat is closed, but you can still complete reflections and turn the session in."}
+            </p>
+            <div className="portal-inline-actions">
+              {!session.is_finalized && !session.is_completion_started ? (
+                <button className="ghost-button" type="button" onClick={() => void handleBeginCompletion()} disabled={loading || deleting}>
+                  Complete work
+                </button>
+              ) : null}
+              {!session.is_finalized && session.is_completion_started && session.is_active ? (
+                <button className="ghost-button" type="button" onClick={() => void handleResumeWork()} disabled={loading || deleting}>
+                  Keep working
+                </button>
+              ) : null}
+              {!session.is_finalized && session.is_completion_started ? (
+                <button className="primary-button" type="button" onClick={() => void handleTurnIn()} disabled={loading || deleting || !allTriggeredReflectionsAnswered}>
+                  Turn in
+                </button>
+              ) : null}
+            </div>
+          </section>
+
           <ol ref={transcriptRef} className="transcript transcript-list" aria-label="Messages">
-            {session.is_active === false ? (
+            {session.is_active === false && session.is_finalized === false ? (
               <li>
                 <p className="empty-panel">
-                  This session is closed. Review it here or start a new one from the left rail.
+                  Chat is closed for this session. You can still complete reflections and turn in your work.
+                </p>
+              </li>
+            ) : null}
+
+            {session.is_finalized ? (
+              <li>
+                <p className="empty-panel">
+                  This session has been turned in and locked.
                 </p>
               </li>
             ) : null}
@@ -415,6 +593,44 @@ export default function ChatScreen({
                     <span className="transcript-entry__role">{message.role}</span>
                   </header>
                   <p className="message-body">{message.content}</p>
+                </article>
+              </li>
+            ))}
+
+            {triggeredReflectionHooks.map((hook) => (
+              <li key={`reflection:${hook.hook_id}`}>
+                <article className="transcript-entry transcript-entry--system transcript-entry--reflection">
+                  <header className="transcript-entry__header">
+                    <span className="transcript-entry__role">
+                      Reflection prompt
+                    </span>
+                  </header>
+                  <h3 className="transcript-entry__title">
+                    {hook.phase === "mid" ? "Mid-session reflection" : "Post-completion reflection"}
+                  </h3>
+                  <p className="message-body">{hook.prompt}</p>
+                  <label className="composer-form__field transcript-entry__response">
+                    <span className="sr-only">Reflection response</span>
+                    <textarea
+                      value={reflectionDrafts[hook.hook_id] ?? ""}
+                      onChange={(event) =>
+                        setReflectionDrafts((current) => ({
+                          ...current,
+                          [hook.hook_id]: event.target.value,
+                        }))
+                      }
+                      disabled={loading || session.is_finalized}
+                      rows={3}
+                      placeholder="Write your reflection response here."
+                    />
+                  </label>
+                  {!session.is_finalized ? (
+                    <div className="portal-inline-actions">
+                      <button className="ghost-button" type="button" onClick={() => void handleSaveReflection(hook)} disabled={loading}>
+                        Save reflection
+                      </button>
+                    </div>
+                  ) : null}
                 </article>
               </li>
             ))}
@@ -465,7 +681,7 @@ export default function ChatScreen({
                   }
                 }}
                 placeholder="Ask a question, test a prompt, or reflect on the lesson."
-                disabled={deleting || session.is_active === false}
+                disabled={deleting || session.is_active === false || session.is_finalized || session.is_completion_started}
                 rows={1}
               />
             </label>
@@ -476,7 +692,7 @@ export default function ChatScreen({
               onMouseDown={(event) => {
                 event.preventDefault()
               }}
-              disabled={loading || deleting || session.is_active === false || input.trim() === ""}
+              disabled={loading || deleting || session.is_active === false || session.is_finalized || session.is_completion_started || input.trim() === ""}
             >
               {loading ? "Sending..." : "Send"}
             </button>

@@ -23,9 +23,18 @@ function cloneLessonDocument(document: LessonDocument): LessonDocument {
     },
     reflection: {
       ...document.reflection,
-      reflection_prompts: [...document.reflection.reflection_prompts],
-      attached_metadata: document.reflection.attached_metadata ? { ...document.reflection.attached_metadata } : undefined,
+      hooks: document.reflection.hooks.map((hook) => ({ ...hook })),
     },
+  }
+}
+
+function createReflectionHook(orderIndex: number) {
+  return {
+    hook_id: crypto.randomUUID(),
+    prompt: "",
+    phase: "post" as const,
+    order_index: orderIndex,
+    carry_to_post: false,
   }
 }
 
@@ -66,10 +75,8 @@ export function createDefaultLessonDraft(courseId?: string): LessonDocument {
       allowed_actions: [],
     },
     reflection: {
-      reflection_prompts: [""],
-      reflection_timing: "post",
+      hooks: [createReflectionHook(0)],
       logging_policy: "default",
-      attached_metadata: {},
     },
   }
 }
@@ -120,4 +127,21 @@ export function textToJsonObject(value: string): Record<string, unknown> {
 
 export function serializeLessonDraft(document: LessonDocument): string {
   return JSON.stringify(document, null, 2)
+}
+
+export function renumberReflectionHooks(document: LessonDocument): LessonDocument {
+  return {
+    ...document,
+    reflection: {
+      ...document.reflection,
+      hooks: document.reflection.hooks.map((hook, index) => ({
+        ...hook,
+        order_index: index,
+      })),
+    },
+  }
+}
+
+export function newReflectionHook(orderIndex: number) {
+  return createReflectionHook(orderIndex)
 }

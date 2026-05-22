@@ -15,6 +15,27 @@ export interface Session {
   turn_count: number
   max_turns: number
   is_active: boolean
+  is_completion_started: boolean
+  completed_at?: string | null
+  is_finalized: boolean
+  turned_in_at?: string | null
+  logging_policy: string
+  reflection_hooks: SessionReflectionHook[]
+}
+
+export interface SessionReflectionHook {
+  hook_id: string
+  prompt: string
+  phase: "mid" | "post"
+  order_index: number
+  trigger_turn?: number | null
+  carry_to_post: boolean
+  carried_to_post: boolean
+  triggered_at?: string | null
+  trigger_source?: "mid_turn" | "soft_complete" | "carry_to_post" | null
+  response_text?: string | null
+  first_answered_at?: string | null
+  last_updated_at?: string | null
 }
 
 export interface Course {
@@ -83,10 +104,17 @@ export interface LessonConstraints {
 }
 
 export interface LessonReflection {
-  reflection_prompts: string[]
-  reflection_timing?: string | null
+  hooks: LessonReflectionHook[]
   logging_policy?: string | null
-  attached_metadata?: Record<string, unknown> | null
+}
+
+export interface LessonReflectionHook {
+  hook_id: string
+  prompt: string
+  phase: "mid" | "post"
+  order_index: number
+  trigger_turn?: number | null
+  carry_to_post: boolean
 }
 
 export interface LessonDocument {
@@ -114,6 +142,10 @@ export interface DeleteSessionResult {
 
 export interface SendMessageResult {
   assistantMessage: Message
+  session: Session
+}
+
+export interface UpdateSessionResult {
   session: Session
 }
 

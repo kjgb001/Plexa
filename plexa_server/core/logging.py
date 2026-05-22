@@ -19,11 +19,19 @@ def build_session_log_payload(
     Returns:
         dict: JSON-serializable session log payload.
     """
+    session_summary = session.model_dump(
+        mode="json",
+        exclude={"messages", "reflection_hooks"},
+    )
     payload = {
         "schema_version": "1",
         "logged_at": datetime.now(UTC).isoformat(),
-        "session": session.model_dump(mode="json"),
+        "logging_policy": session.logging_policy,
+        "session": session_summary,
     }
-    if inference_config is not None:
+    if session.logging_policy == "default":
+        payload["transcript"] = [message.model_dump(mode="json") for message in session.messages]
+        payload["reflections"] = [hook.model_dump(mode="json") for hook in session.reflection_hooks]
+    if session.logging_policy == "default" and inference_config is not None:
         payload["inference_config"] = inference_config.model_dump(mode="json")
     return payload

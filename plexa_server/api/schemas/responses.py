@@ -4,6 +4,7 @@ from datetime import datetime
 from plexa_server.models.session import Session
 from plexa_server.models.message import Message
 from plexa_server.models.lesson import Lesson
+from plexa_server.models.session import SessionReflectionHook
 
 
 class SessionResponse(BaseModel):
@@ -20,6 +21,12 @@ class SessionResponse(BaseModel):
     is_active: bool
     turn_count: int
     max_turns: int
+    is_completion_started: bool
+    completed_at: datetime | None
+    is_finalized: bool
+    turned_in_at: datetime | None
+    logging_policy: str
+    reflection_hooks: List[SessionReflectionHook]
 
     @classmethod
     def from_session(cls, session: Session):
@@ -43,6 +50,12 @@ class SessionResponse(BaseModel):
             is_active=session.is_active,
             turn_count=session.turn_count,
             max_turns=session.max_turns,
+            is_completion_started=session.is_completion_started,
+            completed_at=session.completed_at,
+            is_finalized=session.is_finalized,
+            turned_in_at=session.turned_in_at,
+            logging_policy=session.logging_policy,
+            reflection_hooks=session.reflection_hooks,
         )
 
 

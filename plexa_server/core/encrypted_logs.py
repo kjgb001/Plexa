@@ -72,6 +72,10 @@ class EncryptedLogService:
             inference_config: Frozen inference config associated with the session.
             event_type: Lifecycle event that produced the current snapshot.
         """
+        if session.logging_policy == "disabled":
+            await self._artifact_storage.delete_encrypted_log(session.session_id)
+            return
+
         course = await self._course_storage.get_course(session.course_id)
         if course is None:
             raise ValueError(f"Course {session.course_id} does not exist.")

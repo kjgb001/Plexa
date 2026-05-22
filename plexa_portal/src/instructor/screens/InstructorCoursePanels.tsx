@@ -138,6 +138,36 @@ export function InstructorLogsPanel({
     [lessonFilter, logs, userFilter],
   )
 
+  function renderStructuredLogPayload(payload: Record<string, unknown>) {
+    const transcript = Array.isArray(payload.transcript) ? payload.transcript : null
+    const reflections = Array.isArray(payload.reflections) ? payload.reflections : null
+
+    if (transcript === null && reflections === null) {
+      return <pre>{JSON.stringify(payload, null, 2)}</pre>
+    }
+
+    return (
+      <div className="portal-list">
+        <div className="portal-list__item portal-list__item--stack">
+          <span className="portal-list__title">Session summary</span>
+          <pre>{JSON.stringify(payload.session ?? {}, null, 2)}</pre>
+        </div>
+        {transcript ? (
+          <div className="portal-list__item portal-list__item--stack">
+            <span className="portal-list__title">Transcript</span>
+            <pre>{JSON.stringify(transcript, null, 2)}</pre>
+          </div>
+        ) : null}
+        {reflections ? (
+          <div className="portal-list__item portal-list__item--stack">
+            <span className="portal-list__title">Reflections</span>
+            <pre>{JSON.stringify(reflections, null, 2)}</pre>
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
   return (
     <section className="portal-grid portal-grid--wide">
       <article className="portal-card portal-card--span-2">
@@ -166,7 +196,7 @@ export function InstructorLogsPanel({
           </div>
           <div className="portal-log-preview">
             {selectedLog ? (
-              <pre>{JSON.stringify(selectedLog, null, 2)}</pre>
+              renderStructuredLogPayload(selectedLog)
             ) : (
               <p className="empty-panel">Select a log to inspect its decrypted session payload.</p>
             )}
