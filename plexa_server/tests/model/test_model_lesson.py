@@ -40,3 +40,21 @@ def test_missing_required_field_fails():
         err["loc"] == ("intent", "learning_objective")
         for err in errors
     )
+
+
+def test_invalid_curated_enum_fields_fail():
+    broken_payload = make_valid_lesson_payload()
+    broken_payload["intent"] = broken_payload["intent"].copy()
+    broken_payload["reflection"] = broken_payload["reflection"].copy()
+    broken_payload["intent"]["difficulty"] = "open"
+    broken_payload["reflection"]["reflection_timing"] = "later"
+    broken_payload["reflection"]["logging_policy"] = "full"
+
+    with pytest.raises(ValidationError) as exc_info:
+        Lesson.model_validate(broken_payload)
+
+    errors = exc_info.value.errors()
+
+    assert any(err["loc"] == ("intent", "difficulty") for err in errors)
+    assert any(err["loc"] == ("reflection", "reflection_timing") for err in errors)
+    assert any(err["loc"] == ("reflection", "logging_policy") for err in errors)

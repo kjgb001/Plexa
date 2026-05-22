@@ -111,7 +111,7 @@ def valid_lesson():
             "profile": "default",
         },
         "constraints": {
-            "input_mode": "freeform",
+            "input_mode": "text",
             "turn_limit": 5,
         },
         "reflection": {

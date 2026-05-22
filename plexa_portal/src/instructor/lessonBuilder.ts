@@ -57,17 +57,13 @@ export function createDefaultLessonDraft(courseId?: string): LessonDocument {
       parameters: {
         temperature: 0.2,
         top_p: 1,
-      },
-      capabilities: {
-        tools_enabled: false,
-        browsing_enabled: false,
+        max_tokens: 800,
       },
     },
     constraints: {
-      input_mode: "free",
+      input_mode: "text",
       turn_limit: null,
       allowed_actions: [],
-      termination_condition: "",
     },
     reflection: {
       reflection_prompts: [""],

@@ -1477,6 +1477,25 @@ button {
   grid-column: span 2;
 }
 
+.portal-advanced {
+  display: grid;
+  gap: 0.9rem;
+  padding-top: 0.35rem;
+}
+
+.portal-advanced summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.portal-advanced__grid {
+  padding-top: 0.2rem;
+}
+
 .portal-check-row {
   display: flex;
   flex-wrap: wrap;

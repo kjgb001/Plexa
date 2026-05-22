@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
 from pydantic import AliasChoices, BaseModel, Field, model_validator
 from uuid import uuid4
@@ -28,7 +28,7 @@ class LessonIntent(BaseModel):
     learning_objective: str
     behavioral_focus: str
     discipline: Optional[List[str]] = None
-    difficulty: Optional[str] = None
+    difficulty: Optional[Literal["introductory", "intermediate", "advanced"]] = None
     prerequisites: Optional[List[str]] = None
     approximate_time: Optional[str] = None
 
@@ -62,7 +62,7 @@ class LessonExecution(BaseModel):
 class LessonConstraints(BaseModel):
     """Interaction rules that bound a lesson session."""
 
-    input_mode: str
+    input_mode: str = "text"
     turn_limit: Optional[int] = None
     allowed_actions: Optional[List[str]] = None
     termination_condition: Optional[str] = None
@@ -74,8 +74,8 @@ class LessonReflection(BaseModel):
     """Post-lesson reflection prompts and logging metadata."""
 
     reflection_prompts: List[str]
-    reflection_timing: Optional[str] = None
-    logging_policy: Optional[str] = None
+    reflection_timing: Optional[Literal["post", "mid", "mixed"]] = None
+    logging_policy: Optional[Literal["default", "metadata_only", "disabled"]] = None
     attached_metadata: Optional[Dict[str, Any]] = None
 
 
