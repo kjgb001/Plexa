@@ -1,7 +1,9 @@
 from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
 
+from plexa_server.inference.base import InferenceConfig
 from plexa_server.inference.routing import InferenceRouter
+from plexa_server.runtime import get_app_environment
 from plexa_server.storage.storage_interface import ArtifactStorage, SessionStorage
 
 
@@ -65,12 +67,56 @@ def get_health_router(
                 content={
                     "status": "not_ready",
                     "dependencies": dependencies,
+                    "inference_backends": inference_statuses,
                 },
             )
 
         return {
             "status": "ready",
             "dependencies": dependencies,
+            "inference_backends": inference_statuses,
+        }
+
+    @router.get("/debug/inference")
+    async def debug_inference():
+        """Report active inference routing in non-production environments."""
+        if get_app_environment() == "production":
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content={"detail": "Not found"},
+            )
+
+        profiles = {
+            name: {
+                "backend_id": profile.backend_id,
+                "model": profile.model,
+            }
+            for name, profile in inference_router.registry.list_profiles().items()
+        }
+        backends = {
+            backend_id: backend.name
+            for backend_id, backend in inference_router.registry.list_backends().items()
+        }
+        resolved_examples = {}
+        for profile_name in sorted(set(profiles) | {"default", "fast", "reasoning"}):
+            try:
+                resolved = inference_router.resolve(InferenceConfig(profile=profile_name))
+                resolved_examples[profile_name] = {
+                    "backend_id": resolved.backend_id,
+                    "backend_name": resolved.backend_name,
+                    "model": resolved.model,
+                }
+            except Exception as exc:
+                resolved_examples[profile_name] = {
+                    "error": str(exc),
+                }
+
+        return {
+            "environment": get_app_environment(),
+            "default_backend_id": inference_router.default_backend_id,
+            "backends": backends,
+            "profiles": profiles,
+            "resolved_examples": resolved_examples,
         }
 
     return router

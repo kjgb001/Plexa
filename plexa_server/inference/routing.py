@@ -71,6 +71,11 @@ class InferenceRouter:
         """Expose the underlying registry for read-only consumers."""
         return self._registry
 
+    @property
+    def default_backend_id(self) -> str | None:
+        """Return the fallback backend id used for unresolved profiles."""
+        return self._default_backend_id
+
     def resolve(self, config: InferenceConfig) -> ResolvedInferenceConfig:
         """Resolve a frozen lesson/session config into concrete backend settings."""
         profile_name = config.profile.strip()

@@ -6,6 +6,7 @@ from plexa_server.core.sessions import (
     TurnLimitExceededError,
     SessionCompletionError,
 )
+from plexa_server.runtime import get_app_environment
 from plexa_server.models.session import Session
 from plexa_server.inference.base import InferenceError
 from plexa_server.api.schemas.requests import SendMessageRequest, ReflectionResponseRequest
@@ -267,8 +268,11 @@ def get_sessions_router(
         except TurnLimitExceededError:
             raise HTTPException(status_code=409, detail="Turn limit exceeded")
 
-        except InferenceError:
-            raise HTTPException(status_code=502, detail="Inference failure")
+        except InferenceError as exc:
+            detail = "Inference failure"
+            if get_app_environment() != "production":
+                detail = f"Inference failure: {exc}"
+            raise HTTPException(status_code=502, detail=detail)
 
 
     # Get Session

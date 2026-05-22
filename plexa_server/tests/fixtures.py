@@ -2,11 +2,96 @@ from plexa_server.models.lesson import Lesson
 
 
 SEEDED_LESSON_SPECS = {
-    "default": {"version": "default", "profile": "default"},
-    "The Danger of Hallucinations": {"version": "0.1.0", "profile": "reasoning"},
-    "The Power of Prompt Engineering": {"version": "0.3.0", "profile": "default"},
-    "Managing Context Decay": {"version": "0.2.0", "profile": "reasoning"},
-    "Context Windows and Tradeoffs": {"version": "0.1.0", "profile": "fast"},
+    "default": {
+        "version": "default",
+        "profile": "default",
+        "turn_limit": 3,
+        "reflection": {
+            "hooks": [],
+            "logging_policy": "default",
+        },
+    },
+    "The Danger of Hallucinations": {
+        "version": "0.1.0",
+        "profile": "reasoning",
+        "turn_limit": 3,
+        "reflection": {
+            "hooks": [
+                {
+                    "hook_id": "hallucination-mid-check",
+                    "prompt": "Pause and identify where the model showed uncertainty or overconfidence.",
+                    "phase": "mid",
+                    "order_index": 0,
+                    "trigger_turn": 1,
+                    "carry_to_post": False,
+                },
+                {
+                    "hook_id": "hallucination-post-summary",
+                    "prompt": "Summarize the strongest hallucination risk you observed.",
+                    "phase": "post",
+                    "order_index": 1,
+                },
+            ],
+            "logging_policy": "default",
+        },
+    },
+    "The Power of Prompt Engineering": {
+        "version": "0.3.0",
+        "profile": "default",
+        "turn_limit": 5,
+        "reflection": {
+            "hooks": [
+                {
+                    "hook_id": "prompt-halfway-check",
+                    "prompt": "At the midpoint, describe how your prompt changed the answer quality.",
+                    "phase": "mid",
+                    "order_index": 0,
+                    "carry_to_post": False,
+                },
+            ],
+            "logging_policy": "default",
+        },
+    },
+    "Managing Context Decay": {
+        "version": "0.2.0",
+        "profile": "reasoning",
+        "turn_limit": 4,
+        "reflection": {
+            "hooks": [
+                {
+                    "hook_id": "context-carry-forward",
+                    "prompt": "If context degraded, explain what information should be restored before continuing.",
+                    "phase": "mid",
+                    "order_index": 0,
+                    "trigger_turn": 4,
+                    "carry_to_post": True,
+                },
+                {
+                    "hook_id": "context-post-review",
+                    "prompt": "Review how context management affected the final response.",
+                    "phase": "post",
+                    "order_index": 1,
+                },
+            ],
+            "logging_policy": "default",
+        },
+    },
+    "Context Windows and Tradeoffs": {
+        "version": "0.1.0",
+        "profile": "fast",
+        "turn_limit": 3,
+        "reflection": {
+            "hooks": [
+                {
+                    "hook_id": "context-window-post",
+                    "prompt": "What tradeoff did you see between concise context and useful context?",
+                    "phase": "post",
+                    "order_index": 0,
+                },
+            ],
+            "logging_policy": "metadata_only",
+        },
+    },
     "Prompt Engineering for Data Viz": {"version": "0.2.0", "profile": "fast"},
     "LLM Assisted Data Evaluation": {"version": "0.4.0", "profile": "reasoning"},
 }
@@ -199,14 +284,16 @@ def make_valid_lesson_payload() -> Lesson:
 def make_seeded_lesson_payload(lesson_id: str, lesson_version: str) -> dict:
     """Return a seeded lesson payload for the supplied lesson identifier."""
     payload = valid_lesson()
-    if lesson_id != "default":
-        payload["identity"]["lesson_id"] = lesson_id
-        payload["identity"]["title"] = lesson_id
-    if lesson_version != "default":
-        payload["identity"]["version"] = lesson_version
+    spec = SEEDED_LESSON_SPECS.get(lesson_id, {"profile": "default"})
+    payload["identity"]["lesson_id"] = lesson_id
+    payload["identity"]["title"] = (
+        "Default Reflection-Free Lesson" if lesson_id == "default" else lesson_id
+    )
+    payload["identity"]["version"] = lesson_version
 
-    payload["execution"]["profile"] = SEEDED_LESSON_SPECS.get(
-        lesson_id,
-        {"profile": "default"},
-    )["profile"]
+    payload["execution"]["profile"] = spec["profile"]
+    if "turn_limit" in spec:
+        payload["constraints"]["turn_limit"] = spec["turn_limit"]
+    if "reflection" in spec:
+        payload["reflection"] = spec["reflection"]
     return payload

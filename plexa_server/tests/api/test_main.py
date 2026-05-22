@@ -54,8 +54,28 @@ def test_create_inference_router_defaults_to_stub_fallback(monkeypatch):
     assert router.resolve(InferenceConfig(profile="anything")).backend_id == "stub"
 
 
+def test_development_stub_backend_overrides_stale_multi_backend_settings(monkeypatch):
+    _disable_env_file_loading(monkeypatch)
+    monkeypatch.setenv("PLEXA_ENV", "development")
+    monkeypatch.setenv("PLEXA_INFERENCE_BACKEND", "stub")
+    monkeypatch.setenv(
+        "PLEXA_INFERENCE_BACKENDS",
+        '{"local-real":{"type":"openai-compatible","base_url":"http://localhost:11434/v1"}}',
+    )
+    monkeypatch.setenv(
+        "PLEXA_INFERENCE_PROFILES",
+        '{"default":{"backend_id":"local-real","model":"llama3.1"}}',
+    )
+
+    router = main.create_inference_router()
+
+    assert router.resolve(InferenceConfig(profile="default")).backend_id == "stub"
+    assert router.resolve(InferenceConfig(profile="reasoning")).model == "reasoning"
+
+
 def test_create_inference_registry_builds_multiple_backends(monkeypatch):
     _disable_env_file_loading(monkeypatch)
+    monkeypatch.delenv("PLEXA_INFERENCE_BACKEND", raising=False)
     monkeypatch.setenv(
         "PLEXA_INFERENCE_BACKENDS",
         '{"stub-a":{"type":"stub"},"stub-b":{"type":"stub"}}',

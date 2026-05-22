@@ -98,7 +98,18 @@ async def seed_lesson(
 async def seed_target(target: str) -> None:
     """Seed the requested storage target with example lessons and courses."""
     artifact_storage, course_storage = _build_storage(target)
+    await seed_storages(artifact_storage, course_storage)
 
+
+async def seed_storages(
+    artifact_storage: ArtifactStorage,
+    course_storage: CourseStorage,
+) -> None:
+    """Seed the supplied storages with example lessons and courses.
+
+    This keeps tests and local tooling containerized around explicit storage
+    instances instead of forcing the CLI's environment-backed target selection.
+    """
     for course_spec in SEEDED_COURSE_SPECS:
         lessons: list[Lesson] = []
         for lesson_id in course_spec["lesson_ids"]:

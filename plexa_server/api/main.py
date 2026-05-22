@@ -58,6 +58,12 @@ def create_inference_registry() -> InferenceRegistry:
 
     backend_specs = _load_json_env("PLEXA_INFERENCE_BACKENDS")
     profile_specs = _load_json_env("PLEXA_INFERENCE_PROFILES")
+    backend_name = os.getenv("PLEXA_INFERENCE_BACKEND", "").strip().lower()
+    app_env = os.getenv("PLEXA_ENV", "development").strip().lower()
+
+    if backend_name == "stub" and app_env not in {"prod", "production"}:
+        registry.register_backend("stub", StubInference())
+        return registry
 
     if backend_specs is not None:
         if not isinstance(backend_specs, dict):
@@ -90,10 +96,10 @@ def create_inference_registry() -> InferenceRegistry:
                     seed=spec.get("seed"),
                     extra=spec.get("extra", {}),
                 )
-            )
+        )
         return registry
 
-    backend_name = os.getenv("PLEXA_INFERENCE_BACKEND", "stub").strip().lower()
+    backend_name = backend_name or "stub"
     if backend_name == "stub":
         registry.register_backend("stub", StubInference())
         return registry
@@ -142,7 +148,15 @@ def create_inference_router() -> InferenceRouter:
 
     registry = create_inference_registry()
     backend_specs = _load_json_env("PLEXA_INFERENCE_BACKENDS")
-    if backend_specs is None and os.getenv("PLEXA_INFERENCE_BACKEND", "stub").strip().lower() == "stub":
+    backend_name = os.getenv("PLEXA_INFERENCE_BACKEND", "stub").strip().lower()
+    app_env = os.getenv("PLEXA_ENV", "development").strip().lower()
+    if (
+        backend_name == "stub"
+        and app_env not in {"prod", "production"}
+        and "stub" in registry.list_backends()
+    ):
+        return InferenceRouter(registry=registry, default_backend_id="stub")
+    if backend_specs is None and backend_name == "stub":
         return InferenceRouter(registry=registry, default_backend_id="stub")
     return InferenceRouter(registry=registry)
 
