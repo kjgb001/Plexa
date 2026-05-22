@@ -151,8 +151,8 @@ def test_init_dev_database_bootstraps_env_then_db(tmp_path, monkeypatch):
     ):
         monkeypatch.delenv(key, raising=False)
 
-    async def fake_init_database(config):
-        call_order.append("db")
+    async def fake_init_database(config, reset_schema=False):
+        call_order.append(f"db:reset={reset_schema}")
 
     async def fake_import_filesystem_to_postgres(data_path, target):
         call_order.append(f"import:{target}")
@@ -165,7 +165,7 @@ def test_init_dev_database_bootstraps_env_then_db(tmp_path, monkeypatch):
 
     asyncio.run(init_dev_database(import_filesystem=True, env_path=env_path))
 
-    assert call_order == ["db", "import:dev"]
+    assert call_order == ["db:reset=False", "import:dev"]
     env_text = env_path.read_text(encoding="utf-8")
     assert "PLEXA_DATABASE_URL=" in env_text
     assert "PLEXA_INFERENCE_BACKENDS=" in env_text
@@ -193,8 +193,8 @@ def test_init_test_database_bootstraps_env_then_db(tmp_path, monkeypatch):
     ):
         monkeypatch.delenv(key, raising=False)
 
-    async def fake_init_database(config):
-        call_order.append("db")
+    async def fake_init_database(config, reset_schema=False):
+        call_order.append(f"db:reset={reset_schema}")
 
     async def fake_import_filesystem_to_postgres(data_path, target):
         call_order.append(f"import:{target}")
@@ -207,7 +207,7 @@ def test_init_test_database_bootstraps_env_then_db(tmp_path, monkeypatch):
 
     asyncio.run(init_test_database(import_filesystem=False, env_path=env_path))
 
-    assert call_order == ["db"]
+    assert call_order == ["db:reset=True"]
     env_text = env_path.read_text(encoding="utf-8")
     assert "PLEXA_TEST_DATABASE_URL=" in env_text
     assert "PLEXA_INFERENCE_BACKENDS=" in env_text

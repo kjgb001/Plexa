@@ -238,7 +238,7 @@ async def init_test_database(import_filesystem: bool = False, env_path: Path | N
     """Initialize the dedicated test database and optionally import fixture data."""
     ensure_bootstrap_environment(env_path=env_path)
     config = get_test_database_config()
-    await init_database(config)
+    await init_database(config, reset_schema=True)
     if import_filesystem:
         await import_filesystem_to_postgres(Path(__file__).resolve().parent / "data", target="test")
 

@@ -109,15 +109,35 @@ async def run_migrations(target: DatabaseConfig) -> None:
     await asyncio.to_thread(_run_migrations_sync, target)
 
 
-async def init_database(target: DatabaseConfig) -> None:
+async def reset_database_schema(target: DatabaseConfig) -> None:
+    """Drop and recreate the public schema in an existing target database.
+
+    This is intended for isolated test databases where repeatable bootstrap is
+    more important than preserving data. Do not use it for development or
+    production databases.
+    """
+    conn = await asyncpg.connect(_postgres_dsn(target.resolved_async_url()))
+    try:
+        await conn.execute("DROP SCHEMA IF EXISTS public CASCADE")
+        await conn.execute("CREATE SCHEMA public")
+        await conn.execute("GRANT ALL ON SCHEMA public TO PUBLIC")
+    finally:
+        await conn.close()
+
+
+async def init_database(target: DatabaseConfig, reset_schema: bool = False) -> None:
     """Ensure a database exists and migrate it to the latest schema.
 
     Args:
         target: Target database configuration.
+        reset_schema: If true, clear the target database schema before running
+            migrations. Use only for disposable test databases.
     """
     if not target.is_configured:
         raise ValueError("Target database configuration is missing.")
 
     await wait_for_postgres(get_bootstrap_database_config(target))
     await ensure_database_exists(target)
+    if reset_schema:
+        await reset_database_schema(target)
     await run_migrations(target)
