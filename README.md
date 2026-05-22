@@ -38,17 +38,13 @@ plexa/
 ├── conftest.py
 ├── docs/
 ├── plexa_server/
-├── plexa_portal/
-└── plexa_author/
+└── plexa_portal/
 ```
 
 ### Package Overview
 
 - [plexa_server/README.md](plexa_server/README.md)
   The main implemented backend package. It contains the FastAPI server, lesson/session runtime, storage abstractions, PostgreSQL integration, Alembic migrations, bootstrap tooling, and the backend-aware test suite.
-
-- [plexa_author/README.md](plexa_author/README.md)
-  A Python/Tkinter lesson authoring tool for producing structured lesson artifacts offline.
 
 - [plexa_portal/README.md](plexa_portal/README.md)
   The shared web portal package for both student and instructor-facing browser workflows.
@@ -67,9 +63,7 @@ What is implemented in `plexa_server` now:
 
 The server is no longer just a schema experiment or runtime sketch. It has a working persistence layer, migration path, and testable backend selection model.
 
-The portal and authoring sides are not at the same maturity level:
-- `plexa_author` is a concrete utility package
-- `plexa_portal` now has a real student surface and an instructor skeleton, but still needs deeper instructor workflow development
+The portal now has a real student surface and an instructor skeleton, but still needs deeper instructor workflow development.
 
 ## Architectural Direction
 
