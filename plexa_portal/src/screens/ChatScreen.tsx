@@ -76,9 +76,16 @@ export default function ChatScreen({
   const triggeredReflectionKey = triggeredReflectionHooks
     .map((hook) => `${hook.hook_id}:${hook.triggered_at ?? ""}`)
     .join("|")
-  const allTriggeredReflectionsSaved = triggeredReflectionHooks.every(
-    (hook) => Boolean(hook.response_text?.trim()) && collapsedReflectionIds[hook.hook_id] === true,
-  )
+  const savedReflectionHooks = session?.reflection_hooks ?? []
+  const savedMidReflectionHooks = savedReflectionHooks.filter((hook) => hook.phase === "mid")
+  const savedPostReflectionHooks = savedReflectionHooks.filter((hook) => hook.phase !== "mid")
+  const areReflectionHooksSaved = (hooks: SessionReflectionHook[]) =>
+    hooks.every((hook) => Boolean(hook.response_text?.trim()) && collapsedReflectionIds[hook.hook_id] === true)
+  const allMidReflectionHooksSaved = areReflectionHooksSaved(savedMidReflectionHooks)
+  const allLessonReflectionHooksSaved = areReflectionHooksSaved(savedReflectionHooks)
+  const canBeginCompletion = savedPostReflectionHooks.length > 0
+    ? allMidReflectionHooksSaved
+    : allLessonReflectionHooksSaved
   const triggeredMidReflectionHooks = triggeredReflectionHooks.filter((hook) => hook.phase === "mid")
   const triggeredPostReflectionHooks = triggeredReflectionHooks.filter((hook) => hook.phase !== "mid")
   const hasBlockingMidReflection = triggeredMidReflectionHooks.some((hook) => !hook.response_text?.trim())
@@ -322,6 +329,10 @@ export default function ChatScreen({
 
   async function handleBeginCompletion() {
     if (session === null) {
+      return
+    }
+    if (!canBeginCompletion) {
+      setInteractionError("Save all mid-session reflections before completing work.")
       return
     }
     setInteractionError(null)
@@ -696,7 +707,7 @@ export default function ChatScreen({
                   </button>
                 ) : null}
                 {!session.is_finalized && !session.is_completion_started ? (
-                  <button className="ghost-button" type="button" onClick={() => void handleBeginCompletion()} disabled={loading || deleting}>
+                  <button className="ghost-button" type="button" onClick={() => void handleBeginCompletion()} disabled={loading || deleting || !canBeginCompletion}>
                     Complete work
                   </button>
                 ) : null}
@@ -706,7 +717,7 @@ export default function ChatScreen({
                   </button>
                 ) : null}
                 {!session.is_finalized && session.is_completion_started ? (
-                  <button className="primary-button" type="button" onClick={() => void handleTurnIn()} disabled={loading || deleting || !allTriggeredReflectionsSaved}>
+                  <button className="primary-button" type="button" onClick={() => void handleTurnIn()} disabled={loading || deleting || !allLessonReflectionHooksSaved}>
                     Turn in
                   </button>
                 ) : null}
