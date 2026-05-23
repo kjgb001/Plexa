@@ -92,8 +92,110 @@ SEEDED_LESSON_SPECS = {
             "logging_policy": "metadata_only",
         },
     },
-    "Prompt Engineering for Data Viz": {"version": "0.2.0", "profile": "fast"},
-    "LLM Assisted Data Evaluation": {"version": "0.4.0", "profile": "reasoning"},
+    "Prompt Engineering for Data Viz": {
+        "version": "0.2.0",
+        "profile": "fast",
+        "turn_limit": 6,
+        "reflection": {
+            "hooks": [
+                {
+                    "hook_id": "dataviz-prompt-mid-audience",
+                    "prompt": "Pause and describe how your prompt clarified the chart audience.",
+                    "phase": "mid",
+                    "order_index": 0,
+                    "trigger_turn": 1,
+                    "carry_to_post": False,
+                },
+                {
+                    "hook_id": "dataviz-prompt-mid-encoding",
+                    "prompt": "What visual encoding instruction most improved the generated chart plan?",
+                    "phase": "mid",
+                    "order_index": 1,
+                    "trigger_turn": 3,
+                    "carry_to_post": False,
+                },
+                {
+                    "hook_id": "dataviz-prompt-post-specificity",
+                    "prompt": "Which prompt detail had the biggest effect on visualization quality?",
+                    "phase": "post",
+                    "order_index": 2,
+                },
+                {
+                    "hook_id": "dataviz-prompt-post-revision",
+                    "prompt": "What would you revise in your prompt before using it with a new dataset?",
+                    "phase": "post",
+                    "order_index": 3,
+                },
+            ],
+            "logging_policy": "default",
+        },
+    },
+    "LLM Assisted Data Evaluation": {
+        "version": "0.4.0",
+        "profile": "reasoning",
+        "turn_limit": 8,
+        "reflection": {
+            "hooks": [
+                {
+                    "hook_id": "llm-data-mid-claim-check",
+                    "prompt": "Pause and identify one model claim that needs evidence from the data.",
+                    "phase": "mid",
+                    "order_index": 0,
+                    "trigger_turn": 1,
+                    "carry_to_post": False,
+                },
+                {
+                    "hook_id": "llm-data-mid-missing-context",
+                    "prompt": "What dataset context is missing or under-specified in the evaluation so far?",
+                    "phase": "mid",
+                    "order_index": 1,
+                    "trigger_turn": 2,
+                    "carry_to_post": False,
+                },
+                {
+                    "hook_id": "llm-data-mid-bias-check",
+                    "prompt": "Where might the model be over-weighting a pattern that is not actually supported?",
+                    "phase": "mid",
+                    "order_index": 2,
+                    "trigger_turn": 3,
+                    "carry_to_post": False,
+                },
+                {
+                    "hook_id": "llm-data-mid-next-test",
+                    "prompt": "What follow-up test would you ask for before trusting the evaluation?",
+                    "phase": "mid",
+                    "order_index": 3,
+                    "trigger_turn": 4,
+                    "carry_to_post": False,
+                },
+                {
+                    "hook_id": "llm-data-post-evidence",
+                    "prompt": "Which final conclusion was best supported by explicit evidence?",
+                    "phase": "post",
+                    "order_index": 4,
+                },
+                {
+                    "hook_id": "llm-data-post-weakest-link",
+                    "prompt": "What was the weakest part of the model-assisted evaluation?",
+                    "phase": "post",
+                    "order_index": 5,
+                },
+                {
+                    "hook_id": "llm-data-post-human-review",
+                    "prompt": "Where did human review add value beyond the model output?",
+                    "phase": "post",
+                    "order_index": 6,
+                },
+                {
+                    "hook_id": "llm-data-post-next-workflow",
+                    "prompt": "How would you change your workflow for the next model-assisted data task?",
+                    "phase": "post",
+                    "order_index": 7,
+                },
+            ],
+            "logging_policy": "default",
+        },
+    },
 }
 
 SEEDED_COURSE_SPECS = [
