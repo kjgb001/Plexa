@@ -95,6 +95,7 @@ class EncryptedLogService:
             created_at=session.created_at if existing_metadata is None else existing_metadata.created_at,
             updated_at=session.created_at if event_type == "created" and existing_metadata is None else payload["logged_at"],
             closed_at=session.closed_at,
+            turned_in_at=session.turned_in_at,
             turn_count=session.turn_count,
             is_active=session.is_active,
             log_version=1,

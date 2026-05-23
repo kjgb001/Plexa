@@ -309,6 +309,7 @@ class PostgresArtifactStorage(PostgresStorageMixin, ArtifactStorage):
                 record.authorized_instructor_ids = metadata.authorized_instructor_ids
                 record.updated_at = metadata.updated_at
                 record.closed_at = metadata.closed_at
+                record.turned_in_at = metadata.turned_in_at
                 record.turn_count = metadata.turn_count
                 record.is_active = metadata.is_active
                 record.log_version = metadata.log_version
@@ -362,6 +363,7 @@ class PostgresArtifactStorage(PostgresStorageMixin, ArtifactStorage):
                 created_at=record.created_at,
                 updated_at=record.updated_at,
                 closed_at=record.closed_at,
+                turned_in_at=record.turned_in_at,
                 turn_count=record.turn_count,
                 is_active=record.is_active,
                 log_version=record.log_version,
@@ -426,6 +428,7 @@ class PostgresArtifactStorage(PostgresStorageMixin, ArtifactStorage):
                         created_at=record.created_at,
                         updated_at=record.updated_at,
                         closed_at=record.closed_at,
+                        turned_in_at=record.turned_in_at,
                         turn_count=record.turn_count,
                         is_active=record.is_active,
                         log_version=record.log_version,

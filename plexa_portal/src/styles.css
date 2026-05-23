@@ -726,6 +726,12 @@ button {
   border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
 }
 
+.section-chip--strong {
+  border-color: color-mix(in srgb, var(--accent-secondary) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent-secondary) 18%, var(--surface-strong));
+  color: var(--ink);
+}
+
 .app-shell__main {
   min-height: 0;
   min-width: 0;
@@ -2061,6 +2067,95 @@ button {
   display: grid;
   grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.1fr);
   gap: 1rem;
+}
+
+.portal-log-browser {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.portal-log-section {
+  display: grid;
+  gap: 1rem;
+}
+
+.portal-log-section__header h2 {
+  margin: 0;
+  font-size: clamp(1.8rem, 3vw, 2.5rem);
+}
+
+.portal-log-group {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface-elevated) 66%, transparent);
+}
+
+.portal-log-group--nested {
+  background: color-mix(in srgb, var(--surface-strong) 62%, transparent);
+}
+
+.portal-log-group summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.portal-log-group__body {
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 0.2rem;
+}
+
+.portal-log-session-summary {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.portal-log-detail {
+  display: grid;
+  gap: 1rem;
+}
+
+.portal-log-detail__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.portal-log-detail__header h2 {
+  margin: 0;
+  font-size: clamp(1.6rem, 3vw, 2.35rem);
+}
+
+.portal-log-detail__meta {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.portal-log-transcript {
+  min-height: 22rem;
+  max-height: 62vh;
+  overflow: auto;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--accent-soft) 45%, transparent), transparent 28rem),
+    color-mix(in srgb, var(--surface-strong) 72%, transparent);
+}
+
+.portal-card--flat {
+  box-shadow: none;
+  background: color-mix(in srgb, var(--surface-elevated) 54%, transparent);
 }
 
 .portal-log-preview {

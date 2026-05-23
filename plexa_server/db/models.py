@@ -254,6 +254,7 @@ class EncryptedLogRecord(Base):
     authorized_instructor_ids: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    turned_in_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     turn_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     log_version: Mapped[int | None] = mapped_column(Integer, nullable=True)

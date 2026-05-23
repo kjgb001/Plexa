@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { useApis } from "../../api"
 import { ApiError, NotFoundError } from "../../api/errors"
 import type { Course, CourseInstructors, CourseLessonWindow, EncryptedLogMetadata, Lesson } from "../../api/interfaces"
+import { instructorPaths, navigate } from "../../app/router"
 import { InstructorBuilderPanel } from "./InstructorBuilderPanel"
 import {
   InstructorAnalyticsPanel,
@@ -16,9 +17,11 @@ type InstructorMode = "overview" | "lessons" | "builder" | "logs" | "analytics" 
 export function InstructorCourseScreen({
   courseId,
   mode,
+  logSessionId = null,
 }: {
   courseId: string
   mode: InstructorMode
+  logSessionId?: string | null
 }) {
   const { instructorApi } = useApis()
   const [course, setCourse] = useState<Course | null>(null)
@@ -27,7 +30,7 @@ export function InstructorCourseScreen({
   const [pendingRequests, setPendingRequests] = useState<string[]>([])
   const [logs, setLogs] = useState<EncryptedLogMetadata[]>([])
   const [selectedLog, setSelectedLog] = useState<Record<string, unknown> | null>(null)
-  const [selectedLogId, setSelectedLogId] = useState<string | null>(null)
+  const [selectedLogLoading, setSelectedLogLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [addInstructorUserId, setAddInstructorUserId] = useState("")
@@ -75,6 +78,41 @@ export function InstructorCourseScreen({
   useEffect(() => {
     void loadWorkspace()
   }, [courseId, instructorApi])
+
+  useEffect(() => {
+    let active = true
+
+    async function loadSelectedLog() {
+      if (logSessionId === null) {
+        setSelectedLog(null)
+        return
+      }
+
+      setSelectedLog(null)
+      setSelectedLogLoading(true)
+      try {
+        const payload = await instructorApi.getLog(courseId, logSessionId)
+        if (active) {
+          setSelectedLog(payload)
+        }
+      } catch (error) {
+        console.error("Failed to load instructor log detail", error)
+        if (active) {
+          setSelectedLog({ error: "Failed to load log detail." })
+        }
+      } finally {
+        if (active) {
+          setSelectedLogLoading(false)
+        }
+      }
+    }
+
+    void loadSelectedLog()
+
+    return () => {
+      active = false
+    }
+  }, [courseId, instructorApi, logSessionId])
 
   async function handleAddInstructor() {
     if (!addInstructorUserId.trim()) {
@@ -126,9 +164,7 @@ export function InstructorCourseScreen({
   }
 
   async function handleOpenLog(sessionId: string) {
-    setSelectedLogId(sessionId)
-    const payload = await instructorApi.getLog(courseId, sessionId)
-    setSelectedLog(payload)
+    navigate(instructorPaths.logDetail(courseId, sessionId))
   }
 
   async function handleUpdateLessonTimeline(lessonTimeline: CourseLessonWindow[]) {
@@ -206,9 +242,12 @@ export function InstructorCourseScreen({
       {mode === "logs" ? (
         <InstructorLogsPanel
           logs={logs}
+          lessons={lessons}
           selectedLog={selectedLog}
-          selectedLogId={selectedLogId}
+          selectedLogId={logSessionId}
+          selectedLogLoading={selectedLogLoading}
           onOpenLog={handleOpenLog}
+          onBackToLogs={() => navigate(instructorPaths.course(courseId, "logs"))}
         />
       ) : null}
 

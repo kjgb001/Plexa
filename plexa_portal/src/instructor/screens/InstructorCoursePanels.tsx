@@ -11,6 +11,13 @@ function formatTimestamp(value: string | null | undefined): string {
   })
 }
 
+function isLogTurnedIn(log: EncryptedLogMetadata): boolean {
+  if (!("turned_in_at" in log)) {
+    return false
+  }
+  return Boolean((log as { turned_in_at?: string | null }).turned_in_at)
+}
+
 function toDatetimeLocal(value: string | null | undefined): string {
   if (!value) {
     return ""
@@ -362,93 +369,185 @@ export function InstructorLessonsPanel({
 
 export function InstructorLogsPanel({
   logs,
+  lessons,
   selectedLog,
   selectedLogId,
+  selectedLogLoading,
   onOpenLog,
+  onBackToLogs,
 }: {
   logs: EncryptedLogMetadata[]
+  lessons: Lesson[]
   selectedLog: Record<string, unknown> | null
   selectedLogId: string | null
+  selectedLogLoading: boolean
   onOpenLog(sessionId: string): Promise<void>
+  onBackToLogs(): void
 }) {
-  const [lessonFilter, setLessonFilter] = useState("")
-  const [userFilter, setUserFilter] = useState("")
+  const lessonTitles = useMemo(() => {
+    const titles = new Map<string, string>()
+    lessons.forEach((lesson) => {
+      titles.set(`${lesson.lesson_id}:${lesson.version}`, lesson.title)
+    })
+    return titles
+  }, [lessons])
+  const groupedLogs = useMemo(() => {
+    const sortedLogs = [...logs].sort((left, right) => right.last_event_at.localeCompare(left.last_event_at))
+    return Array.from(
+      sortedLogs.reduce<Map<string, Map<string, EncryptedLogMetadata[]>>>((users, log) => {
+        const lessonKey = `${log.lesson_id}:${log.lesson_version}`
+        const userLessons = users.get(log.user_id) ?? new Map<string, EncryptedLogMetadata[]>()
+        userLessons.set(lessonKey, [...(userLessons.get(lessonKey) ?? []), log])
+        users.set(log.user_id, userLessons)
+        return users
+      }, new Map()),
+    )
+  }, [logs])
 
-  const filteredLogs = useMemo(
-    () =>
-      logs.filter((log) => {
-        const lessonMatch = !lessonFilter || log.lesson_id.toLowerCase().includes(lessonFilter.toLowerCase())
-        const userMatch = !userFilter || log.user_id.toLowerCase().includes(userFilter.toLowerCase())
-        return lessonMatch && userMatch
-      }),
-    [lessonFilter, logs, userFilter],
-  )
-
-  function renderStructuredLogPayload(payload: Record<string, unknown>) {
-    const transcript = Array.isArray(payload.transcript) ? payload.transcript : null
-    const reflections = Array.isArray(payload.reflections) ? payload.reflections : null
-
-    if (transcript === null && reflections === null) {
-      return <pre>{JSON.stringify(payload, null, 2)}</pre>
-    }
+  function renderLogDetail(payload: Record<string, unknown>) {
+    const transcript = Array.isArray(payload.transcript) ? payload.transcript : []
+    const reflections = Array.isArray(payload.reflections) ? payload.reflections : []
+    const session = payload.session && typeof payload.session === "object"
+      ? payload.session as Record<string, unknown>
+      : {}
+    const visibleTranscript = transcript.filter((entry): entry is Record<string, unknown> =>
+      entry !== null &&
+      typeof entry === "object" &&
+      "role" in entry &&
+      "content" in entry &&
+      entry.role !== "system",
+    )
 
     return (
-      <div className="portal-list">
-        <div className="portal-list__item portal-list__item--stack">
-          <span className="portal-list__title">Session summary</span>
-          <pre>{JSON.stringify(payload.session ?? {}, null, 2)}</pre>
+      <section className="portal-log-detail">
+        <header className="portal-log-detail__header">
+          <div>
+            <p className="eyebrow">Session Log</p>
+            <h2>{typeof session.title === "string" ? session.title : selectedLogId}</h2>
+            <p className="portal-note">
+              {typeof session.user_id === "string" ? session.user_id : "Unknown user"} · {typeof session.lesson_id === "string" ? session.lesson_id : "Unknown lesson"} · {typeof session.turn_count === "number" ? `${session.turn_count} turns` : "Turn count unavailable"}
+            </p>
+          </div>
+          <button className="ghost-button" onClick={onBackToLogs}>Back to logs</button>
+        </header>
+        <div className="portal-log-detail__meta">
+          <span className={session.turned_in_at ? "section-chip section-chip--strong" : "section-chip"}>
+            {session.turned_in_at ? "Turned in" : "Not turned in"}
+          </span>
+          <span className="section-chip">{session.is_active ? "Active" : "Closed"}</span>
+          <span className="section-chip">Updated {formatTimestamp(typeof session.updated_at === "string" ? session.updated_at : null)}</span>
         </div>
-        {transcript ? (
-          <div className="portal-list__item portal-list__item--stack">
-            <span className="portal-list__title">Transcript</span>
-            <pre>{JSON.stringify(transcript, null, 2)}</pre>
+        <div className="portal-log-transcript">
+          <ol className="transcript transcript-list" aria-label="Logged conversation transcript">
+            {visibleTranscript.map((message, index) => {
+              const role = typeof message.role === "string" ? message.role : "assistant"
+              const content = typeof message.content === "string"
+                ? message.content
+                : JSON.stringify(message.content) ?? String(message.content)
+              return (
+                <li key={`${role}:${index}:${content.slice(0, 24)}`}>
+                  <article className={`transcript-entry transcript-entry--${role}`}>
+                    <header className="transcript-entry__header">
+                      <span className="transcript-entry__role">{role}</span>
+                    </header>
+                    <p className="message-body">{content}</p>
+                  </article>
+                </li>
+              )
+            })}
+            {visibleTranscript.length === 0 ? (
+              <li><p className="empty-panel">No visible transcript messages were stored for this session.</p></li>
+            ) : null}
+          </ol>
+        </div>
+        {reflections.length > 0 ? (
+          <div className="portal-card portal-card--flat">
+            <header className="portal-card__header"><h3>Saved reflections</h3></header>
+            <div className="portal-list">
+              {reflections.map((reflection, index) => {
+                const item = reflection && typeof reflection === "object"
+                  ? reflection as Record<string, unknown>
+                  : {}
+                return (
+                  <div className="portal-list__item" key={`${String(item.hook_id ?? index)}`}>
+                    <span className="portal-list__title">{String(item.prompt ?? item.hook_id ?? "Reflection")}</span>
+                    <span className="portal-list__meta">{String(item.response_text ?? "No response saved")}</span>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         ) : null}
-        {reflections ? (
-          <div className="portal-list__item portal-list__item--stack">
-            <span className="portal-list__title">Reflections</span>
-            <pre>{JSON.stringify(reflections, null, 2)}</pre>
-          </div>
-        ) : null}
-      </div>
+      </section>
+    )
+  }
+
+  if (selectedLogId !== null) {
+    return (
+      <section className="portal-grid portal-grid--wide">
+        <article className="portal-card portal-card--span-2">
+          {selectedLogLoading || selectedLog === null ? (
+            <p className="empty-panel">Loading decrypted session log...</p>
+          ) : (
+            renderLogDetail(selectedLog)
+          )}
+        </article>
+      </section>
     )
   }
 
   return (
-    <section className="portal-grid portal-grid--wide">
-      <article className="portal-card portal-card--span-2">
-        <header className="portal-card__header">
-          <h2>Encrypted session logs</h2>
-        </header>
-        <div className="portal-inline-form">
-          <input value={lessonFilter} onChange={(event) => setLessonFilter(event.target.value)} placeholder="Filter by lesson id" />
-          <input value={userFilter} onChange={(event) => setUserFilter(event.target.value)} placeholder="Filter by user id" />
-        </div>
-        <div className="portal-log-grid">
-          <div className="portal-list">
-            {filteredLogs.map((log) => (
-              <button
-                key={log.instance_id}
-                className={selectedLogId === log.instance_id ? "portal-list__item portal-list__item--active" : "portal-list__item"}
-                onClick={() => void onOpenLog(log.instance_id)}
-              >
-                <span className="portal-list__title">{log.user_id}</span>
-                <span className="portal-list__meta">
-                  {log.lesson_id} · {log.turn_count} turns · {formatTimestamp(log.last_event_at)}
-                </span>
-              </button>
-            ))}
-            {filteredLogs.length === 0 ? <p className="empty-panel">No matching encrypted logs are currently available.</p> : null}
-          </div>
-          <div className="portal-log-preview">
-            {selectedLog ? (
-              renderStructuredLogPayload(selectedLog)
-            ) : (
-              <p className="empty-panel">Select a log to inspect its decrypted session payload.</p>
-            )}
-          </div>
-        </div>
-      </article>
+    <section className="portal-log-section">
+      <header className="portal-log-section__header">
+        <h2>Encrypted session logs</h2>
+      </header>
+      <div className="portal-log-browser">
+        {groupedLogs.map(([userId, lessonMap]) => (
+          <details className="portal-log-group" key={userId} open>
+            <summary>
+              <span>{userId}</span>
+              <span className="section-chip">
+                {Array.from(lessonMap.values()).reduce((sum, entries) => sum + entries.length, 0)} logs
+              </span>
+            </summary>
+            <div className="portal-log-group__body">
+              {Array.from(lessonMap).map(([lessonKey, lessonLogs]) => (
+                <details className="portal-log-group portal-log-group--nested" key={`${userId}:${lessonKey}`}>
+                  <summary>
+                    <span>{lessonTitles.get(lessonKey) ?? lessonKey}</span>
+                    <span className="section-chip">{lessonLogs.length} sessions</span>
+                  </summary>
+                  <div className="portal-list">
+                    {lessonLogs.map((log) => {
+                      const turnedIn = isLogTurnedIn(log)
+                      return (
+                        <button
+                          key={log.instance_id}
+                          className={turnedIn ? "portal-list__item portal-list__item--active portal-list__item--split" : "portal-list__item portal-list__item--split"}
+                          onClick={() => void onOpenLog(log.instance_id)}
+                        >
+                          <span className="portal-log-session-summary">
+                            <span className="portal-list__title">{formatTimestamp(log.last_event_at)}</span>
+                            <span className="portal-list__meta">
+                              {log.turn_count} turns · {log.is_active ? "Active" : "Closed"}
+                            </span>
+                          </span>
+                          <span className={turnedIn ? "section-chip section-chip--strong" : "section-chip"}>
+                            {turnedIn ? "Turned in" : "Review"}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </details>
+              ))}
+            </div>
+          </details>
+        ))}
+        {groupedLogs.length === 0 ? (
+          <p className="empty-panel">No encrypted logs are currently available for this course.</p>
+        ) : null}
+      </div>
     </section>
   )
 }

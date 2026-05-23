@@ -17,7 +17,11 @@ export function InstructorApp({
       onOpenCourse={(courseId) => navigate(instructorPaths.course(courseId, "overview"))}
     />
   ) : (
-    <InstructorCourseScreen courseId={route.courseId} mode={route.mode} />
+    <InstructorCourseScreen
+      courseId={route.courseId}
+      mode={route.kind === "log-detail" ? "logs" : route.mode}
+      logSessionId={route.kind === "log-detail" ? route.sessionId : null}
+    />
   )
 
   return (

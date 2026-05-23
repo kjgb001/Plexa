@@ -97,6 +97,7 @@ class EncryptedLogMetadataResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     closed_at: datetime | None
+    turned_in_at: datetime | None
     turn_count: int
     is_active: bool
     log_version: int

@@ -173,6 +173,7 @@ export interface EncryptedLogMetadata {
   created_at: string
   updated_at: string
   closed_at: string | null
+  turned_in_at?: string | null
   turn_count: number
   is_active: boolean
   log_version: number

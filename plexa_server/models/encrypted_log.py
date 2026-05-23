@@ -23,6 +23,7 @@ class EncryptedLogMetadata(BaseModel):
     created_at: datetime
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     closed_at: datetime | None = None
+    turned_in_at: datetime | None = None
 
     turn_count: int = 0
     is_active: bool = True

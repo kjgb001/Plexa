@@ -38,7 +38,8 @@ export function InstructorShell({
   const [courses, setCourses] = useState<Course[]>([])
   const [coursesLoading, setCoursesLoading] = useState(true)
   const [coursesExpanded, setCoursesExpanded] = useState(false)
-  const selectedCourseId = route.kind === "course" ? route.courseId : null
+  const selectedCourseId = route.kind === "course" || route.kind === "log-detail" ? route.courseId : null
+  const selectedMode = route.kind === "log-detail" ? "logs" : route.kind === "course" ? route.mode : null
 
   useEffect(() => {
     let active = true
@@ -135,7 +136,7 @@ export function InstructorShell({
             </div>
           </section>
 
-          {route.kind === "course" ? (
+          {route.kind === "course" || route.kind === "log-detail" ? (
             <section className="portal-shell__mode-nav">
               <header className="context-panel__header">
                 <p className="eyebrow">Course Modes</p>
@@ -152,7 +153,7 @@ export function InstructorShell({
                   <button
                     key={mode}
                     className={
-                      route.mode === mode
+                      selectedMode === mode
                         ? "portal-mode-button portal-mode-button--active"
                         : "portal-mode-button"
                     }
@@ -181,9 +182,9 @@ export function InstructorShell({
               </div>
               <div>
                 <dt>Section</dt>
-                <dd>{route.kind === "home" ? "Course overview" : route.mode}</dd>
+              <dd>{route.kind === "home" ? "Course overview" : selectedMode}</dd>
               </div>
-              {route.kind === "course" ? (
+              {route.kind === "course" || route.kind === "log-detail" ? (
                 <div>
                   <dt>Course</dt>
                   <dd>{route.courseId}</dd>

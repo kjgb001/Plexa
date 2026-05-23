@@ -20,6 +20,12 @@ export type InstructorRoute =
     courseId: string
     mode: "overview" | "lessons" | "builder" | "logs" | "analytics" | "roster"
   }
+  | {
+    surface: "instructor"
+    kind: "log-detail"
+    courseId: string
+    sessionId: string
+  }
 
 export type AppRoute =
   | { kind: "login" }
@@ -75,6 +81,8 @@ export const instructorPaths = {
     mode: "overview" | "lessons" | "builder" | "logs" | "analytics" | "roster" = "overview",
   ) =>
     `/instructor/courses/${encodeURIComponent(courseId)}/${mode}`,
+  logDetail: (courseId: string, sessionId: string) =>
+    `/instructor/courses/${encodeURIComponent(courseId)}/logs/${encodeURIComponent(sessionId)}`,
 }
 
 function parseStudentRoute(parts: string[]): StudentRoute | null {
@@ -175,6 +183,20 @@ function parseInstructorRoute(parts: string[]): InstructorRoute | null {
       kind: "course",
       courseId: decodeURIComponent(parts[2]),
       mode: mode as "overview" | "lessons" | "builder" | "logs" | "analytics" | "roster",
+    }
+  }
+
+  if (
+    parts.length === 5 &&
+    parts[0] === "instructor" &&
+    parts[1] === "courses" &&
+    parts[3] === "logs"
+  ) {
+    return {
+      surface: "instructor",
+      kind: "log-detail",
+      courseId: decodeURIComponent(parts[2]),
+      sessionId: decodeURIComponent(parts[4]),
     }
   }
 
