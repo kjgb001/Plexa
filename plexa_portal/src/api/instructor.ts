@@ -1,6 +1,7 @@
 import { HttpClient } from "./http"
 import type {
   ApiCourse,
+  ApiCourseLessonTimelineResponse,
   ApiCourseInstructorsResponse,
   ApiCourseLessonsResponse,
   ApiCourseRequestsResponse,
@@ -9,6 +10,7 @@ import type {
 } from "./dto"
 import type {
   Course,
+  CourseLessonWindow,
   CourseInstructors,
   CourseRequestsResult,
   EncryptedLogMetadata,
@@ -17,6 +19,7 @@ import type {
 } from "./interfaces"
 import {
   mapCourse,
+  mapCourseLessonTimeline,
   mapCourseInstructors,
   mapCourseRequests,
   mapEncryptedLogList,
@@ -45,6 +48,22 @@ export class InstructorApi {
         is_pinned_now: `${mapped.lesson_id}:${mapped.version}` === pinnedKey,
       }
     })
+  }
+
+  async getLessonTimeline(courseId: string): Promise<CourseLessonWindow[]> {
+    const result = await this.http.request<ApiCourseLessonTimelineResponse>(`/courses/${courseId}/lesson-timeline`)
+    return mapCourseLessonTimeline(result)
+  }
+
+  async updateLessonTimeline(
+    courseId: string,
+    lessonTimeline: CourseLessonWindow[],
+  ): Promise<CourseLessonWindow[]> {
+    const result = await this.http.request<ApiCourseLessonTimelineResponse>(`/courses/${courseId}/lesson-timeline`, {
+      method: "PUT",
+      body: JSON.stringify({ lesson_timeline: lessonTimeline }),
+    })
+    return mapCourseLessonTimeline(result)
   }
 
   async listInstructors(courseId: string): Promise<CourseInstructors> {

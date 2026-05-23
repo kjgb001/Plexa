@@ -73,6 +73,7 @@ export interface ApiCourse {
   pending_requests: string[]
   created_at: string
   lessons: Record<string, string>
+  lesson_timeline: ApiCourseLessonWindow[]
 }
 
 export interface ApiCourseListResponse {
@@ -150,6 +151,20 @@ export interface ApiLessonFullDocument {
 
 export interface ApiCourseLessonsResponse {
   lessons: ApiLessonDocument[]
+  lesson_timeline: ApiCourseLessonWindow[]
+  pinned_lesson_id?: string | null
+  pinned_lesson_version?: string | null
+}
+
+export interface ApiCourseLessonWindow {
+  lesson_id: string
+  lesson_version: string
+  starts_at: string
+  ends_at?: string | null
+}
+
+export interface ApiCourseLessonTimelineResponse {
+  lesson_timeline: ApiCourseLessonWindow[]
   pinned_lesson_id?: string | null
   pinned_lesson_version?: string | null
 }

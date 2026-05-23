@@ -1,5 +1,6 @@
 import type {
   ApiCourse,
+  ApiCourseLessonTimelineResponse,
   ApiCourseInstructorsResponse,
   ApiCourseRequestsResponse,
   ApiCreateSessionResponse,
@@ -16,6 +17,7 @@ import type {
 } from "./dto"
 import type {
   Course,
+  CourseLessonWindow,
   CourseInstructors,
   CourseRequestsResult,
   CreateSessionResult,
@@ -67,9 +69,16 @@ export function mapCourse(course: ApiCourse): Course {
     owner_id: course.owner_id,
     discoverable: course.discoverable,
     lessons: course.lessons,
+    lesson_timeline: (course.lesson_timeline ?? []).map((window) => ({ ...window })),
     enrolled_users: course.enrolled_users,
     pending_requests: course.pending_requests,
   }
+}
+
+export function mapCourseLessonTimeline(
+  result: ApiCourseLessonTimelineResponse,
+): CourseLessonWindow[] {
+  return result.lesson_timeline.map((window) => ({ ...window }))
 }
 
 export function mapLessonSummary(lesson: ApiLessonDocument): Lesson {

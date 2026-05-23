@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
+from pydantic import ValidationError
 
 from plexa_server.auth.dependencies import (
     ensure_course_instructor,
@@ -9,9 +10,12 @@ from plexa_server.auth.dependencies import (
 from plexa_server.auth.identity import UserIdentity
 from plexa_server.core.encrypted_logs import EncryptedLogService
 from plexa_server.core.workspace import order_courses_for_user, order_lessons_for_user, resolve_pinned_lesson_window
+from plexa_server.models.course import Course
 from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage, WorkspaceStateStorage
+from plexa_server.api.schemas.requests import CourseLessonTimelineRequest
 from plexa_server.api.schemas.responses import (
     CourseInstructorsResponse,
+    CourseLessonTimelineResponse,
     CourseLessonsResponse,
     EncryptedLogListResponse,
     EncryptedLogMetadataResponse,
@@ -140,6 +144,56 @@ def get_course_router(
         pinned_window = resolve_pinned_lesson_window(course)
         return CourseLessonsResponse(
             lessons=ordered_lessons,
+            lesson_timeline=course.lesson_timeline,
+            pinned_lesson_id=None if pinned_window is None else pinned_window.lesson_id,
+            pinned_lesson_version=None if pinned_window is None else pinned_window.lesson_version,
+        )
+
+    @router.get("/{course_id}/lesson-timeline", response_model=CourseLessonTimelineResponse)
+    async def get_lesson_timeline(
+        course_id: str,
+        identity: UserIdentity = Depends(require_identity),
+    ) -> CourseLessonTimelineResponse:
+        """Return editable lesson timeline windows for an authorized instructor."""
+        course = await course_storage.get_course(course_id)
+        if course is None:
+            raise HTTPException(status_code=404, detail="Course not found")
+        ensure_course_instructor(course, identity)
+
+        pinned_window = resolve_pinned_lesson_window(course)
+        return CourseLessonTimelineResponse(
+            lesson_timeline=course.lesson_timeline,
+            pinned_lesson_id=None if pinned_window is None else pinned_window.lesson_id,
+            pinned_lesson_version=None if pinned_window is None else pinned_window.lesson_version,
+        )
+
+    @router.put("/{course_id}/lesson-timeline", response_model=CourseLessonTimelineResponse)
+    async def update_lesson_timeline(
+        course_id: str,
+        payload: CourseLessonTimelineRequest,
+        identity: UserIdentity = Depends(require_identity),
+    ) -> CourseLessonTimelineResponse:
+        """Replace lesson timeline windows for an authorized instructor."""
+        course = await course_storage.get_course(course_id)
+        if course is None:
+            raise HTTPException(status_code=404, detail="Course not found")
+        ensure_course_instructor(course, identity)
+
+        try:
+            updated_course = Course.model_validate({
+                **course.model_dump(),
+                "lesson_timeline": [
+                    window.model_dump()
+                    for window in payload.lesson_timeline
+                ],
+            })
+        except ValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        await course_storage.save_course(updated_course)
+        pinned_window = resolve_pinned_lesson_window(updated_course)
+        return CourseLessonTimelineResponse(
+            lesson_timeline=updated_course.lesson_timeline,
             pinned_lesson_id=None if pinned_window is None else pinned_window.lesson_id,
             pinned_lesson_version=None if pinned_window is None else pinned_window.lesson_version,
         )

@@ -5,6 +5,7 @@ from plexa_server.models.session import Session
 from plexa_server.models.message import Message
 from plexa_server.models.lesson import Lesson
 from plexa_server.models.session import SessionReflectionHook
+from plexa_server.models.course import CourseLessonWindow
 
 
 class SessionResponse(BaseModel):
@@ -63,6 +64,15 @@ class CourseLessonsResponse(BaseModel):
     """Response payload returned when listing lessons bound to a course."""
 
     lessons: List[Lesson]
+    lesson_timeline: List[CourseLessonWindow]
+    pinned_lesson_id: str | None = None
+    pinned_lesson_version: str | None = None
+
+
+class CourseLessonTimelineResponse(BaseModel):
+    """Response payload returned when reading or mutating lesson timeline windows."""
+
+    lesson_timeline: List[CourseLessonWindow]
     pinned_lesson_id: str | None = None
     pinned_lesson_version: str | None = None
 

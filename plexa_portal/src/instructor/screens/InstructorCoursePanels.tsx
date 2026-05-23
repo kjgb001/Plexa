@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react"
-import type { Course, CourseInstructors, EncryptedLogMetadata, Lesson } from "../../api/interfaces"
+import { useEffect, useMemo, useState } from "react"
+import type { Course, CourseInstructors, CourseLessonWindow, EncryptedLogMetadata, Lesson } from "../../api/interfaces"
 
 function formatTimestamp(value: string | null | undefined): string {
   if (!value) {
@@ -9,6 +9,59 @@ function formatTimestamp(value: string | null | undefined): string {
     dateStyle: "medium",
     timeStyle: "short",
   })
+}
+
+function toDatetimeLocal(value: string | null | undefined): string {
+  if (!value) {
+    return ""
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return ""
+  }
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return localDate.toISOString().slice(0, 16)
+}
+
+function fromDatetimeLocal(value: string): string {
+  return new Date(value).toISOString()
+}
+
+function formatDatetimeLocal(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  const hours = String(date.getHours()).padStart(2, "0")
+  const minutes = String(date.getMinutes()).padStart(2, "0")
+  return `${year}-${month}-${day}T${hours}:${minutes}`
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
+function getTomorrowMidnight(): Date {
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  tomorrow.setHours(0, 0, 0, 0)
+  return tomorrow
+}
+
+function getDefaultTimelineWindowDates(): Pick<TimelineDraftWindow, "starts_at" | "ends_at"> {
+  const startsAt = getTomorrowMidnight()
+  return {
+    starts_at: formatDatetimeLocal(startsAt),
+    ends_at: formatDatetimeLocal(addDays(startsAt, 1)),
+  }
+}
+
+interface TimelineDraftWindow {
+  lesson_id: string
+  lesson_version: string
+  starts_at: string
+  ends_at: string
 }
 
 export function InstructorOverviewPanel({
@@ -82,18 +135,152 @@ export function InstructorOverviewPanel({
 }
 
 export function InstructorLessonsPanel({
+  course,
   lessons,
+  mutating,
+  onUpdateTimeline,
 }: {
+  course: Course
   lessons: Lesson[]
+  mutating: boolean
+  onUpdateTimeline(lessonTimeline: CourseLessonWindow[]): Promise<void>
 }) {
+  const [draftTimeline, setDraftTimeline] = useState<TimelineDraftWindow[]>([])
+  const [timelineError, setTimelineError] = useState<string | null>(null)
+  const lessonOptions = useMemo(
+    () => lessons.map((lesson) => ({
+      key: `${lesson.lesson_id}:${lesson.version}`,
+      label: `${lesson.title} (${lesson.version})`,
+    })),
+    [lessons],
+  )
+  const pinnedLesson = useMemo(
+    () => lessons.find((lesson) => lesson.is_pinned_now) ?? null,
+    [lessons],
+  )
+
+  useEffect(() => {
+    setDraftTimeline(course.lesson_timeline.map((window) => ({
+      lesson_id: window.lesson_id,
+      lesson_version: window.lesson_version,
+      starts_at: toDatetimeLocal(window.starts_at),
+      ends_at: toDatetimeLocal(window.ends_at),
+    })))
+    setTimelineError(null)
+  }, [course.lesson_timeline])
+
+  function addWindow() {
+    const firstLesson = lessons[0]
+    if (!firstLesson) {
+      return
+    }
+    const defaultDates = getDefaultTimelineWindowDates()
+    setDraftTimeline((current) => [
+      ...current,
+      {
+        lesson_id: firstLesson.lesson_id,
+        lesson_version: firstLesson.version,
+        ...defaultDates,
+      },
+    ])
+  }
+
+  function updateWindow(index: number, patch: Partial<TimelineDraftWindow>) {
+    setDraftTimeline((current) =>
+      current.map((window, windowIndex) => windowIndex === index ? { ...window, ...patch } : window),
+    )
+  }
+
+  function updateWindowLesson(index: number, lessonKey: string) {
+    const selected = lessons.find((lesson) => `${lesson.lesson_id}:${lesson.version}` === lessonKey)
+    if (!selected) {
+      return
+    }
+    updateWindow(index, {
+      lesson_id: selected.lesson_id,
+      lesson_version: selected.version,
+    })
+  }
+
+  function removeWindow(index: number) {
+    setDraftTimeline((current) => current.filter((_, windowIndex) => windowIndex !== index))
+  }
+
+  function buildTimelinePayload(source: TimelineDraftWindow[]): CourseLessonWindow[] | null {
+    if (source.some((window) => !window.lesson_id || !window.lesson_version || !window.starts_at)) {
+      setTimelineError("Every timeline window needs a lesson and start time.")
+      return null
+    }
+    const payload = source.map((window) => ({
+      lesson_id: window.lesson_id,
+      lesson_version: window.lesson_version,
+      starts_at: fromDatetimeLocal(window.starts_at),
+      ends_at: window.ends_at ? fromDatetimeLocal(window.ends_at) : null,
+    }))
+    if (payload.some((window) => window.ends_at !== null && window.ends_at <= window.starts_at)) {
+      setTimelineError("Timeline windows must end after they start.")
+      return null
+    }
+    setTimelineError(null)
+    return payload
+  }
+
+  async function saveTimeline() {
+    const payload = buildTimelinePayload(draftTimeline)
+    if (payload === null) {
+      return
+    }
+    try {
+      await onUpdateTimeline(payload)
+    } catch (error) {
+      console.error("Failed to update lesson timeline", error)
+      setTimelineError("Failed to save timeline.")
+    }
+  }
+
+  async function pinNow(lesson: Lesson) {
+    const now = new Date()
+    const nowMs = now.getTime()
+    const preservedWindows = course.lesson_timeline
+      .filter((window) => {
+        const startsAt = new Date(window.starts_at).getTime()
+        const endsAt = window.ends_at ? new Date(window.ends_at).getTime() : null
+        return (endsAt !== null && endsAt <= nowMs) || startsAt > nowMs
+      })
+      .sort((left, right) => new Date(left.starts_at).getTime() - new Date(right.starts_at).getTime())
+    const nextFutureWindow = preservedWindows.find((window) => new Date(window.starts_at).getTime() > nowMs)
+    const currentWindow = {
+      lesson_id: lesson.lesson_id,
+      lesson_version: lesson.version,
+      starts_at: now.toISOString(),
+      ends_at: nextFutureWindow?.starts_at ?? null,
+    }
+    const pastWindows = preservedWindows.filter((window) => {
+      const endsAt = window.ends_at ? new Date(window.ends_at).getTime() : null
+      return endsAt !== null && endsAt <= nowMs
+    })
+    const futureWindows = preservedWindows.filter((window) => new Date(window.starts_at).getTime() > nowMs)
+    const payload = [...pastWindows, currentWindow, ...futureWindows]
+    setTimelineError(null)
+    try {
+      await onUpdateTimeline(payload)
+    } catch (error) {
+      console.error("Failed to pin lesson", error)
+      setTimelineError("Failed to pin lesson.")
+    }
+  }
+
   return (
     <section className="portal-grid portal-grid--wide">
       <article className="portal-card portal-card--span-2">
         <header className="portal-card__header">
           <h2>Lessons in course</h2>
+          <span className="section-chip">
+            {pinnedLesson ? `Pinned: ${pinnedLesson.title}` : "No pinned lesson"}
+          </span>
         </header>
         <p className="portal-note">
-          Timeline editing still needs dedicated server mutation support. This panel reflects the current server ordering and pinned state.
+          Schedule lesson windows to control the pinned lesson state learners see in the course sidebar.
         </p>
         <div className="portal-list">
           {lessons.map((lesson) => (
@@ -105,9 +292,68 @@ export function InstructorLessonsPanel({
               <span className="portal-list__meta">
                 {lesson.is_pinned_now ? "Pinned now" : `v${lesson.version}`} · {lesson.learning_objective ?? "No objective summary"}
               </span>
+              <div className="portal-inline-actions">
+                <button className="ghost-button" disabled={mutating} onClick={() => void pinNow(lesson)}>
+                  Pin now
+                </button>
+              </div>
             </div>
           ))}
           {lessons.length === 0 ? <p className="empty-panel">No lessons are currently bound to this course.</p> : null}
+        </div>
+      </article>
+
+      <article className="portal-card portal-card--span-2">
+        <header className="portal-card__header">
+          <h2>Lesson timeline</h2>
+          <div className="portal-inline-actions">
+            <button className="ghost-button" disabled={mutating || lessons.length === 0} onClick={addWindow}>
+              Add window
+            </button>
+            <button className="primary-button" disabled={mutating} onClick={() => void saveTimeline()}>
+              Save timeline
+            </button>
+          </div>
+        </header>
+        {timelineError ? <p className="form-error">{timelineError}</p> : null}
+        <div className="timeline-editor">
+          {draftTimeline.map((window, index) => (
+            <div className="timeline-editor__row" key={`${window.lesson_id}:${window.lesson_version}:${index}`}>
+              <label>
+                <span>Lesson</span>
+                <select
+                  value={`${window.lesson_id}:${window.lesson_version}`}
+                  onChange={(event) => updateWindowLesson(index, event.target.value)}
+                >
+                  {lessonOptions.map((option) => (
+                    <option key={option.key} value={option.key}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Starts</span>
+                <input
+                  type="datetime-local"
+                  value={window.starts_at}
+                  onChange={(event) => updateWindow(index, { starts_at: event.target.value })}
+                />
+              </label>
+              <label>
+                <span>Ends</span>
+                <input
+                  type="datetime-local"
+                  value={window.ends_at}
+                  onChange={(event) => updateWindow(index, { ends_at: event.target.value })}
+                />
+              </label>
+              <button className="ghost-button" disabled={mutating} onClick={() => removeWindow(index)}>
+                Remove
+              </button>
+            </div>
+          ))}
+          {draftTimeline.length === 0 ? (
+            <p className="empty-panel">No timeline windows are scheduled. Add a window or pin a lesson now.</p>
+          ) : null}
         </div>
       </article>
     </section>

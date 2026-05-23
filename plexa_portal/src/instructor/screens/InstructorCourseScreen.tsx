@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { useApis } from "../../api"
 import { ApiError, NotFoundError } from "../../api/errors"
-import type { Course, CourseInstructors, EncryptedLogMetadata, Lesson } from "../../api/interfaces"
+import type { Course, CourseInstructors, CourseLessonWindow, EncryptedLogMetadata, Lesson } from "../../api/interfaces"
 import { InstructorBuilderPanel } from "./InstructorBuilderPanel"
 import {
   InstructorAnalyticsPanel,
@@ -131,6 +131,18 @@ export function InstructorCourseScreen({
     setSelectedLog(payload)
   }
 
+  async function handleUpdateLessonTimeline(lessonTimeline: CourseLessonWindow[]) {
+    setMutating(true)
+    try {
+      const nextTimeline = await instructorApi.updateLessonTimeline(courseId, lessonTimeline)
+      const lessonsResult = await instructorApi.listLessons(courseId)
+      setCourse((current) => current ? { ...current, lesson_timeline: nextTimeline } : current)
+      setLessons(lessonsResult)
+    } finally {
+      setMutating(false)
+    }
+  }
+
   if (loading) {
     return (
       <section className="portal-stage">
@@ -174,7 +186,14 @@ export function InstructorCourseScreen({
         />
       ) : null}
 
-      {mode === "lessons" ? <InstructorLessonsPanel lessons={lessons} /> : null}
+      {mode === "lessons" ? (
+        <InstructorLessonsPanel
+          course={course}
+          lessons={lessons}
+          mutating={mutating}
+          onUpdateTimeline={handleUpdateLessonTimeline}
+        />
+      ) : null}
 
       {mode === "builder" ? (
         <InstructorBuilderPanel

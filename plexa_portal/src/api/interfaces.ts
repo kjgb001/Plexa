@@ -45,8 +45,16 @@ export interface Course {
   owner_id?: string
   discoverable: boolean
   lessons: Record<string, string>
+  lesson_timeline: CourseLessonWindow[]
   enrolled_users: string[]
   pending_requests?: string[]
+}
+
+export interface CourseLessonWindow {
+  lesson_id: string
+  lesson_version: string
+  starts_at: string
+  ends_at?: string | null
 }
 
 export interface Lesson {
