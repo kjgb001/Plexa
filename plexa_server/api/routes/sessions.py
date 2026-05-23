@@ -442,6 +442,29 @@ def get_sessions_router(
 
 
     @router.post(
+        "/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}/reflections/{hook_id}/postpone",
+        response_model=SessionResponse,
+    )
+    async def postpone_reflection(
+        session_id: str,
+        course_id: str,
+        lesson_id: str,
+        lesson_version: str,
+        hook_id: str,
+        identity: UserIdentity = Depends(require_identity),
+    ) -> SessionResponse:
+        session = await get_owned_session(session_manager, session_id, identity)
+        check_session_path(session, course_id, lesson_id, lesson_version)
+
+        try:
+            session = await session_manager.postpone_reflection(session_id, hook_id)
+            await touch_course_and_lesson(identity, course_id, lesson_id, lesson_version)
+            return SessionResponse.from_session(session)
+        except SessionCompletionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+
+
+    @router.post(
         "/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}/turn-in",
         response_model=SessionResponse,
     )

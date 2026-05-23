@@ -77,18 +77,32 @@ export default function ChatScreen({
     .map((hook) => `${hook.hook_id}:${hook.triggered_at ?? ""}`)
     .join("|")
   const savedReflectionHooks = session?.reflection_hooks ?? []
+  const reflectionNumbers = useMemo(() => {
+    const entries = [...savedReflectionHooks]
+      .sort((left, right) => left.order_index - right.order_index)
+      .map((hook, index) => [hook.hook_id, index + 1] as const)
+    return new Map(entries)
+  }, [savedReflectionHooks])
+  const totalReflectionHooks = savedReflectionHooks.length
   const savedMidReflectionHooks = savedReflectionHooks.filter((hook) => hook.phase === "mid")
   const savedPostReflectionHooks = savedReflectionHooks.filter((hook) => hook.phase !== "mid")
+  const isReflectionSaved = (hook: SessionReflectionHook) =>
+    Boolean(hook.response_text?.trim()) && collapsedReflectionIds[hook.hook_id] === true
   const areReflectionHooksSaved = (hooks: SessionReflectionHook[]) =>
-    hooks.every((hook) => Boolean(hook.response_text?.trim()) && collapsedReflectionIds[hook.hook_id] === true)
-  const allMidReflectionHooksSaved = areReflectionHooksSaved(savedMidReflectionHooks)
+    hooks.every(isReflectionSaved)
   const allLessonReflectionHooksSaved = areReflectionHooksSaved(savedReflectionHooks)
+  const hasUnpostponedActiveMidReflection = savedMidReflectionHooks.some(
+    (hook) =>
+      hook.triggered_at &&
+      !hook.postponed_at &&
+      !hook.response_text?.trim(),
+  )
   const canBeginCompletion = savedPostReflectionHooks.length > 0
-    ? allMidReflectionHooksSaved
+    ? !hasUnpostponedActiveMidReflection
     : allLessonReflectionHooksSaved
   const triggeredMidReflectionHooks = triggeredReflectionHooks.filter((hook) => hook.phase === "mid")
   const triggeredPostReflectionHooks = triggeredReflectionHooks.filter((hook) => hook.phase !== "mid")
-  const hasBlockingMidReflection = triggeredMidReflectionHooks.some((hook) => !hook.response_text?.trim())
+  const hasBlockingMidReflection = triggeredMidReflectionHooks.some((hook) => !hook.postponed_at && !hook.response_text?.trim())
   const visibleMidReflectionHooks = triggeredMidReflectionHooks.filter((hook) => collapsedReflectionIds[hook.hook_id] !== true)
   const visiblePostReflectionHooks = triggeredPostReflectionHooks.filter((hook) => collapsedReflectionIds[hook.hook_id] !== true)
   const collapsedMidReflectionHooks = triggeredMidReflectionHooks.filter((hook) => collapsedReflectionIds[hook.hook_id] === true)
@@ -238,7 +252,7 @@ export default function ChatScreen({
     setCollapsedReflectionIds((current) => {
       const next: Record<string, boolean> = {}
       for (const hook of session.reflection_hooks) {
-        if (hook.response_text?.trim()) {
+        if (hook.response_text?.trim() || hook.postponed_at) {
           next[hook.hook_id] = current[hook.hook_id] ?? true
         }
       }
@@ -332,7 +346,7 @@ export default function ChatScreen({
       return
     }
     if (!canBeginCompletion) {
-      setInteractionError("Save all mid-session reflections before completing work.")
+      setInteractionError("Save or postpone the active mid-session reflection before completing work.")
       return
     }
     setInteractionError(null)
@@ -403,6 +417,39 @@ export default function ChatScreen({
     } catch (error) {
       console.error("Failed to save reflection", error)
       setInteractionError("Could not save that reflection response.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handlePostponeReflection(hook: SessionReflectionHook) {
+    if (session === null) {
+      return
+    }
+    setInteractionError(null)
+    setLoading(true)
+    try {
+      const result = await sessionApi.postponeReflection(
+        courseId,
+        lessonId,
+        lessonVersion,
+        session.session_id,
+        hook.hook_id,
+      )
+      setSession(result.session)
+      setCollapsedReflectionIds((current) => ({
+        ...current,
+        [hook.hook_id]: true,
+      }))
+      setIsReflectionDrawerOpen(false)
+      dispatchSessionChanged(courseId, lessonId, lessonVersion, {
+        type: "upsert",
+        session: result.session,
+      })
+      focusComposerIfAllowed(true)
+    } catch (error) {
+      console.error("Failed to postpone reflection", error)
+      setInteractionError("Could not postpone that reflection.")
     } finally {
       setLoading(false)
     }
@@ -488,12 +535,16 @@ export default function ChatScreen({
 
   function renderReflectionHook(hook: SessionReflectionHook) {
     const responseText = reflectionDrafts[hook.hook_id] ?? ""
+    const reflectionNumber = reflectionNumbers.get(hook.hook_id)
+    const reflectionLabel = reflectionNumber !== undefined && totalReflectionHooks > 0
+      ? `${reflectionNumber} of ${totalReflectionHooks}`
+      : "Reflection prompt"
 
     return (
       <article className={`transcript-entry transcript-entry--system transcript-entry--reflection transcript-entry--reflection-${hook.phase}`}>
         <header className="transcript-entry__header">
           <span className="transcript-entry__role">
-            Reflection prompt
+            {reflectionLabel}
           </span>
         </header>
         <h3 className="transcript-entry__title">
@@ -517,6 +568,11 @@ export default function ChatScreen({
         </label>
         {!session?.is_finalized ? (
           <div className="portal-inline-actions">
+            {hook.phase === "mid" && !hook.response_text?.trim() ? (
+              <button className="ghost-button" type="button" onClick={() => void handlePostponeReflection(hook)} disabled={loading}>
+                Postpone
+              </button>
+            ) : null}
             <button className="ghost-button" type="button" onClick={() => void handleSaveReflection(hook)} disabled={loading}>
               Save reflection
             </button>
@@ -552,9 +608,15 @@ export default function ChatScreen({
               <article className={`reflection-drawer__item reflection-drawer__item--${hook.phase}`} key={`saved-reflection:${hook.hook_id}`}>
                 <div className="reflection-drawer__body">
                   <span className="reflection-drawer__label">
-                    {hook.phase === "mid" ? "Saved mid-session reflection" : "Saved post-completion reflection"}
+                    {`${reflectionNumbers.get(hook.hook_id) ?? "?"} of ${totalReflectionHooks} · ${
+                      hook.postponed_at
+                      ? "Postponed mid-session reflection"
+                      : hook.phase === "mid"
+                        ? "Saved mid-session reflection"
+                        : "Saved post-completion reflection"
+                    }`}
                   </span>
-                  <p>{(reflectionDrafts[hook.hook_id] ?? "").trim() || hook.response_text || "Reflection saved."}</p>
+                  <p>{(reflectionDrafts[hook.hook_id] ?? "").trim() || hook.response_text || (hook.postponed_at ? "[Reflection postponed]" : "Reflection saved.")}</p>
                 </div>
                 {!session?.is_finalized ? (
                   <button

@@ -300,7 +300,40 @@ class SessionManager:
             if hook.first_answered_at is None:
                 hook.first_answered_at = now
             hook.last_updated_at = now
+            hook.postponed_at = None
             hook.response_text = response_text
+            session.updated_at = now
+
+            await self._storage.save_session(session)
+            inference_config = await self._storage.get_inference_config(session_id)
+            await self._persist_encrypted_log(session, inference_config, event_type="message_commit")
+            return session
+
+    async def postpone_reflection(
+        self,
+        session_id: str,
+        hook_id: str,
+    ) -> Session:
+        """Mark a triggered mid-session reflection as deferred."""
+        lock = self._lock_manager.get_lock(session_id)
+
+        with lock:
+            session = await self.get_session(session_id)
+            if session.is_finalized:
+                raise SessionCompletionError("Turned-in sessions cannot edit reflections.")
+
+            hook = next((item for item in session.reflection_hooks if item.hook_id == hook_id), None)
+            if hook is None:
+                raise SessionCompletionError("Reflection hook not found.")
+            if hook.phase != "mid":
+                raise SessionCompletionError("Only mid-session reflections can be postponed.")
+            if hook.triggered_at is None:
+                raise SessionCompletionError("Reflection hook has not been triggered.")
+            if hook.response_text is not None and hook.response_text.strip():
+                raise SessionCompletionError("Answered reflections cannot be postponed.")
+
+            now = datetime.now(UTC)
+            hook.postponed_at = now
             session.updated_at = now
 
             await self._storage.save_session(session)
@@ -499,6 +532,12 @@ class SessionManager:
         now = datetime.now(UTC)
         for hook in session.reflection_hooks:
             if hook.triggered_at is not None:
+                if (
+                    hook.phase == "mid"
+                    and hook.postponed_at is not None
+                    and (hook.response_text is None or not hook.response_text.strip())
+                ):
+                    hook.postponed_at = None
                 continue
             if hook.phase == "post":
                 hook.triggered_at = now
@@ -516,6 +555,7 @@ class SessionManager:
                 continue
             hook.triggered_at = None
             hook.trigger_source = None
+            hook.postponed_at = None
             hook.response_text = None
             hook.first_answered_at = None
             hook.last_updated_at = None
@@ -527,6 +567,7 @@ class SessionManager:
         return any(
             hook.phase == "mid"
             and hook.triggered_at is not None
+            and hook.postponed_at is None
             and (hook.response_text is None or not hook.response_text.strip())
             for hook in session.reflection_hooks
         )

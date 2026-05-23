@@ -165,6 +165,20 @@ export class SessionApi {
     return { session: mapSession(result) }
   }
 
+  async postponeReflection(
+    courseId: string,
+    lessonId: string,
+    lessonVersion: string,
+    sessionId: string,
+    hookId: string,
+  ): Promise<UpdateSessionResult> {
+    const result = await this.http.request<ApiSessionResponse>(
+      `courses/${courseId}/lessons/${lessonId}/${lessonVersion}/sessions/${sessionId}/reflections/${hookId}/postpone`,
+      { method: "POST" },
+    )
+    return { session: mapSession(result) }
+  }
+
   async turnInSession(
     courseId: string,
     lessonId: string,

@@ -33,6 +33,7 @@ export interface SessionReflectionHook {
   carried_to_post: boolean
   triggered_at?: string | null
   trigger_source?: "mid_turn" | "soft_complete" | "carry_to_post" | null
+  postponed_at?: string | null
   response_text?: string | null
   first_answered_at?: string | null
   last_updated_at?: string | null

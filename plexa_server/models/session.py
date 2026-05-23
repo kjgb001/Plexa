@@ -18,6 +18,7 @@ class SessionReflectionHook(BaseModel):
     carried_to_post: bool = False
     triggered_at: datetime | None = None
     trigger_source: Literal["mid_turn", "soft_complete", "carry_to_post"] | None = None
+    postponed_at: datetime | None = None
     response_text: str | None = None
     first_answered_at: datetime | None = None
     last_updated_at: datetime | None = None
