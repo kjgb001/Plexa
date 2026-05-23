@@ -313,8 +313,9 @@ export default function StudentShell({
   )
   const mainContent =
     route.kind === "chat" && isValidElement(children)
-      ? cloneElement(children as ReactElement<{ lessonTitle?: string }>, {
+      ? cloneElement(children as ReactElement<{ lessonTitle?: string; lesson?: Lesson | null }>, {
           lessonTitle: selectedLesson?.title ?? route.lessonId,
+          lesson: selectedLesson,
         })
       : children
 

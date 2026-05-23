@@ -108,6 +108,7 @@ def test_seeded_cs101_lessons_cover_user_reflection_states(tmp_path: Path):
     assert carried_hook.carried_to_post is True
     assert carried_hook.trigger_source == "carry_to_post"
     assert carried_post_hook.trigger_source == "soft_complete"
+    assert carried_hook.trigger_turn == 2
 
     metadata_only = run(
         manager.create_session(

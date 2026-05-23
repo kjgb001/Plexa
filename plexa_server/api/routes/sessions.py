@@ -60,6 +60,28 @@ def get_sessions_router(
         )
 
 
+    async def load_lesson_or_404(lesson_id: str, lesson_version: str):
+        lesson = await artifact_storage.load_lesson(
+            lesson_id=lesson_id,
+            version=lesson_version,
+        )
+        if lesson is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Lesson not found",
+            )
+        return lesson
+
+
+    async def refresh_completion_reflections(session: Session) -> Session:
+        """Ensure sessions already in completion mode have current reflection hooks."""
+        if session.is_completion_started is False or session.is_finalized:
+            return session
+
+        lesson = await load_lesson_or_404(session.lesson_id, session.lesson_version)
+        return await session_manager.begin_completion(session.session_id, current_lesson=lesson)
+
+
     def check_session_path(
         session: Session, 
         course_id: str, 
@@ -113,16 +135,7 @@ def get_sessions_router(
             HTTPException: If the lesson does not exist, the course does not
                 exist, or the caller is not allowed to create a session.
         """
-        lesson = await artifact_storage.load_lesson(
-            lesson_id=lesson_id,
-            version=lesson_version,
-        )
-
-        if lesson is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Lesson not found",
-            )
+        lesson = await load_lesson_or_404(lesson_id, lesson_version)
 
         course = await course_storage.get_course(course_id)
         if course is None:
@@ -176,16 +189,7 @@ def get_sessions_router(
             HTTPException: If the lesson does not exist, the course does not
                 exist, or the caller is not allowed to view sessions for it.
         """
-        lesson = await artifact_storage.load_lesson(
-            lesson_id=lesson_id,
-            version=lesson_version,
-        )
-
-        if lesson is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Lesson not found",
-            )
+        lesson = await load_lesson_or_404(lesson_id, lesson_version)
 
         course = await course_storage.get_course(course_id)
         if course is None:
@@ -247,11 +251,13 @@ def get_sessions_router(
         try:
             session = await get_owned_session(session_manager, session_id, identity)
             check_session_path(session, course_id, lesson_id, lesson_version)
+            lesson = await load_lesson_or_404(lesson_id, lesson_version)
 
             assistant_message = await session_manager.submit_user_message(
                 session_id=session_id,
                 message_id=message_id,
                 content=request.content,
+                current_lesson=lesson,
             )
 
             session = await session_manager.get_session(session_id)
@@ -267,6 +273,9 @@ def get_sessions_router(
 
         except TurnLimitExceededError:
             raise HTTPException(status_code=409, detail="Turn limit exceeded")
+
+        except SessionCompletionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
 
         except InferenceError as exc:
             detail = "Inference failure"
@@ -305,6 +314,7 @@ def get_sessions_router(
         try:
             session = await get_owned_session(session_manager, session_id, identity)
             check_session_path(session, course_id, lesson_id, lesson_version)
+            session = await refresh_completion_reflections(session)
             await touch_course_and_lesson(identity, course_id, lesson_id, lesson_version)
 
             return CreateSessionResponse(
@@ -373,7 +383,8 @@ def get_sessions_router(
         check_session_path(session, course_id, lesson_id, lesson_version)
 
         try:
-            session = await session_manager.begin_completion(session_id)
+            lesson = await load_lesson_or_404(lesson_id, lesson_version)
+            session = await session_manager.begin_completion(session_id, current_lesson=lesson)
             await touch_course_and_lesson(identity, course_id, lesson_id, lesson_version)
             return SessionResponse.from_session(session)
         except SessionCompletionError as exc:
@@ -445,6 +456,7 @@ def get_sessions_router(
         check_session_path(session, course_id, lesson_id, lesson_version)
 
         try:
+            session = await refresh_completion_reflections(session)
             session = await session_manager.turn_in_session(session_id)
             await touch_course_and_lesson(identity, course_id, lesson_id, lesson_version)
             return SessionResponse.from_session(session)

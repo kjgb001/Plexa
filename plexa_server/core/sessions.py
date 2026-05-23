@@ -235,7 +235,7 @@ class SessionManager:
             await self._persist_encrypted_log(session, inference_config, event_type="closed")
             self._lock_manager.release_lock(session_id)
 
-    async def begin_completion(self, session_id: str) -> Session:
+    async def begin_completion(self, session_id: str, current_lesson: Lesson | None = None) -> Session:
         """Enter soft-completion mode and trigger post reflections."""
         lock = self._lock_manager.get_lock(session_id)
 
@@ -244,6 +244,8 @@ class SessionManager:
             if session.is_finalized:
                 raise SessionCompletionError("Session is already turned in.")
 
+            if current_lesson is not None:
+                self._sync_reflection_hooks(session, current_lesson)
             session.is_completion_started = True
             if session.completed_at is None:
                 session.completed_at = datetime.now(UTC)
@@ -266,6 +268,8 @@ class SessionManager:
                 raise SessionCompletionError("Closed sessions cannot resume chat work.")
 
             session.is_completion_started = False
+            session.completed_at = None
+            self._clear_completion_reflections(session)
             session.updated_at = datetime.now(UTC)
             await self._storage.save_session(session)
             inference_config = await self._storage.get_inference_config(session_id)
@@ -353,6 +357,7 @@ class SessionManager:
         session_id: str,
         message_id: str,
         content: str,
+        current_lesson: Lesson | None = None,
     ) -> Message:
         """Append a user turn, run inference, and atomically persist the reply.
 
@@ -379,8 +384,12 @@ class SessionManager:
             if not session.is_active:
                 raise SessionClosedError(session_id)
 
+            if current_lesson is not None:
+                self._sync_reflection_hooks(session, current_lesson)
             if session.turn_count >= session.max_turns:
                 raise TurnLimitExceededError(session_id)
+            if self._has_pending_mid_reflection(session):
+                raise SessionCompletionError("Mid-session reflection must be answered before continuing.")
 
             inference_config = await self._storage.get_inference_config(session_id)
 
@@ -425,8 +434,12 @@ class SessionManager:
             self._trigger_mid_reflections(session)
 
             if session.turn_count >= session.max_turns:
+                session.is_completion_started = True
+                if session.completed_at is None:
+                    session.completed_at = datetime.now(UTC)
                 session.is_active = False
                 session.closed_at = datetime.now(UTC)
+                self._trigger_completion_reflections(session)
 
             await self._storage.save_session(session)
             await self._persist_encrypted_log(session, inference_config, event_type="message_commit")
@@ -443,6 +456,8 @@ class SessionManager:
                 continue
             if hook.trigger_turn is None:
                 continue
+            if hook.carry_to_post and session.max_turns is not None and session.turn_count >= session.max_turns:
+                continue
             if session.turn_count >= hook.trigger_turn:
                 hook.triggered_at = now
                 hook.trigger_source = "mid_turn"
@@ -454,6 +469,30 @@ class SessionManager:
         if hook.trigger_turn is not None:
             return hook.trigger_turn
         return max(1, (turn_limit + 1) // 2)
+
+    def _sync_reflection_hooks(self, session: Session, lesson: Lesson) -> None:
+        """Add lesson reflection hooks missing from older frozen sessions."""
+        known_hook_ids = {hook.hook_id for hook in session.reflection_hooks}
+        turn_limit = session.max_turns or lesson.constraints.turn_limit
+        if turn_limit is None:
+            return
+
+        for hook in lesson.reflection.hooks:
+            if hook.hook_id in known_hook_ids:
+                continue
+            session.reflection_hooks.append(
+                SessionReflectionHook(
+                    hook_id=hook.hook_id,
+                    prompt=hook.prompt,
+                    phase=hook.phase,
+                    order_index=hook.order_index,
+                    trigger_turn=self._resolve_reflection_trigger_turn(hook, turn_limit),
+                    carry_to_post=hook.carry_to_post,
+                )
+            )
+            known_hook_ids.add(hook.hook_id)
+
+        session.reflection_hooks.sort(key=lambda hook: (hook.order_index, hook.hook_id))
 
     def _trigger_completion_reflections(self, session: Session) -> None:
         """Trigger post reflections and any carry-forward mid reflections."""
@@ -469,6 +508,28 @@ class SessionManager:
                 hook.triggered_at = now
                 hook.trigger_source = "carry_to_post"
                 hook.carried_to_post = True
+
+    def _clear_completion_reflections(self, session: Session) -> None:
+        """Hide completion-triggered reflections when a student returns to work."""
+        for hook in session.reflection_hooks:
+            if hook.trigger_source not in {"soft_complete", "carry_to_post"}:
+                continue
+            hook.triggered_at = None
+            hook.trigger_source = None
+            hook.response_text = None
+            hook.first_answered_at = None
+            hook.last_updated_at = None
+            if hook.carried_to_post:
+                hook.carried_to_post = False
+
+    def _has_pending_mid_reflection(self, session: Session) -> bool:
+        """Return whether a triggered mid-session reflection still needs a response."""
+        return any(
+            hook.phase == "mid"
+            and hook.triggered_at is not None
+            and (hook.response_text is None or not hook.response_text.strip())
+            for hook in session.reflection_hooks
+        )
 
     def _required_reflections_answered(self, session: Session) -> bool:
         """Return whether all triggered hooks have responses."""

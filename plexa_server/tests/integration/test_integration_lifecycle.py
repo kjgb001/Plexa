@@ -11,6 +11,13 @@ def run(coro):
     return asyncio.run(coro)
 
 
+def answer_triggered_mid_reflections(manager, storage, session_id: str):
+    session = run(storage.get_session(session_id))
+    for hook in session.reflection_hooks:
+        if hook.phase == "mid" and hook.triggered_at is not None and not (hook.response_text or "").strip():
+            run(manager.save_reflection_response(session_id, hook.hook_id, f"Response for {hook.hook_id}"))
+
+
 def test_full_lesson_lifecycle_with_stub(setup_manager, storage_backend):
     inference = StubInference()
     course_id = "CS101"
@@ -45,6 +52,8 @@ def test_full_lesson_lifecycle_with_stub(setup_manager, storage_backend):
     assert session.messages[-2].role == "user"
     assert session.messages[-1].role == "assistant"
     assert session.is_active is True
+
+    answer_triggered_mid_reflections(manager, storage, "s1")
 
     # Second turn (should close session)
     run(manager.submit_user_message("s1", "m2", "Second message"))
@@ -130,6 +139,7 @@ def test_manual_close_and_reload_persists_state(setup_manager, storage_backend):
     ))
 
     run(manager.submit_user_message("s3", "m1", "First"))
+    answer_triggered_mid_reflections(manager, storage, "s3")
     run(manager.submit_user_message("s3", "m2", "Second"))
 
     session = run(storage.get_session("s3"))

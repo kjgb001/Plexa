@@ -63,7 +63,7 @@ SEEDED_LESSON_SPECS = {
                     "prompt": "If context degraded, explain what information should be restored before continuing.",
                     "phase": "mid",
                     "order_index": 0,
-                    "trigger_turn": 4,
+                    "trigger_turn": 2,
                     "carry_to_post": True,
                 },
                 {

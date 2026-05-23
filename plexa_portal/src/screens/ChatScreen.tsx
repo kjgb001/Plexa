@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useApis } from "../api"
-import type { Message, Session, SessionReflectionHook } from "../api/interfaces"
+import type { Lesson, Message, Session, SessionReflectionHook } from "../api/interfaces"
 import { navigate, studentPaths } from "../app/router"
 
 interface Props {
@@ -8,6 +8,7 @@ interface Props {
   lessonId: string
   lessonVersion: string
   lessonTitle?: string
+  lesson?: Lesson | null
   sessionId?: string | null
 }
 
@@ -31,6 +32,7 @@ export default function ChatScreen({
   lessonId,
   lessonVersion,
   lessonTitle,
+  lesson = null,
   sessionId = null,
 }: Props) {
   const { sessionApi } = useApis()
@@ -53,7 +55,17 @@ export default function ChatScreen({
   const [bootError, setBootError] = useState<string | null>(null)
   const [interactionError, setInteractionError] = useState<string | null>(null)
   const [reflectionDrafts, setReflectionDrafts] = useState<Record<string, string>>({})
+  const [collapsedReflectionIds, setCollapsedReflectionIds] = useState<Record<string, boolean>>({})
+  const [isReflectionDrawerOpen, setIsReflectionDrawerOpen] = useState(false)
   const visibleMessages = messages.filter((message) => message.role !== "system")
+  const latestNonUserMessageIndex = (() => {
+    for (let index = visibleMessages.length - 1; index >= 0; index -= 1) {
+      if (visibleMessages[index].role !== "user") {
+        return index
+      }
+    }
+    return -1
+  })()
   const triggeredReflectionHooks = useMemo(
     () =>
       [...(session?.reflection_hooks ?? [])]
@@ -61,9 +73,21 @@ export default function ChatScreen({
         .sort((left, right) => left.order_index - right.order_index),
     [session],
   )
-  const allTriggeredReflectionsAnswered = triggeredReflectionHooks.every(
-    (hook) => (reflectionDrafts[hook.hook_id] ?? hook.response_text ?? "").trim() !== "",
+  const triggeredReflectionKey = triggeredReflectionHooks
+    .map((hook) => `${hook.hook_id}:${hook.triggered_at ?? ""}`)
+    .join("|")
+  const allTriggeredReflectionsSaved = triggeredReflectionHooks.every(
+    (hook) => Boolean(hook.response_text?.trim()) && collapsedReflectionIds[hook.hook_id] === true,
   )
+  const triggeredMidReflectionHooks = triggeredReflectionHooks.filter((hook) => hook.phase === "mid")
+  const triggeredPostReflectionHooks = triggeredReflectionHooks.filter((hook) => hook.phase !== "mid")
+  const hasBlockingMidReflection = triggeredMidReflectionHooks.some((hook) => !hook.response_text?.trim())
+  const visibleMidReflectionHooks = triggeredMidReflectionHooks.filter((hook) => collapsedReflectionIds[hook.hook_id] !== true)
+  const visiblePostReflectionHooks = triggeredPostReflectionHooks.filter((hook) => collapsedReflectionIds[hook.hook_id] !== true)
+  const collapsedMidReflectionHooks = triggeredMidReflectionHooks.filter((hook) => collapsedReflectionIds[hook.hook_id] === true)
+  const collapsedPostReflectionHooks = triggeredPostReflectionHooks.filter((hook) => collapsedReflectionIds[hook.hook_id] === true)
+  const collapsedReflectionHooks = [...collapsedMidReflectionHooks, ...collapsedPostReflectionHooks]
+  const composerDisabled = deleting || session?.is_active === false || session?.is_finalized || session?.is_completion_started || hasBlockingMidReflection
 
   useEffect(() => {
     latestSessionRef.current = session
@@ -109,6 +133,13 @@ export default function ChatScreen({
               result.session.reflection_hooks.map((hook) => [hook.hook_id, hook.response_text ?? ""]),
             ),
           )
+          setCollapsedReflectionIds(
+            Object.fromEntries(
+              result.session.reflection_hooks
+                .filter((hook) => hook.response_text?.trim())
+                .map((hook) => [hook.hook_id, true]),
+            ),
+          )
         }
       } catch (error) {
         console.error("Failed to load session", error)
@@ -138,7 +169,7 @@ export default function ChatScreen({
     if (element) {
       element.scrollTop = element.scrollHeight
     }
-  }, [messages, loading])
+  }, [messages, loading, triggeredReflectionKey])
 
   function focusComposerIfAllowed(force = false) {
     if (!force && keepComposerFocusRef.current === false) {
@@ -186,12 +217,23 @@ export default function ChatScreen({
   useEffect(() => {
     if (session === null) {
       setReflectionDrafts({})
+      setCollapsedReflectionIds({})
+      setIsReflectionDrawerOpen(false)
       return
     }
     setReflectionDrafts((current) => {
       const next: Record<string, string> = {}
       for (const hook of session.reflection_hooks) {
         next[hook.hook_id] = current[hook.hook_id] ?? hook.response_text ?? ""
+      }
+      return next
+    })
+    setCollapsedReflectionIds((current) => {
+      const next: Record<string, boolean> = {}
+      for (const hook of session.reflection_hooks) {
+        if (hook.response_text?.trim()) {
+          next[hook.hook_id] = current[hook.hook_id] ?? true
+        }
       }
       return next
     })
@@ -338,6 +380,11 @@ export default function ChatScreen({
         responseText,
       )
       setSession(result.session)
+      setCollapsedReflectionIds((current) => ({
+        ...current,
+        [hook.hook_id]: true,
+      }))
+      setIsReflectionDrawerOpen(false)
       dispatchSessionChanged(courseId, lessonId, lessonVersion, {
         type: "upsert",
         session: result.session,
@@ -378,8 +425,12 @@ export default function ChatScreen({
       loading ||
       session.is_active === false ||
       session.is_finalized ||
-      session.is_completion_started
+      session.is_completion_started ||
+      hasBlockingMidReflection
     ) {
+      if (hasBlockingMidReflection) {
+        setInteractionError("Save the mid-session reflection before continuing the chat.")
+      }
       return
     }
 
@@ -424,31 +475,158 @@ export default function ChatScreen({
     }
   }
 
+  function renderReflectionHook(hook: SessionReflectionHook) {
+    const responseText = reflectionDrafts[hook.hook_id] ?? ""
+
+    return (
+      <article className={`transcript-entry transcript-entry--system transcript-entry--reflection transcript-entry--reflection-${hook.phase}`}>
+        <header className="transcript-entry__header">
+          <span className="transcript-entry__role">
+            Reflection prompt
+          </span>
+        </header>
+        <h3 className="transcript-entry__title">
+          {hook.phase === "mid" ? "Mid-session reflection" : "Post-completion reflection"}
+        </h3>
+        <p className="message-body">{hook.prompt}</p>
+        <label className="composer-form__field transcript-entry__response">
+          <span className="sr-only">Reflection response</span>
+          <textarea
+            value={responseText}
+            onChange={(event) =>
+              setReflectionDrafts((current) => ({
+                ...current,
+                [hook.hook_id]: event.target.value,
+              }))
+            }
+            disabled={loading || session?.is_finalized}
+            rows={3}
+            placeholder="Write your reflection response here."
+          />
+        </label>
+        {!session?.is_finalized ? (
+          <div className="portal-inline-actions">
+            <button className="ghost-button" type="button" onClick={() => void handleSaveReflection(hook)} disabled={loading}>
+              Save reflection
+            </button>
+          </div>
+        ) : null}
+      </article>
+    )
+  }
+
+  function renderReflectionDrawer(hooks: SessionReflectionHook[]) {
+    if (hooks.length === 0) {
+      return null
+    }
+
+    return (
+      <article className={`reflection-drawer${isReflectionDrawerOpen ? " reflection-drawer--open" : ""}`}>
+        <button
+          className="reflection-drawer__toggle"
+          type="button"
+          aria-expanded={isReflectionDrawerOpen}
+          aria-label={`${isReflectionDrawerOpen ? "Hide" : "Show"} saved reflections`}
+          onClick={() => setIsReflectionDrawerOpen((current) => !current)}
+        >
+          <span className="reflection-drawer__arrow" aria-hidden="true">
+            {isReflectionDrawerOpen ? "▾" : "▸"}
+          </span>
+          <span>Reflections</span>
+        </button>
+
+        {isReflectionDrawerOpen ? (
+          <div className="reflection-drawer__items">
+            {hooks.map((hook) => (
+              <article className={`reflection-drawer__item reflection-drawer__item--${hook.phase}`} key={`saved-reflection:${hook.hook_id}`}>
+                <div className="reflection-drawer__body">
+                  <span className="reflection-drawer__label">
+                    {hook.phase === "mid" ? "Saved mid-session reflection" : "Saved post-completion reflection"}
+                  </span>
+                  <p>{(reflectionDrafts[hook.hook_id] ?? "").trim() || hook.response_text || "Reflection saved."}</p>
+                </div>
+                {!session?.is_finalized ? (
+                  <button
+                    className="ghost-button"
+                    type="button"
+                    onClick={() =>
+                      setCollapsedReflectionIds((current) => ({
+                        ...current,
+                        [hook.hook_id]: false,
+                      }))
+                    }
+                  >
+                    Review
+                  </button>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        ) : null}
+      </article>
+    )
+  }
+
   if (sessionId === null) {
     return (
-      <section className="conversation-stage conversation-stage--empty" aria-labelledby="conversation-empty-title">
+      <section className="conversation-stage conversation-stage--empty lesson-overview-stage" aria-labelledby="conversation-empty-title">
         <header className="conversation-stage__hero">
-          <p className="eyebrow">Conversation</p>
-          <h1 id="conversation-empty-title">Start a lesson session</h1>
+          <p className="eyebrow">Lesson Workspace</p>
+          <h1 id="conversation-empty-title">{lesson?.title ?? lessonTitle ?? lessonId}</h1>
           <p className="conversation-stage__summary">
-            The lesson stays fixed while sessions hold each separate attempt. Open
-            an older conversation from the rail or create a new workspace here.
+            {lesson?.learning_objective ??
+              "Review the lesson details, then start a new workspace or open a prior session from the sidebar."}
           </p>
         </header>
 
-        <section className="conversation-stage__empty-card">
-          <h2>Ready to begin?</h2>
-          <p>
-            New sessions are lightweight. If you leave before sending a message,
-            Plexa will automatically clean that session up.
-          </p>
-          <button
-            className="primary-button conversation-stage__primary"
-            onClick={() => void handleCreateSession()}
-            disabled={creating}
-          >
-            {creating ? "Starting..." : "Start new session"}
-          </button>
+        <section className="lesson-overview-card">
+          <div className="lesson-overview-card__primary">
+            <p className="eyebrow">Selected Lesson</p>
+            <h2>{lesson?.behavioral_focus ?? "Session setup"}</h2>
+            <p>
+              New sessions are lightweight. If you leave before sending a message,
+              Plexa will automatically clean that session up.
+            </p>
+            <div className="portal-inline-actions">
+              <button
+                className="primary-button"
+                onClick={() => void handleCreateSession()}
+                disabled={creating}
+              >
+                {creating ? "Starting..." : "Start new session"}
+              </button>
+            </div>
+          </div>
+
+          <dl className="lesson-overview-card__facts">
+            <div>
+              <dt>Version</dt>
+              <dd>v{lesson?.version ?? lessonVersion}</dd>
+            </div>
+            <div>
+              <dt>Author</dt>
+              <dd>{lesson?.author ?? "Unknown"}</dd>
+            </div>
+            <div>
+              <dt>Difficulty</dt>
+              <dd>{lesson?.difficulty ?? "Flexible"}</dd>
+            </div>
+            <div>
+              <dt>Duration</dt>
+              <dd>{lesson?.approximate_time ?? "Flexible pace"}</dd>
+            </div>
+          </dl>
+
+          {lesson?.tags?.length ? (
+            <div className="tag-row lesson-overview-card__tags">
+              {lesson.tags.map((tag) => (
+                <span key={tag} className="tag">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          ) : null}
+
           {bootError ? <p className="empty-panel">{bootError}</p> : null}
         </section>
       </section>
@@ -511,6 +689,28 @@ export default function ChatScreen({
                   </dd>
                 </div>
               </dl>
+              <div className="conversation-stage__completion-actions" aria-label="Completion actions">
+                {session.is_finalized ? (
+                  <button className="primary-button" type="button" disabled>
+                    Locked
+                  </button>
+                ) : null}
+                {!session.is_finalized && !session.is_completion_started ? (
+                  <button className="ghost-button" type="button" onClick={() => void handleBeginCompletion()} disabled={loading || deleting}>
+                    Complete work
+                  </button>
+                ) : null}
+                {!session.is_finalized && session.is_completion_started && session.is_active ? (
+                  <button className="ghost-button" type="button" onClick={() => void handleResumeWork()} disabled={loading || deleting}>
+                    Keep working
+                  </button>
+                ) : null}
+                {!session.is_finalized && session.is_completion_started ? (
+                  <button className="primary-button" type="button" onClick={() => void handleTurnIn()} disabled={loading || deleting || !allTriggeredReflectionsSaved}>
+                    Turn in
+                  </button>
+                ) : null}
+              </div>
               <button
                 className="ghost-button ghost-button--danger"
                 onClick={() => setShowDeleteConfirm(true)}
@@ -523,38 +723,6 @@ export default function ChatScreen({
         </header>
 
         <section className="conversation-stage__frame" aria-label="Conversation transcript">
-          <section className="portal-card">
-            <header className="portal-card__header">
-              <h2>Completion</h2>
-            </header>
-            <p className="portal-note">
-              {session.is_finalized
-                ? "This session has been finalized and turned in."
-                : session.is_completion_started
-                  ? "Completion mode is active. Finish any required reflections, then turn the session in."
-                  : session.is_active
-                    ? "When your work is ready for reflection, move this session into completion mode."
-                    : "Chat is closed, but you can still complete reflections and turn the session in."}
-            </p>
-            <div className="portal-inline-actions">
-              {!session.is_finalized && !session.is_completion_started ? (
-                <button className="ghost-button" type="button" onClick={() => void handleBeginCompletion()} disabled={loading || deleting}>
-                  Complete work
-                </button>
-              ) : null}
-              {!session.is_finalized && session.is_completion_started && session.is_active ? (
-                <button className="ghost-button" type="button" onClick={() => void handleResumeWork()} disabled={loading || deleting}>
-                  Keep working
-                </button>
-              ) : null}
-              {!session.is_finalized && session.is_completion_started ? (
-                <button className="primary-button" type="button" onClick={() => void handleTurnIn()} disabled={loading || deleting || !allTriggeredReflectionsAnswered}>
-                  Turn in
-                </button>
-              ) : null}
-            </div>
-          </section>
-
           <ol ref={transcriptRef} className="transcript transcript-list" aria-label="Messages">
             {session.is_active === false && session.is_finalized === false ? (
               <li>
@@ -594,44 +762,34 @@ export default function ChatScreen({
                   </header>
                   <p className="message-body">{message.content}</p>
                 </article>
+                {index === latestNonUserMessageIndex && (visibleMidReflectionHooks.length > 0 || collapsedReflectionHooks.length > 0) ? (
+                  <div className="reflection-drawer-stack">
+                    {visibleMidReflectionHooks.map((hook) => (
+                      <div key={`mid-reflection:${hook.hook_id}`}>
+                        {renderReflectionHook(hook)}
+                      </div>
+                    ))}
+                    {renderReflectionDrawer(collapsedReflectionHooks)}
+                  </div>
+                ) : null}
               </li>
             ))}
 
-            {triggeredReflectionHooks.map((hook) => (
+            {latestNonUserMessageIndex === -1 && visibleMidReflectionHooks.map((hook) => (
               <li key={`reflection:${hook.hook_id}`}>
-                <article className="transcript-entry transcript-entry--system transcript-entry--reflection">
-                  <header className="transcript-entry__header">
-                    <span className="transcript-entry__role">
-                      Reflection prompt
-                    </span>
-                  </header>
-                  <h3 className="transcript-entry__title">
-                    {hook.phase === "mid" ? "Mid-session reflection" : "Post-completion reflection"}
-                  </h3>
-                  <p className="message-body">{hook.prompt}</p>
-                  <label className="composer-form__field transcript-entry__response">
-                    <span className="sr-only">Reflection response</span>
-                    <textarea
-                      value={reflectionDrafts[hook.hook_id] ?? ""}
-                      onChange={(event) =>
-                        setReflectionDrafts((current) => ({
-                          ...current,
-                          [hook.hook_id]: event.target.value,
-                        }))
-                      }
-                      disabled={loading || session.is_finalized}
-                      rows={3}
-                      placeholder="Write your reflection response here."
-                    />
-                  </label>
-                  {!session.is_finalized ? (
-                    <div className="portal-inline-actions">
-                      <button className="ghost-button" type="button" onClick={() => void handleSaveReflection(hook)} disabled={loading}>
-                        Save reflection
-                      </button>
-                    </div>
-                  ) : null}
-                </article>
+                {renderReflectionHook(hook)}
+              </li>
+            ))}
+
+            {latestNonUserMessageIndex === -1 && collapsedReflectionHooks.length > 0 ? (
+              <li className="transcript-list__compact-item">
+                {renderReflectionDrawer(collapsedReflectionHooks)}
+              </li>
+            ) : null}
+
+            {visiblePostReflectionHooks.map((hook) => (
+              <li key={`reflection:${hook.hook_id}`}>
+                {renderReflectionHook(hook)}
               </li>
             ))}
 
@@ -681,7 +839,7 @@ export default function ChatScreen({
                   }
                 }}
                 placeholder="Ask a question, test a prompt, or reflect on the lesson."
-                disabled={deleting || session.is_active === false || session.is_finalized || session.is_completion_started}
+                disabled={composerDisabled}
                 rows={1}
               />
             </label>
@@ -692,7 +850,7 @@ export default function ChatScreen({
               onMouseDown={(event) => {
                 event.preventDefault()
               }}
-              disabled={loading || deleting || session.is_active === false || session.is_finalized || session.is_completion_started || input.trim() === ""}
+              disabled={loading || composerDisabled || input.trim() === ""}
             >
               {loading ? "Sending..." : "Send"}
             </button>

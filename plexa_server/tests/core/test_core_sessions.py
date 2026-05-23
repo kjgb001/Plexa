@@ -1,4 +1,5 @@
 import asyncio
+from copy import deepcopy
 import pytest
 from datetime import datetime, UTC
 
@@ -18,6 +19,13 @@ from plexa_server.tests.fixtures import make_valid_lesson_payload
 
 def run(coro):
     return asyncio.run(coro)
+
+
+def answer_triggered_mid_reflections(manager, storage, session_id: str):
+    session = run(storage.get_session(session_id))
+    for hook in session.reflection_hooks:
+        if hook.phase == "mid" and hook.triggered_at is not None and not (hook.response_text or "").strip():
+            run(manager.save_reflection_response(session_id, hook.hook_id, f"Response for {hook.hook_id}"))
 
 
 def test_create_session(setup_manager, storage_backend):
@@ -126,6 +134,74 @@ def test_mid_reflection_without_trigger_turn_defaults_to_halfway(setup_manager, 
     assert session.reflection_hooks[0].trigger_source == "mid_turn"
 
 
+def test_carry_forward_mid_reflection_does_not_trigger_on_final_turn(setup_manager, storage_backend):
+    manager, storage = setup_manager()
+    payload = make_valid_lesson_payload()
+    payload["constraints"] = payload["constraints"].copy()
+    payload["constraints"]["turn_limit"] = 2
+    payload["reflection"] = payload["reflection"].copy()
+    payload["reflection"]["hooks"] = [
+        {
+            "hook_id": "final-carry",
+            "prompt": "Carry this if it would otherwise appear at the end.",
+            "phase": "mid",
+            "order_index": 0,
+            "trigger_turn": 2,
+            "carry_to_post": True,
+        }
+    ]
+    lesson = Lesson.model_validate(payload)
+
+    run(manager.create_session(
+        session_id="s1",
+        lesson=lesson,
+        user_id="user-1",
+        course_id="CS101"
+    ))
+
+    run(manager.submit_user_message("s1", "m1", "First turn"))
+    run(manager.submit_user_message("s1", "m2", "Final turn"))
+    session = run(storage.get_session("s1"))
+    assert session.is_active is False
+    assert session.is_completion_started is True
+    assert session.reflection_hooks[0].trigger_source == "carry_to_post"
+    assert session.reflection_hooks[0].carried_to_post is True
+
+
+def test_turn_limit_auto_completion_triggers_post_reflections(setup_manager, storage_backend):
+    manager, storage = setup_manager()
+    payload = make_valid_lesson_payload()
+    payload["reflection"] = payload["reflection"].copy()
+    payload["reflection"]["hooks"] = [
+        {
+            "hook_id": "post-final",
+            "prompt": "What did this completed session show?",
+            "phase": "post",
+            "order_index": 0,
+        }
+    ]
+    lesson = Lesson.model_validate(payload)
+
+    run(manager.create_session(
+        session_id="s1",
+        lesson=lesson,
+        user_id="user-1",
+        course_id="CS101"
+    ))
+
+    run(manager.submit_user_message("s1", "m1", "First turn"))
+    session = run(storage.get_session("s1"))
+    assert session.is_completion_started is False
+    assert session.reflection_hooks[0].triggered_at is None
+
+    run(manager.submit_user_message("s1", "m2", "Final turn"))
+    session = run(storage.get_session("s1"))
+    assert session.is_active is False
+    assert session.is_completion_started is True
+    assert session.completed_at is not None
+    assert session.reflection_hooks[0].trigger_source == "soft_complete"
+
+
 def test_completion_requires_triggered_reflections_before_turn_in(setup_manager, storage_backend):
     manager, storage = setup_manager()
     lesson = Lesson.model_validate(make_valid_lesson_payload())
@@ -166,6 +242,59 @@ def test_completion_requires_triggered_reflections_before_turn_in(setup_manager,
     assert stored.is_finalized is True
 
 
+def test_completion_backfills_missing_post_hooks_from_current_lesson(setup_manager, storage_backend):
+    manager, storage = setup_manager()
+    current_payload = make_valid_lesson_payload()
+    stale_payload = deepcopy(current_payload)
+    stale_payload["reflection"] = {"hooks": [], "logging_policy": "default"}
+
+    stale_lesson = Lesson.model_validate(stale_payload)
+    current_lesson = Lesson.model_validate(current_payload)
+
+    session = run(manager.create_session(
+        session_id="s1",
+        lesson=stale_lesson,
+        user_id="user-1",
+        course_id="CS101"
+    ))
+    assert session.reflection_hooks == []
+
+    session = run(manager.begin_completion("s1", current_lesson=current_lesson))
+
+    post_hooks = [hook for hook in session.reflection_hooks if hook.phase == "post"]
+    assert [hook.hook_id for hook in post_hooks] == ["post-confidence", "post-overconfidence"]
+    assert all(hook.trigger_source == "soft_complete" for hook in post_hooks)
+
+    stored = run(storage.get_session("s1"))
+    assert len(stored.reflection_hooks) == 3
+
+
+def test_pending_mid_reflection_blocks_next_message_until_answered(setup_manager, storage_backend):
+    manager, storage = setup_manager()
+    lesson = Lesson.model_validate(make_valid_lesson_payload())
+
+    run(manager.create_session(
+        session_id="s1",
+        lesson=lesson,
+        user_id="user-1",
+        course_id="CS101"
+    ))
+
+    run(manager.submit_user_message("s1", "m1", "First turn"))
+    session = run(storage.get_session("s1"))
+    mid_hook = next(hook for hook in session.reflection_hooks if hook.phase == "mid")
+    assert mid_hook.triggered_at is not None
+
+    with pytest.raises(SessionCompletionError):
+        run(manager.submit_user_message("s1", "m2", "Second turn"))
+
+    run(manager.save_reflection_response("s1", mid_hook.hook_id, "Mid reflection response."))
+    run(manager.submit_user_message("s1", "m2", "Second turn"))
+
+    session = run(storage.get_session("s1"))
+    assert session.turn_count == 2
+
+
 def test_completion_can_resume_before_turn_in(setup_manager, storage_backend):
     manager, storage = setup_manager()
     lesson = Lesson.model_validate(make_valid_lesson_payload())
@@ -181,8 +310,11 @@ def test_completion_can_resume_before_turn_in(setup_manager, storage_backend):
     session = run(manager.resume_after_completion("s1"))
 
     assert session.is_completion_started is False
+    assert session.completed_at is None
     assert session.is_active is True
     assert session.is_finalized is False
+    assert all(hook.triggered_at is None for hook in session.reflection_hooks)
+    assert all(hook.response_text is None for hook in session.reflection_hooks)
 
     stored = run(storage.get_session("s1"))
     assert stored.is_completion_started is False
@@ -219,11 +351,9 @@ def test_turn_limit_enforced(setup_manager, storage_backend):
 
     session = run(storage.get_session("s1"))
 
-    for i in range(session.max_turns + 1):
-        try:
-            run(manager.submit_user_message("s1", f"m{i}", f"Turn {i}"))
-        except:
-            continue
+    for i in range(session.max_turns):
+        run(manager.submit_user_message("s1", f"m{i}", f"Turn {i}"))
+        answer_triggered_mid_reflections(manager, storage, "s1")
 
     session = run(storage.get_session("s1"))
     assert session.is_active is False
