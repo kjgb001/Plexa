@@ -882,6 +882,22 @@ button {
 .transcript-entry__response {
   display: grid;
   gap: 0.45rem;
+  width: 100%;
+}
+
+.transcript-entry__response textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  min-height: 6rem;
+  padding: 0.95rem 1rem;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-strong) 88%, transparent);
+  color: var(--ink);
+  resize: vertical;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
 }
 
 .message-body {
