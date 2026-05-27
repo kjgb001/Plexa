@@ -647,19 +647,24 @@ export default function ChatScreen({
           <p className="eyebrow">Lesson Workspace</p>
           <h1 id="conversation-empty-title">{lesson?.title ?? lessonTitle ?? lessonId}</h1>
           <p className="conversation-stage__summary">
-            {lesson?.learning_objective ??
-              "Review the lesson details, then start a new workspace or open a prior session from the sidebar."}
+            Review the lesson details, then start a new workspace or open a prior session from the sidebar.
           </p>
         </header>
 
         <section className="lesson-overview-card">
           <div className="lesson-overview-card__primary">
             <p className="eyebrow">Selected Lesson</p>
-            <h2>{lesson?.behavioral_focus ?? "Session setup"}</h2>
-            <p>
-              New sessions are lightweight. If you leave before sending a message,
-              Plexa will automatically clean that session up.
-            </p>
+            <h2>Session setup</h2>
+            <dl className="lesson-overview-card__intent">
+              <div>
+                <dt>Learning objective</dt>
+                <dd>{lesson?.learning_objective ?? "Review this lesson's goal before starting a session."}</dd>
+              </div>
+              <div>
+                <dt>Behavioral focus</dt>
+                <dd>{lesson?.behavioral_focus ?? "Use the session to practice the lesson workflow."}</dd>
+              </div>
+            </dl>
             <div className="portal-inline-actions">
               <button
                 className="primary-button"
@@ -682,11 +687,11 @@ export default function ChatScreen({
             </div>
             <div>
               <dt>Difficulty</dt>
-              <dd>{lesson?.difficulty ?? "Flexible"}</dd>
+              <dd>{lesson?.difficulty ?? "Not specified"}</dd>
             </div>
             <div>
               <dt>Duration</dt>
-              <dd>{lesson?.approximate_time ?? "Flexible pace"}</dd>
+              <dd>{lesson?.approximate_time ?? "Not specified"}</dd>
             </div>
           </dl>
 

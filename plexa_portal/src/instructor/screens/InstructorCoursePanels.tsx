@@ -368,6 +368,8 @@ export function InstructorLessonsPanel({
 }
 
 export function InstructorLogsPanel({
+  course,
+  instructors,
   logs,
   lessons,
   selectedLog,
@@ -376,6 +378,8 @@ export function InstructorLogsPanel({
   onOpenLog,
   onBackToLogs,
 }: {
+  course: Course
+  instructors: CourseInstructors
   logs: EncryptedLogMetadata[]
   lessons: Lesson[]
   selectedLog: Record<string, unknown> | null
@@ -384,6 +388,8 @@ export function InstructorLogsPanel({
   onOpenLog(sessionId: string): Promise<void>
   onBackToLogs(): void
 }) {
+  const [groupMode, setGroupMode] = useState<"user" | "lesson">("lesson")
+  const [sortMode, setSortMode] = useState<"az" | "za" | "latestTurnIn">("az")
   const lessonTitles = useMemo(() => {
     const titles = new Map<string, string>()
     lessons.forEach((lesson) => {
@@ -391,18 +397,244 @@ export function InstructorLogsPanel({
     })
     return titles
   }, [lessons])
-  const groupedLogs = useMemo(() => {
-    const sortedLogs = [...logs].sort((left, right) => right.last_event_at.localeCompare(left.last_event_at))
-    return Array.from(
-      sortedLogs.reduce<Map<string, Map<string, EncryptedLogMetadata[]>>>((users, log) => {
-        const lessonKey = `${log.lesson_id}:${log.lesson_version}`
-        const userLessons = users.get(log.user_id) ?? new Map<string, EncryptedLogMetadata[]>()
-        userLessons.set(lessonKey, [...(userLessons.get(lessonKey) ?? []), log])
-        users.set(log.user_id, userLessons)
-        return users
-      }, new Map()),
-    )
+  const pinnedLessonKeys = useMemo(
+    () =>
+      new Set(
+        lessons
+          .filter((lesson) => lesson.is_pinned_now)
+          .map((lesson) => `${lesson.lesson_id}:${lesson.version}`),
+      ),
+    [lessons],
+  )
+  const sortedLogs = useMemo(
+    () => [...logs].sort((left, right) => right.last_event_at.localeCompare(left.last_event_at)),
+    [logs],
+  )
+  const learnerIds = useMemo(
+    () =>
+      course.enrolled_users
+        .filter((userId) => !instructors.instructor_ids.includes(userId))
+        .sort((left, right) => left.localeCompare(right)),
+    [course.enrolled_users, instructors.instructor_ids],
+  )
+  const latestTurnInByUser = useMemo(() => {
+    const latest = new Map<string, string>()
+    logs.forEach((log) => {
+      const turnedInAt = "turned_in_at" in log ? log.turned_in_at : null
+      if (!turnedInAt) {
+        return
+      }
+      const current = latest.get(log.user_id)
+      if (current === undefined || turnedInAt > current) {
+        latest.set(log.user_id, turnedInAt)
+      }
+    })
+    return latest
   }, [logs])
+  const latestTurnInByLesson = useMemo(() => {
+    const latest = new Map<string, string>()
+    logs.forEach((log) => {
+      const turnedInAt = "turned_in_at" in log ? log.turned_in_at : null
+      if (!turnedInAt) {
+        return
+      }
+      const lessonKey = `${log.lesson_id}:${log.lesson_version}`
+      const current = latest.get(lessonKey)
+      if (current === undefined || turnedInAt > current) {
+        latest.set(lessonKey, turnedInAt)
+      }
+    })
+    return latest
+  }, [logs])
+  function sortTopLevelEntries<T>(
+    entries: [string, T][],
+    labelForKey: (key: string) => string,
+    latestForKey: (key: string) => string | undefined,
+  ) {
+    return [...entries].sort(([leftKey], [rightKey]) => {
+      if (sortMode === "latestTurnIn") {
+        const leftLatest = latestForKey(leftKey)
+        const rightLatest = latestForKey(rightKey)
+        if (leftLatest && rightLatest && leftLatest !== rightLatest) {
+          return rightLatest.localeCompare(leftLatest)
+        }
+        if (leftLatest && !rightLatest) {
+          return -1
+        }
+        if (!leftLatest && rightLatest) {
+          return 1
+        }
+      }
+      const direction = sortMode === "za" ? -1 : 1
+      return direction * labelForKey(leftKey).localeCompare(labelForKey(rightKey))
+    })
+  }
+  function sortUserEntries(entries: [string, Map<string, EncryptedLogMetadata[]>][]) {
+    return [...entries].sort(([leftKey, leftLessons], [rightKey, rightLessons]) => {
+      const leftHasLogs = Array.from(leftLessons.values()).some((items) => items.length > 0)
+      const rightHasLogs = Array.from(rightLessons.values()).some((items) => items.length > 0)
+      if (leftHasLogs && !rightHasLogs) {
+        return -1
+      }
+      if (!leftHasLogs && rightHasLogs) {
+        return 1
+      }
+      if (sortMode === "latestTurnIn" && leftHasLogs && rightHasLogs) {
+        const leftLatest = latestTurnInByUser.get(leftKey)
+        const rightLatest = latestTurnInByUser.get(rightKey)
+        if (leftLatest && rightLatest && leftLatest !== rightLatest) {
+          return rightLatest.localeCompare(leftLatest)
+        }
+        if (leftLatest && !rightLatest) {
+          return -1
+        }
+        if (!leftLatest && rightLatest) {
+          return 1
+        }
+      }
+      const direction = sortMode === "za" ? -1 : 1
+      return direction * leftKey.localeCompare(rightKey)
+    })
+  }
+  function cycleSortMode() {
+    setSortMode((current) => {
+      if (current === "az") {
+        return "za"
+      }
+      if (current === "za") {
+        return "latestTurnIn"
+      }
+      return "az"
+    })
+  }
+  const sortLabel = sortMode === "az"
+    ? "Sort: A-Z"
+    : sortMode === "za"
+      ? "Sort: Z-A"
+      : "Sort: latest turn-in"
+  const userGroupedLogs = useMemo(() => {
+    const grouped = sortedLogs.reduce<Map<string, Map<string, EncryptedLogMetadata[]>>>((users, log) => {
+      const lessonKey = `${log.lesson_id}:${log.lesson_version}`
+      const userLessons = users.get(log.user_id) ?? new Map<string, EncryptedLogMetadata[]>()
+      userLessons.set(lessonKey, [...(userLessons.get(lessonKey) ?? []), log])
+      users.set(log.user_id, userLessons)
+      return users
+    }, new Map())
+    learnerIds.forEach((userId) => {
+      if (!grouped.has(userId)) {
+        grouped.set(userId, new Map())
+      }
+    })
+    return sortUserEntries(Array.from(grouped))
+  }, [learnerIds, latestTurnInByUser, sortMode, sortedLogs])
+  const lessonGroupedLogs = useMemo(() => {
+    const entries = sortTopLevelEntries(
+      Array.from(
+        sortedLogs.reduce<Map<string, Map<string, EncryptedLogMetadata[]>>>((lessonsByKey, log) => {
+          const lessonKey = `${log.lesson_id}:${log.lesson_version}`
+          const lessonUsers = lessonsByKey.get(lessonKey) ?? new Map<string, EncryptedLogMetadata[]>()
+          lessonUsers.set(log.user_id, [...(lessonUsers.get(log.user_id) ?? []), log])
+          lessonsByKey.set(lessonKey, lessonUsers)
+          return lessonsByKey
+        }, new Map()),
+      ),
+      (lessonKey) => lessonTitles.get(lessonKey) ?? lessonKey,
+      (lessonKey) => latestTurnInByLesson.get(lessonKey),
+    )
+    return entries.sort(([leftKey], [rightKey]) => {
+      const leftPinned = pinnedLessonKeys.has(leftKey)
+      const rightPinned = pinnedLessonKeys.has(rightKey)
+      if (leftPinned === rightPinned) {
+        return 0
+      }
+      return leftPinned ? -1 : 1
+    })
+  }, [lessonTitles, latestTurnInByLesson, pinnedLessonKeys, sortMode, sortedLogs])
+  function renderSessionLogButton(log: EncryptedLogMetadata) {
+    const turnedIn = isLogTurnedIn(log)
+    return (
+      <button
+        key={log.instance_id}
+        className={turnedIn ? "portal-list__item portal-list__item--active portal-list__item--split" : "portal-list__item portal-list__item--split"}
+        onClick={() => void onOpenLog(log.instance_id)}
+      >
+        <span className="portal-log-session-summary">
+          <span className="portal-list__title">{formatTimestamp(log.last_event_at)}</span>
+          <span className="portal-list__meta">
+            {log.turn_count} turns · {log.is_active ? "Active" : "Closed"}
+          </span>
+        </span>
+        <span className={turnedIn ? "section-chip section-chip--strong" : "section-chip"}>
+          {turnedIn ? "Turned in" : "Review"}
+        </span>
+      </button>
+    )
+  }
+
+  function renderNestedLogGroup(
+    key: string,
+    label: string,
+    logsForGroup: EncryptedLogMetadata[],
+  ) {
+    return (
+      <details className="portal-log-group portal-log-group--nested" key={key}>
+        <summary>
+          <span>{label}</span>
+          <span className={logsForGroup.some(isLogTurnedIn) ? "section-chip section-chip--strong" : "section-chip"}>
+            {logsForGroup.length} {logsForGroup.length === 1 ? "session" : "sessions"}
+          </span>
+        </summary>
+        <div className="portal-list">
+          {logsForGroup.map(renderSessionLogButton)}
+        </div>
+      </details>
+    )
+  }
+
+  function renderUserFirstGroups() {
+    return userGroupedLogs.map(([userId, lessonMap]) => (
+      <details className="portal-log-group" key={userId}>
+        <summary>
+          <span>{userId}</span>
+          <span className="section-chip">
+            {Array.from(lessonMap.values()).reduce((sum, entries) => sum + entries.length, 0)} logs
+          </span>
+        </summary>
+        <div className="portal-log-group__body">
+          {lessonMap.size === 0 ? (
+            <p className="empty-panel">No session logs yet.</p>
+          ) : null}
+          {Array.from(lessonMap).map(([lessonKey, lessonLogs]) =>
+            renderNestedLogGroup(
+              `${userId}:${lessonKey}`,
+              lessonTitles.get(lessonKey) ?? lessonKey,
+              lessonLogs,
+            ),
+          )}
+        </div>
+      </details>
+    ))
+  }
+
+  function renderLessonFirstGroups() {
+    return lessonGroupedLogs.map(([lessonKey, userMap]) => (
+      <details className="portal-log-group" key={lessonKey}>
+        <summary>
+          <span>{lessonTitles.get(lessonKey) ?? lessonKey}</span>
+          <span className="section-chip">
+            {Array.from(userMap.values()).reduce((sum, entries) => sum + entries.length, 0)} logs
+          </span>
+        </summary>
+        <div className="portal-log-group__body">
+          {Array.from(userMap).map(([userId, userLogs]) =>
+            renderNestedLogGroup(`${lessonKey}:${userId}`, userId, userLogs),
+          )}
+        </div>
+      </details>
+    ))
+  }
+
+  const renderedLogGroups = groupMode === "user" ? renderUserFirstGroups() : renderLessonFirstGroups()
 
   function renderLogDetail(payload: Record<string, unknown>) {
     const transcript = Array.isArray(payload.transcript) ? payload.transcript : []
@@ -461,8 +693,8 @@ export function InstructorLogsPanel({
           </ol>
         </div>
         {reflections.length > 0 ? (
-          <div className="portal-card portal-card--flat">
-            <header className="portal-card__header"><h3>Saved reflections</h3></header>
+          <section className="portal-log-reflections">
+            <header><h3>Saved reflections</h3></header>
             <div className="portal-list">
               {reflections.map((reflection, index) => {
                 const item = reflection && typeof reflection === "object"
@@ -470,13 +702,15 @@ export function InstructorLogsPanel({
                   : {}
                 return (
                   <div className="portal-list__item" key={`${String(item.hook_id ?? index)}`}>
-                    <span className="portal-list__title">{String(item.prompt ?? item.hook_id ?? "Reflection")}</span>
+                    <span className="portal-list__title">
+                      {index + 1} of {reflections.length} · {String(item.prompt ?? item.hook_id ?? "Reflection")}
+                    </span>
                     <span className="portal-list__meta">{String(item.response_text ?? "No response saved")}</span>
                   </div>
                 )
               })}
             </div>
-          </div>
+          </section>
         ) : null}
       </section>
     )
@@ -484,14 +718,12 @@ export function InstructorLogsPanel({
 
   if (selectedLogId !== null) {
     return (
-      <section className="portal-grid portal-grid--wide">
-        <article className="portal-card portal-card--span-2">
-          {selectedLogLoading || selectedLog === null ? (
-            <p className="empty-panel">Loading decrypted session log...</p>
-          ) : (
-            renderLogDetail(selectedLog)
-          )}
-        </article>
+      <section className="portal-log-section">
+        {selectedLogLoading || selectedLog === null ? (
+          <p className="empty-panel">Loading decrypted session log...</p>
+        ) : (
+          renderLogDetail(selectedLog)
+        )}
       </section>
     )
   }
@@ -499,52 +731,27 @@ export function InstructorLogsPanel({
   return (
     <section className="portal-log-section">
       <header className="portal-log-section__header">
-        <h2>Encrypted session logs</h2>
+        <h2>Session logs</h2>
+        <div className="portal-inline-actions">
+          <button
+            className="ghost-button"
+            type="button"
+            onClick={cycleSortMode}
+          >
+            {sortLabel}
+          </button>
+          <button
+            className="ghost-button"
+            type="button"
+            onClick={() => setGroupMode((current) => current === "user" ? "lesson" : "user")}
+          >
+            {groupMode === "user" ? "Group by lesson" : "Group by user"}
+          </button>
+        </div>
       </header>
       <div className="portal-log-browser">
-        {groupedLogs.map(([userId, lessonMap]) => (
-          <details className="portal-log-group" key={userId} open>
-            <summary>
-              <span>{userId}</span>
-              <span className="section-chip">
-                {Array.from(lessonMap.values()).reduce((sum, entries) => sum + entries.length, 0)} logs
-              </span>
-            </summary>
-            <div className="portal-log-group__body">
-              {Array.from(lessonMap).map(([lessonKey, lessonLogs]) => (
-                <details className="portal-log-group portal-log-group--nested" key={`${userId}:${lessonKey}`}>
-                  <summary>
-                    <span>{lessonTitles.get(lessonKey) ?? lessonKey}</span>
-                    <span className="section-chip">{lessonLogs.length} sessions</span>
-                  </summary>
-                  <div className="portal-list">
-                    {lessonLogs.map((log) => {
-                      const turnedIn = isLogTurnedIn(log)
-                      return (
-                        <button
-                          key={log.instance_id}
-                          className={turnedIn ? "portal-list__item portal-list__item--active portal-list__item--split" : "portal-list__item portal-list__item--split"}
-                          onClick={() => void onOpenLog(log.instance_id)}
-                        >
-                          <span className="portal-log-session-summary">
-                            <span className="portal-list__title">{formatTimestamp(log.last_event_at)}</span>
-                            <span className="portal-list__meta">
-                              {log.turn_count} turns · {log.is_active ? "Active" : "Closed"}
-                            </span>
-                          </span>
-                          <span className={turnedIn ? "section-chip section-chip--strong" : "section-chip"}>
-                            {turnedIn ? "Turned in" : "Review"}
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </details>
-              ))}
-            </div>
-          </details>
-        ))}
-        {groupedLogs.length === 0 ? (
+        {renderedLogGroups}
+        {renderedLogGroups.length === 0 ? (
           <p className="empty-panel">No encrypted logs are currently available for this course.</p>
         ) : null}
       </div>

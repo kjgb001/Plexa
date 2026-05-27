@@ -241,6 +241,8 @@ export function InstructorCourseScreen({
 
       {mode === "logs" ? (
         <InstructorLogsPanel
+          course={course}
+          instructors={instructors}
           logs={logs}
           lessons={lessons}
           selectedLog={selectedLog}

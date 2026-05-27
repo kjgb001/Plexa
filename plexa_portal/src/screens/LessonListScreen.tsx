@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, type KeyboardEvent } from "react"
 import { useApis } from "../api"
 import { NotFoundError } from "../api/errors"
 import type { Lesson } from "../api/interfaces"
@@ -15,6 +15,18 @@ export default function LessonListScreen({ courseId, onSelectLesson }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [requestingEnrollment, setRequestingEnrollment] = useState(false)
   const [enrollmentStatus, setEnrollmentStatus] = useState<string | null>(null)
+
+  function handleLessonCardKeyDown(
+    event: KeyboardEvent<HTMLElement>,
+    lesson: Lesson,
+  ) {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return
+    }
+
+    event.preventDefault()
+    onSelectLesson(lesson.lesson_id, lesson.version)
+  }
 
   useEffect(() => {
     let active = true
@@ -123,6 +135,10 @@ export default function LessonListScreen({ courseId, onSelectLesson }: Props) {
                       ? "catalog-entry catalog-entry--lesson catalog-entry--pinned"
                       : "catalog-entry catalog-entry--lesson"
                   }
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onSelectLesson(lesson.lesson_id, lesson.version)}
+                  onKeyDown={(event) => handleLessonCardKeyDown(event, lesson)}
                 >
                   <header className="catalog-entry__header">
                     <p className="catalog-entry__index">{String(index + 1).padStart(2, "0")}</p>
@@ -148,21 +164,18 @@ export default function LessonListScreen({ courseId, onSelectLesson }: Props) {
                     </div>
                     <div>
                       <dt>Difficulty</dt>
-                      <dd>{lesson.difficulty ?? "Flexible"}</dd>
+                      <dd>{lesson.difficulty ?? "Not specified"}</dd>
                     </div>
                     <div>
                       <dt>Duration</dt>
-                      <dd>{lesson.approximate_time ?? "Flexible pace"}</dd>
+                      <dd>{lesson.approximate_time ?? "Not specified"}</dd>
                     </div>
                   </dl>
                   <footer className="catalog-entry__footer">
                     <p>{lesson.author ?? "Unknown author"}</p>
-                    <button
-                      className="catalog-entry__action"
-                      onClick={() => onSelectLesson(lesson.lesson_id, lesson.version)}
-                    >
+                    <span className="catalog-entry__action" aria-hidden="true">
                       Open lesson
-                    </button>
+                    </span>
                   </footer>
                 </article>
               </li>

@@ -780,7 +780,7 @@ export default function StudentShell({
                 </div>
                 <div>
                   <dt>Approx. Time</dt>
-                  <dd>{selectedLesson.approximate_time ?? "Flexible"}</dd>
+                  <dd>{selectedLesson.approximate_time ?? "Not specified"}</dd>
                 </div>
                 <div>
                   <dt>Objective</dt>

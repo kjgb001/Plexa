@@ -513,13 +513,19 @@ button {
   flex-direction: column;
   gap: 0.3rem;
   width: 100%;
+  box-sizing: border-box;
   padding: 0.9rem 0.95rem;
   text-align: left;
   border: 1px solid transparent;
   border-radius: 16px;
   background: var(--surface-muted);
   color: var(--ink);
+  cursor: pointer;
   transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.rail-card > * {
+  pointer-events: none;
 }
 
 .rail-card:hover {
@@ -1270,12 +1276,18 @@ button {
   border-radius: 22px;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 96%, transparent), color-mix(in srgb, var(--surface) 90%, transparent));
+  cursor: pointer;
   transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
 }
 
 .catalog-entry:hover,
 .catalog-entry:focus-within {
   transform: translateY(-2px);
+}
+
+.catalog-entry:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .catalog-entry--course {
@@ -1339,6 +1351,8 @@ button {
 }
 
 .catalog-entry__action {
+  display: inline-flex;
+  align-items: center;
   border: 0;
   border-radius: 999px;
   padding: 0.7rem 1rem;
@@ -1492,6 +1506,30 @@ button {
 .lesson-overview-card__primary p {
   margin: 0;
   color: var(--ink-soft);
+}
+
+.lesson-overview-card__intent {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+}
+
+.lesson-overview-card__intent div {
+  display: grid;
+  gap: 0.16rem;
+}
+
+.lesson-overview-card__intent dt {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.lesson-overview-card__intent dd {
+  margin: 0;
+  color: var(--ink);
 }
 
 .lesson-overview-card__facts {
@@ -2101,16 +2139,26 @@ button {
   font-size: clamp(1.8rem, 3vw, 2.5rem);
 }
 
+.portal-log-section__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
 .portal-log-group {
   display: grid;
-  gap: 0.75rem;
-  padding: 0.85rem 0.9rem;
+  gap: 0;
+  padding: 0;
   border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
   border-radius: 18px;
   background: color-mix(in srgb, var(--surface-elevated) 66%, transparent);
+  overflow: hidden;
 }
 
 .portal-log-group--nested {
+  gap: 0;
   background: color-mix(in srgb, var(--surface-strong) 62%, transparent);
 }
 
@@ -2123,10 +2171,18 @@ button {
   font-weight: 700;
 }
 
+.portal-log-group > summary {
+  padding: 0.85rem 0.9rem;
+}
+
+.portal-log-group > .portal-list,
+.portal-log-group > .portal-log-group__body {
+  padding: 0 0.9rem 0.9rem;
+}
+
 .portal-log-group__body {
   display: grid;
   gap: 0.75rem;
-  padding-top: 0.2rem;
 }
 
 .portal-log-session-summary {
@@ -2170,9 +2226,13 @@ button {
     color-mix(in srgb, var(--surface-strong) 72%, transparent);
 }
 
-.portal-card--flat {
-  box-shadow: none;
-  background: color-mix(in srgb, var(--surface-elevated) 54%, transparent);
+.portal-log-reflections {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.portal-log-reflections h3 {
+  margin: 0;
 }
 
 .portal-log-preview {
