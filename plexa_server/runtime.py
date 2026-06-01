@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import os
 import json
+import logging
 from urllib.parse import urlsplit
 
 from plexa_server.db.config import get_database_config, load_server_env_file
+
+
+logger = logging.getLogger(__name__)
 
 
 class RuntimeConfigurationError(RuntimeError):
@@ -39,6 +43,11 @@ def is_production_environment() -> bool:
     return get_app_environment() == "production"
 
 
+def is_env_flag_enabled(name: str) -> bool:
+    """Return whether a boolean environment flag is explicitly enabled."""
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def validate_production_runtime_configuration() -> None:
     """Fail fast when production-critical runtime configuration is missing."""
     if not is_production_environment():
@@ -62,7 +71,16 @@ def validate_production_runtime_configuration() -> None:
     if not auth_mode:
         raise RuntimeConfigurationError("Production runtime requires PLEXA_AUTH_MODE.")
     if auth_mode == "dev-header":
-        raise RuntimeConfigurationError("Production runtime cannot use PLEXA_AUTH_MODE=dev-header.")
+        if not is_env_flag_enabled("PLEXA_ENABLE_DEV_LOGIN"):
+            raise RuntimeConfigurationError(
+                "Production runtime cannot use PLEXA_AUTH_MODE=dev-header unless "
+                "PLEXA_ENABLE_DEV_LOGIN=true is set for temporary smoke testing."
+            )
+        logger.warning(
+            "PLEXA_AUTH_MODE=dev-header is enabled in production because "
+            "PLEXA_ENABLE_DEV_LOGIN=true. Replace this with institutional auth "
+            "before serving real students."
+        )
 
     cors_origins = os.getenv("PLEXA_CORS_ALLOWED_ORIGINS")
     if cors_origins is None or not cors_origins.strip():

@@ -4,6 +4,7 @@ import {
   AUTH_CLIENT_ID,
   AUTH_DISCOVERY_URL,
   AUTH_MODE,
+  ENABLE_DEV_LOGIN,
 } from "../auth/config"
 import { ClientConfigurationError, isProductionAppEnv } from "./runtime"
 
@@ -15,6 +16,9 @@ export function validateClientConfiguration(): void {
     }
     if (!import.meta.env.VITE_AUTH_MODE?.trim()) {
       raise("Production client configuration requires VITE_AUTH_MODE.")
+    }
+    if (AUTH_MODE === "dev" && !ENABLE_DEV_LOGIN) {
+      raise("Production dev login requires VITE_ENABLE_DEV_LOGIN=true.")
     }
   }
 

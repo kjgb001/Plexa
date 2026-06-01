@@ -1,5 +1,7 @@
 import { useState } from "react"
+import { ENABLE_DEV_LOGIN } from "../auth/config"
 import type { AuthMode } from "../auth/types"
+import { isProductionAppEnv } from "../config/runtime"
 
 type PortalChoice = "student" | "instructor"
 
@@ -33,6 +35,7 @@ export default function LoginScreen({
   const [selectedPortal, setSelectedPortal] = useState<PortalChoice>("student")
   const [devUserId, setDevUserId] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const showProductionDevLoginNotice = mode === "dev" && isProductionAppEnv() && ENABLE_DEV_LOGIN
 
   async function handleLogin() {
     if (mode === "dev" && devUserId.trim() === "") {
@@ -110,6 +113,11 @@ export default function LoginScreen({
                 placeholder="e.g. agi001"
                 autoComplete="username"
               />
+              {showProductionDevLoginNotice ? (
+                <small>
+                  Temporary username login is enabled for deployment testing.
+                </small>
+              ) : null}
             </label>
           ) : (
             <p className="login-form__notice">

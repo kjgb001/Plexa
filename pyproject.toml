@@ -1,13 +1,25 @@
 [project]
 name = "plexa"
 version = "0.0.0"
+dependencies = [
+    "alembic",
+    "asyncpg",
+    "cryptography",
+    "fastapi",
+    "pydantic",
+    "sqlalchemy",
+    "uvicorn",
+]
 
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["plexa_server"]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["plexa_server*"]
 
 [tool.pytest.ini_options]
 markers = [

@@ -89,6 +89,19 @@ For local server work:
 The detailed server workflow is documented in:
 - [plexa_server/README.md](plexa_server/README.md)
 
+## Production Deployment
+
+The initial production path targets VPS or institution-owned server deployments
+with one public domain:
+
+- the portal is served from `/`
+- the API is reverse-proxied under `/api`
+- Postgres provides persistence
+- inference remains a backend-only endpoint configured on the server
+
+See [deploy/README.md](deploy/README.md) for the Docker Compose and Caddy-based
+deployment guide.
+
 ## Testing
 
 The repository root has a pytest hook in [conftest.py](conftest.py) that:

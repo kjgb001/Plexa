@@ -129,6 +129,7 @@ VITE_APP_ENV=development
 VITE_API_BASE_URL=http://localhost:8000
 TARGET_API_VERSION=v1
 VITE_AUTH_MODE=dev
+VITE_ENABLE_DEV_LOGIN=false
 ```
 
 These are consumed in:
@@ -159,6 +160,10 @@ OIDC mode:
 
 Production deployments should use OIDC mode.
 
+Temporary production dev login is available only for deployment smoke testing.
+Production builds reject `VITE_AUTH_MODE=dev` unless
+`VITE_ENABLE_DEV_LOGIN=true` is set explicitly.
+
 ## Mode Switching
 
 ### Development mode
@@ -170,6 +175,7 @@ VITE_APP_ENV=development
 VITE_API_BASE_URL=http://localhost:8000
 TARGET_API_VERSION=v1
 VITE_AUTH_MODE=dev
+VITE_ENABLE_DEV_LOGIN=false
 ```
 
 ### Production-like mode
@@ -178,9 +184,10 @@ Typical production-oriented portal settings:
 
 ```env
 VITE_APP_ENV=production
-VITE_API_BASE_URL=https://api.example.com
+VITE_API_BASE_URL=/api
 TARGET_API_VERSION=v1
 VITE_AUTH_MODE=oidc
+VITE_ENABLE_DEV_LOGIN=false
 VITE_AUTH_AUTHORITY=https://idp.example.com
 VITE_AUTH_CLIENT_ID=plexa-portal
 VITE_AUTH_SCOPE=openid profile email

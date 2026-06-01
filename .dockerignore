@@ -1,0 +1,14 @@
+.git
+.venv
+__pycache__
+*.pyc
+
+plexa_portal/node_modules
+plexa_portal/dist
+plexa_portal/src/.env
+
+plexa_server/.env
+plexa_server/data
+
+deploy/production.env
+deploy/local-production.env

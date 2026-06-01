@@ -272,6 +272,11 @@ button {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
+.login-form__field small {
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
 .login-form__notice {
   margin: 0;
   padding: 0.75rem 0.85rem;

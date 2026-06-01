@@ -11,9 +11,11 @@ __pycache__/
 
 plexa_server/.env
 plexa_client/src/.env
+plexa_portal/src/.env
+deploy/production.env
+deploy/local-production.env
 
 docs/build/
 
 .impeccable.md
 AGENTS.md
-

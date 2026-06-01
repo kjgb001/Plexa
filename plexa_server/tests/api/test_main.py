@@ -130,6 +130,19 @@ def test_create_app_rejects_production_dev_auth(monkeypatch):
         raise AssertionError("Expected production startup to reject dev-header auth mode.")
 
 
+def test_production_dev_auth_requires_explicit_smoke_test_flag(monkeypatch):
+    _disable_env_file_loading(monkeypatch)
+    monkeypatch.setenv("PLEXA_ENV", "production")
+    monkeypatch.setenv("PLEXA_DATABASE_URL", "postgresql+asyncpg://plexa:pw@db/plexa")
+    monkeypatch.setenv("PLEXA_DATABASE_SYNC_URL", "postgresql://plexa:pw@db/plexa")
+    monkeypatch.setenv("PLEXA_AUTH_MODE", "dev-header")
+    monkeypatch.setenv("PLEXA_ENABLE_DEV_LOGIN", "true")
+    monkeypatch.setenv("PLEXA_CORS_ALLOWED_ORIGINS", '["https://client.example"]')
+    monkeypatch.setenv("PLEXA_LOG_ENCRYPTION_KEY", "test-key")
+
+    runtime.validate_production_runtime_configuration()
+
+
 def test_create_app_rejects_missing_production_log_key(monkeypatch):
     _disable_env_file_loading(monkeypatch)
     monkeypatch.setenv("PLEXA_ENV", "production")

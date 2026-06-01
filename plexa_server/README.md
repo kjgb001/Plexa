@@ -218,7 +218,7 @@ PLEXA_ENV=production
 In production, startup fails closed when critical configuration is missing or unsafe. At minimum you should provide:
 - `PLEXA_DATABASE_URL` or `PLEXA_DATABASE_SYNC_URL`
 - `PLEXA_AUTH_MODE`
-  - must not be `dev-header`
+  - `dev-header` is rejected unless `PLEXA_ENABLE_DEV_LOGIN=true`
 - `PLEXA_CORS_ALLOWED_ORIGINS`
 - `PLEXA_LOG_ENCRYPTION_KEY`
 - real inference configuration
@@ -321,6 +321,7 @@ Typical production-oriented server settings:
 ```env
 PLEXA_ENV=production
 PLEXA_AUTH_MODE=bearer-jwt
+PLEXA_ENABLE_DEV_LOGIN=false
 PLEXA_ADMIN_USER_IDS=["instructor-admin-1"]
 PLEXA_CORS_ALLOWED_ORIGINS=["https://app.example.com"]
 PLEXA_DATABASE_URL=postgresql+asyncpg://...
@@ -333,6 +334,7 @@ PLEXA_INFERENCE_REQUIRED_BACKENDS=["primary"]
 
 In this mode:
 - startup rejects `PLEXA_AUTH_MODE=dev-header`
+  - unless `PLEXA_ENABLE_DEV_LOGIN=true` is explicitly set for temporary smoke testing
 - startup rejects missing CORS origins
 - startup rejects missing encrypted-log key
 - startup rejects stub inference and stub fallback
@@ -416,7 +418,7 @@ python -m pytest -q plexa_server/tests --storage-backend=both
 Run only the Postgres-specific DB tests:
 
 ```bash
-python -m pytest -q plexa_server/tests/db
+python -m pytest -q plexa_server/tests/storage/test_db_postgres_storage.py
 ```
 
 Run only the API suite against Postgres:
