@@ -21,6 +21,11 @@ The inference endpoint is server-side only. It can be an institutional GPU host,
 - [create-production-env.sh](create-production-env.sh): generates `deploy/production.env` from deployment inputs.
 - [start-production.sh](start-production.sh): starts the production stack with the correct Compose flags.
 - [check-production-config.sh](check-production-config.sh): renders the Compose config without starting services.
+- [check-production.sh](check-production.sh): validates local or domain production setup before and after startup.
+- [deploy-production.sh](deploy-production.sh): guided domain-backed production deploy flow.
+- [smoke-local-prod.sh](smoke-local-prod.sh): guided local production-mode smoke-test flow.
+- [seed-local-prod.sh](seed-local-prod.sh): seeds dev course data inside the local production stack.
+- [check-local-inference.sh](check-local-inference.sh): verifies local inference from the container and `/api/ready`.
 - [production.env.example](production.env.example): copy this to `deploy/production.env`.
 - [local-production.env.example](local-production.env.example): local production-mode smoke-test config.
 - [Caddyfile](Caddyfile): single-domain static portal and `/api` reverse proxy.
@@ -62,27 +67,43 @@ Value: <server public IPv4>
 
 Use an `AAAA` record as well if the server has public IPv6.
 
-2. Generate the production env file:
+2. Generate, start, and verify the production stack:
 
 ```bash
-deploy/create-production-env.sh \
+deploy/deploy-production.sh \
   --domain plexa.<institution>.edu \
   --email admin@<institution>.edu \
   --inference-url https://inference.<institution>.edu/v1 \
   --model <model-name>
 ```
 
-This creates `deploy/production.env`, generates a random Postgres password,
-generates `PLEXA_LOG_ENCRYPTION_KEY`, configures Caddy for the domain, sets
+This creates `deploy/production.env`, validates the setup, starts the stack, and
+checks `/api/health`, `/api/ready`, Caddy reachability, and inference reachability.
+It also generates a random Postgres password, generates
+`PLEXA_LOG_ENCRYPTION_KEY`, configures Caddy for the domain, sets
 `VITE_API_BASE_URL=/api`, and enables temporary dev login for smoke testing.
 
-3. Start Plexa:
+If the inference endpoint requires a bearer token, put the token in a local file
+that is not committed and pass the file path:
 
 ```bash
-deploy/start-production.sh
+deploy/deploy-production.sh \
+  --domain plexa.<institution>.edu \
+  --email admin@<institution>.edu \
+  --inference-url https://inference.<institution>.edu/v1 \
+  --api-key /secure/path/inference-api-key \
+  --model <model-name>
 ```
 
-4. Open:
+If DNS or TLS propagation is not ready yet, start without post-start checks and
+run them later:
+
+```bash
+deploy/deploy-production.sh --env-file deploy/production.env --skip-postcheck
+deploy/check-production.sh deploy/production.env --mode domain --stage poststart
+```
+
+3. Open:
 
 ```text
 https://plexa.<institution>.edu
@@ -176,14 +197,30 @@ To run the production stack beside the normal dev setup on your machine, use the
 local env example. It keeps Postgres private inside Docker and exposes Caddy on
 `http://localhost:8080` instead of ports `80`/`443`.
 
+Recommended:
+
 ```bash
-deploy/create-production-env.sh --local --model llama3.1
+deploy/smoke-local-prod.sh --model llama3.1
 ```
 
-Start:
+This creates `deploy/local-production.env` if needed, checks local prerequisites,
+builds and starts the production stack, seeds development course data, checks
+container inference reachability, and verifies `/api/ready`.
+
+If you need to regenerate the env file, pass `--force`:
 
 ```bash
+deploy/smoke-local-prod.sh --model llama3.1 --force
+```
+
+Manual path:
+
+```bash
+deploy/create-production-env.sh --local --model llama3.1
+deploy/check-production.sh deploy/local-production.env --mode local --stage prestart
 deploy/start-production.sh deploy/local-production.env
+deploy/seed-local-prod.sh
+deploy/check-local-inference.sh
 ```
 
 Open:
@@ -195,6 +232,20 @@ http://localhost:8080
 If your inference server runs on the host machine, use
 `http://host.docker.internal:<port>/v1` from inside the container. On Linux this
 is enabled by the production compose file through Docker's `host-gateway`.
+
+For Ollama, the common failure mode is that the host can run
+`curl http://localhost:11434/v1/models` but the container cannot connect because
+Ollama is bound only to `127.0.0.1`. Check the listener:
+
+```bash
+ss -ltnp 'sport = :11434'
+systemctl cat ollama
+systemctl show ollama -p FragmentPath -p DropInPaths -p Environment
+```
+
+The listener must be on an address Docker can reach, such as `0.0.0.0:11434` or
+`[::]:11434`, not only `127.0.0.1:11434`. Do not expose that port publicly
+unless the host firewall and network policy make it safe.
 
 If you need custom local values, copy [local-production.env.example](local-production.env.example)
 to `deploy/local-production.env` and edit it manually.
@@ -213,6 +264,12 @@ docker compose -p plexa-prod --env-file <env-file> -f docker-compose.prod.yml lo
 ```
 
 ## Smoke Test
+
+For a guided post-start check:
+
+```bash
+deploy/check-production.sh deploy/production.env --mode domain --stage poststart
+```
 
 Check liveness:
 
@@ -250,10 +307,16 @@ python3 -m pytest -q plexa_server/tests/storage/test_db_postgres_storage.py
 Validate the deployment helpers without starting services:
 
 ```bash
-bash -n deploy/create-production-env.sh deploy/start-production.sh deploy/check-production-config.sh
-deploy/create-production-env.sh --domain plexa.example.edu --email admin@example.edu --inference-url https://inference.example.edu/v1 --model llama3.1 --output /tmp/plexa-production.env --force
+bash -n deploy/*.sh deploy/lib/*.sh
+deploy/create-production-env.sh --domain plexa.example.edu --email admin@example.edu --inference-url https://inference.example.edu/v1 --model llama3.1 --timeout 30 --output /tmp/plexa-production.env --force
+deploy/create-production-env.sh --local --model llama3.1 --output /tmp/plexa-local-production.env --force
 deploy/check-production-config.sh /tmp/plexa-production.env
+deploy/check-production-config.sh /tmp/plexa-local-production.env
 ```
+
+`deploy/check-production-config.sh` prints the fully rendered Compose config,
+including resolved environment values. Do not paste real production output in
+public channels.
 
 Validate the portal build:
 
@@ -269,13 +332,25 @@ behavior, Docker image startup, Caddy proxying, or reachability of a real
 inference endpoint. Cover those with the local production-mode smoke test and
 the domain smoke test above.
 
+## Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| `permission denied while trying to connect to the docker API at unix:///var/run/docker.sock` | Start Docker and give the current user socket access. On Linux/Pop!_OS: `sudo systemctl enable --now docker`, `sudo usermod -aG docker "$USER"`, then log out and back in. Verify with `docker ps`. |
+| `python: command not found` | Use the deploy scripts after this repo change; they resolve `python3` first, then `python`, and fail clearly if neither exists. |
+| Docker build fails at `npm ci` because no lockfile exists | Confirm `plexa_portal/package-lock.json` exists in the checkout. The production build intentionally uses `npm ci`, so the lockfile must be tracked. |
+| `docker compose exec` says it needs at least two arguments | Use `deploy/seed-local-prod.sh` instead of manually typing the long seed command. |
+| `/api/ready` reports inference unavailable | Run `deploy/check-local-inference.sh` for local-prod or `deploy/check-production.sh deploy/production.env --mode domain --stage poststart` for domain prod. |
+| Host `curl localhost:11434/v1/models` works but Plexa cannot reach Ollama | Ollama is probably bound only to `127.0.0.1`. Bind it to an address Docker can reach and verify with `ss -ltnp 'sport = :11434'`. |
+| Domain deployment cannot get HTTPS | Confirm DNS points at the server, ports `80` and `443` are reachable from the public internet, and `PLEXA_SITE_ADDRESS` is a hostname rather than a URL. |
+| Generated env file still has old values | Regenerate with `--force`, or edit the env file directly and restart with `deploy/start-production.sh <env-file>`. |
+
 ## Update
 
 Pull or deploy the new code, then rebuild and restart:
 
 ```bash
-docker compose --env-file deploy/production.env -f docker-compose.prod.yml build
-docker compose --env-file deploy/production.env -f docker-compose.prod.yml up -d
+deploy/start-production.sh deploy/production.env
 ```
 
 Run only migrations:

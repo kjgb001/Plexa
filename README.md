@@ -100,7 +100,9 @@ with one public domain:
 - inference remains a backend-only endpoint configured on the server
 
 See [deploy/README.md](deploy/README.md) for the Docker Compose and Caddy-based
-deployment guide.
+deployment guide. Start there for both `deploy/smoke-local-prod.sh` local
+production smoke tests and `deploy/deploy-production.sh` domain-backed
+production setup.
 
 ## Testing
 

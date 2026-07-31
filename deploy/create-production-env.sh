@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=deploy/lib/runtime.sh
+source "$SCRIPT_DIR/lib/runtime.sh"
+plexa_cd_repo_root
+
 usage() {
   cat <<'EOF'
 Create a Plexa production env file for a single-domain deployment.
@@ -19,6 +24,8 @@ Options:
   --domain VALUE         Public Plexa hostname, for example plexa.example.edu.
   --email VALUE          ACME contact email for Caddy certificate issuance.
   --inference-url VALUE  OpenAI-compatible inference base URL ending in /v1.
+  --api-key PATH         Optional file containing an inference bearer API key.
+  --timeout VALUE        Optional inference timeout in seconds. Defaults to 30.0.
   --model VALUE          Model name for default, fast, and reasoning profiles.
   --fast-model VALUE     Optional model override for the fast profile.
   --reasoning-model VALUE Optional model override for the reasoning profile.
@@ -35,6 +42,8 @@ EOF
 domain=""
 email=""
 inference_url=""
+api_key_file=""
+timeout_s="30.0"
 model=""
 fast_model=""
 reasoning_model=""
@@ -63,6 +72,14 @@ while [ "$#" -gt 0 ]; do
       ;;
     --inference-url)
       inference_url="${2:-}"
+      shift 2
+      ;;
+    --api-key)
+      api_key_file="${2:-}"
+      shift 2
+      ;;
+    --timeout)
+      timeout_s="${2:-}"
       shift 2
       ;;
     --model)
@@ -127,14 +144,7 @@ require_value "--email" "$email"
 require_value "--inference-url" "$inference_url"
 require_value "--model" "$model"
 
-if command -v python3 >/dev/null 2>&1; then
-  python_bin="python3"
-elif command -v python >/dev/null 2>&1; then
-  python_bin="python"
-else
-  echo "Python 3 is required to generate deployment secrets, but neither python3 nor python was found." >&2
-  exit 1
-fi
+python_bin="$(plexa_resolve_python)"
 
 if [ "$local_mode" != "true" ]; then
   case "$domain" in
@@ -149,6 +159,7 @@ for pair in \
   "domain:$domain" \
   "email:$email" \
   "inference_url:$inference_url" \
+  "timeout_s:$timeout_s" \
   "model:$model" \
   "fast_model:${fast_model:-$model}" \
   "reasoning_model:${reasoning_model:-$model}" \
@@ -156,6 +167,49 @@ for pair in \
 do
   reject_unsafe_env_value "${pair%%:*}" "${pair#*:}"
 done
+
+if ! "$python_bin" - "$timeout_s" <<'PY'
+import sys
+
+try:
+    timeout = float(sys.argv[1])
+except ValueError:
+    print("--timeout must be a number of seconds.", file=sys.stderr)
+    raise SystemExit(1)
+
+if timeout <= 0:
+    print("--timeout must be greater than zero.", file=sys.stderr)
+    raise SystemExit(1)
+PY
+then
+  exit 2
+fi
+
+api_key=""
+if [ -n "$api_key_file" ]; then
+  if [ ! -f "$api_key_file" ]; then
+    echo "--api-key file does not exist: $api_key_file" >&2
+    exit 2
+  fi
+  if [ ! -r "$api_key_file" ]; then
+    echo "--api-key file is not readable: $api_key_file" >&2
+    exit 2
+  fi
+  api_key="$("$python_bin" - "$api_key_file" <<'PY'
+from pathlib import Path
+import sys
+
+raw = Path(sys.argv[1]).read_text(encoding="utf-8").strip()
+if not raw:
+    print("--api-key file is empty.", file=sys.stderr)
+    raise SystemExit(1)
+if "\n" in raw or "\r" in raw:
+    print("--api-key file must contain a single line.", file=sys.stderr)
+    raise SystemExit(1)
+print(raw)
+PY
+)"
+fi
 
 if [ -e "$output" ] && [ "$force" != "true" ]; then
   echo "$output already exists. Pass --force to overwrite it." >&2
@@ -166,6 +220,39 @@ fast_model="${fast_model:-$model}"
 reasoning_model="${reasoning_model:-$model}"
 postgres_password="$("$python_bin" -c 'import secrets; print(secrets.token_urlsafe(32))')"
 log_encryption_key="$("$python_bin" -c 'import base64, secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii"))')"
+inference_backends="$("$python_bin" - "$inference_url" "$timeout_s" "$api_key" <<'PY'
+import json
+import sys
+
+base_url = sys.argv[1]
+timeout_s = float(sys.argv[2])
+api_key = sys.argv[3]
+
+backend = {
+    "type": "openai-compatible",
+    "base_url": base_url,
+    "timeout_s": timeout_s,
+}
+if api_key:
+    backend["api_key"] = api_key
+
+print(json.dumps({"primary": backend}, separators=(",", ":")))
+PY
+)"
+inference_profiles="$("$python_bin" - "$model" "$fast_model" "$reasoning_model" <<'PY'
+import json
+import sys
+
+model, fast_model, reasoning_model = sys.argv[1:4]
+profiles = {
+    "default": {"backend_id": "primary", "model": model},
+    "fast": {"backend_id": "primary", "model": fast_model},
+    "reasoning": {"backend_id": "primary", "model": reasoning_model},
+}
+
+print(json.dumps(profiles, separators=(",", ":")))
+PY
+)"
 
 mkdir -p "$(dirname "$output")"
 if [ "$local_mode" = "true" ]; then
@@ -208,8 +295,8 @@ PLEXA_CORS_ALLOWED_ORIGINS=["$cors_origin"]
 PLEXA_LOG_ENCRYPTION_KEY=$log_encryption_key
 
 # Backend-only inference target.
-PLEXA_INFERENCE_BACKENDS={"primary":{"type":"openai-compatible","base_url":"$inference_url","timeout_s":30.0}}
-PLEXA_INFERENCE_PROFILES={"default":{"backend_id":"primary","model":"$model"},"fast":{"backend_id":"primary","model":"$fast_model"},"reasoning":{"backend_id":"primary","model":"$reasoning_model"}}
+PLEXA_INFERENCE_BACKENDS=$inference_backends
+PLEXA_INFERENCE_PROFILES=$inference_profiles
 PLEXA_INFERENCE_REQUIRED_BACKENDS=["primary"]
 
 # Portal build-time config.
