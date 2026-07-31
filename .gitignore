@@ -1,4 +1,10 @@
 *json
+!plexa_portal/package.json
+!plexa_portal/package-lock.json
+!plexa_portal/tsconfig.json
+!plexa_portal/tsconfig.app.json
+!plexa_portal/tsconfig.node.json
+!plexa_portal/typedoc.json
 
 # Python
 __pycache__/
