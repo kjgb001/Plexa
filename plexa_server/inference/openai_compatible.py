@@ -4,13 +4,17 @@ import asyncio
 import json
 import socket
 import time
-from typing import Any, List
+from typing import Any, AsyncIterator, List
 from urllib import error, request
+
+import httpx
 
 from plexa_server.db.config import load_server_env_file
 from plexa_server.inference.base import (
     InferenceBackend,
     InferenceBackendUnavailable,
+    InferenceChunk,
+    InferenceError,
     InferenceMalformedResponse,
     InferenceRejected,
     InferenceResult,
@@ -193,6 +197,61 @@ class OpenAICompatibleInference(InferenceBackend):
                 return "".join(text_parts)
         raise InferenceMalformedResponse("Inference response did not contain assistant text content.")
 
+    def _normalize_finish_reason(self, value: Any) -> str | None:
+        """Normalize a backend finish reason into Plexa's supported values."""
+        if value is None:
+            return None
+        if value in {"stop", "length", "content_filter", "tool_calls", "error", "unknown"}:
+            return value
+        return "unknown"
+
+    def _raise_stream_http_error(self, status_code: int, detail: str) -> None:
+        """Map an HTTP streaming failure into the normalized inference errors."""
+        if status_code == 408:
+            raise InferenceTimeout(detail or "Inference request timed out.")
+        if status_code in {400, 401, 403, 422}:
+            raise InferenceRejected(
+                detail or f"Inference request rejected ({status_code})."
+            )
+        if status_code == 404:
+            raise InferenceBackendUnavailable(
+                detail or "OpenAI-compatible endpoint not found; verify base URL."
+            )
+        raise InferenceBackendUnavailable(
+            detail or f"Inference backend returned HTTP {status_code}."
+        )
+
+    async def _stream_response_lines(
+        self,
+        payload: dict[str, Any],
+        timeout_s: float,
+    ) -> AsyncIterator[str]:
+        """Yield SSE lines from the OpenAI-compatible completion endpoint."""
+        url = f"{self._base_url}/chat/completions"
+        headers = {**self._headers(), "Accept": "text/event-stream"}
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout_s) as client:
+                async with client.stream(
+                    "POST",
+                    url,
+                    json=payload,
+                    headers=headers,
+                ) as response:
+                    if response.status_code >= 400:
+                        detail = (await response.aread()).decode("utf-8", errors="replace")
+                        self._raise_stream_http_error(response.status_code, detail)
+                    async for line in response.aiter_lines():
+                        yield line
+        except InferenceError:
+            raise
+        except httpx.TimeoutException as exc:
+            raise InferenceTimeout("Inference request timed out.") from exc
+        except httpx.HTTPError as exc:
+            raise InferenceBackendUnavailable(
+                "Inference backend streaming connection failed."
+            ) from exc
+
     async def generate(
         self,
         messages: List["Message"],
@@ -241,6 +300,104 @@ class OpenAICompatibleInference(InferenceBackend):
             model=payload["model"],
             latency_ms=latency_ms,
         )
+
+    async def stream(
+        self,
+        messages: List["Message"],
+        config: ResolvedInferenceConfig,
+    ) -> AsyncIterator[InferenceChunk]:
+        """Stream assistant text from an OpenAI-compatible SSE response."""
+        start = time.perf_counter()
+        timeout_s = config.timeout_s if config.timeout_s is not None else self._timeout_s
+        payload = self._build_payload(messages, config)
+        payload["stream"] = True
+        saw_payload = False
+        saw_terminal_event = False
+
+        async for line in self._stream_response_lines(payload, timeout_s):
+            stripped = line.strip()
+            if not stripped or stripped.startswith(":"):
+                continue
+            if not stripped.startswith("data:"):
+                continue
+
+            raw_data = stripped[5:].strip()
+            if raw_data == "[DONE]":
+                saw_terminal_event = True
+                break
+
+            try:
+                data = json.loads(raw_data)
+            except json.JSONDecodeError as exc:
+                raise InferenceMalformedResponse(
+                    "Inference stream returned invalid JSON."
+                ) from exc
+            if not isinstance(data, dict):
+                raise InferenceMalformedResponse(
+                    "Inference stream returned a non-object event."
+                )
+            saw_payload = True
+
+            usage = None
+            if isinstance(data.get("usage"), dict):
+                usage = Usage.model_validate(data["usage"])
+
+            choices = data.get("choices")
+            if choices == [] and usage is not None:
+                yield InferenceChunk(
+                    usage=usage,
+                    backend=self.name,
+                    model=payload["model"],
+                )
+                continue
+            if not isinstance(choices, list) or not choices:
+                raise InferenceMalformedResponse(
+                    "Inference stream event did not include choices."
+                )
+
+            first_choice = choices[0]
+            if not isinstance(first_choice, dict):
+                raise InferenceMalformedResponse(
+                    "Inference stream choice was malformed."
+                )
+            delta = first_choice.get("delta")
+            if not isinstance(delta, dict):
+                raise InferenceMalformedResponse(
+                    "Inference stream choice did not include a delta object."
+                )
+
+            raw_content = delta.get("content")
+            content_delta = ""
+            if raw_content is not None:
+                content_delta = self._extract_content(raw_content)
+            finish_reason = self._normalize_finish_reason(
+                first_choice.get("finish_reason")
+            )
+            if finish_reason is not None:
+                saw_terminal_event = True
+
+            if content_delta or finish_reason is not None or usage is not None:
+                yield InferenceChunk(
+                    content_delta=content_delta,
+                    finish_reason=finish_reason,
+                    usage=usage,
+                    backend=self.name,
+                    model=payload["model"],
+                    latency_ms=(
+                        int((time.perf_counter() - start) * 1000)
+                        if finish_reason is not None
+                        else None
+                    ),
+                )
+
+        if not saw_payload:
+            raise InferenceMalformedResponse(
+                "Inference stream ended without any response events."
+            )
+        if not saw_terminal_event:
+            raise InferenceBackendUnavailable(
+                "Inference stream ended before completion."
+            )
 
     async def health_check(self) -> bool:
         """Check whether the backend appears reachable and responsive."""

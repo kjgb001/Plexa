@@ -1,10 +1,20 @@
-from fastapi import APIRouter, HTTPException, Depends, status
+import asyncio
+from contextlib import suppress
+import json
+import logging
+
+from fastapi import APIRouter, HTTPException, Depends, Request, status
+from fastapi.responses import StreamingResponse
 from uuid import uuid4
 
 from plexa_server.core.sessions import (
     SessionClosedError,
     TurnLimitExceededError,
     SessionCompletionError,
+    SessionMessageComplete,
+    SessionMessageConflictError,
+    SessionMessageDelta,
+    SessionStreamingError,
 )
 from plexa_server.runtime import get_app_environment
 from plexa_server.models.session import Session
@@ -23,6 +33,9 @@ from plexa_server.auth.dependencies import get_owned_session, require_identity
 from plexa_server.auth.identity import UserIdentity
 from plexa_server.core.sessions import SessionManager
 from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage, WorkspaceStateStorage
+
+
+logger = logging.getLogger(__name__)
 
 
 def get_sessions_router(
@@ -277,11 +290,151 @@ def get_sessions_router(
         except SessionCompletionError as exc:
             raise HTTPException(status_code=409, detail=str(exc))
 
+        except SessionMessageConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+
         except InferenceError as exc:
             detail = "Inference failure"
             if get_app_environment() != "production":
                 detail = f"Inference failure: {exc}"
             raise HTTPException(status_code=502, detail=detail)
+
+
+    @router.post(
+        "/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions/{session_id}/messages/stream",
+    )
+    async def stream_message(
+        session_id: str,
+        course_id: str,
+        lesson_id: str,
+        lesson_version: str,
+        payload: SendMessageRequest,
+        http_request: Request,
+        identity: UserIdentity = Depends(require_identity),
+    ) -> StreamingResponse:
+        """Stream an assistant reply and finish with the canonical committed turn."""
+        message_id = payload.message_id or str(uuid4())
+        session = await get_owned_session(session_manager, session_id, identity)
+        check_session_path(session, course_id, lesson_id, lesson_version)
+        lesson = await load_lesson_or_404(lesson_id, lesson_version)
+
+        def encode_event(event_name: str, event_payload: dict) -> str:
+            encoded = json.dumps(event_payload, separators=(",", ":"))
+            return f"event: {event_name}\ndata: {encoded}\n\n"
+
+        def error_event(exc: Exception) -> tuple[str, dict]:
+            if isinstance(exc, SessionClosedError):
+                return "error", {
+                    "code": "session_closed",
+                    "detail": "Session is closed",
+                    "fallback_allowed": False,
+                }
+            if isinstance(exc, TurnLimitExceededError):
+                return "error", {
+                    "code": "turn_limit_exceeded",
+                    "detail": "Turn limit exceeded",
+                    "fallback_allowed": False,
+                }
+            if isinstance(exc, SessionCompletionError):
+                return "error", {
+                    "code": "reflection_required",
+                    "detail": str(exc),
+                    "fallback_allowed": False,
+                }
+            if isinstance(exc, SessionMessageConflictError):
+                return "error", {
+                    "code": "message_conflict",
+                    "detail": str(exc),
+                    "fallback_allowed": False,
+                }
+            if isinstance(exc, SessionStreamingError):
+                detail = "Inference failure"
+                if get_app_environment() != "production":
+                    detail = f"Inference failure: {exc}"
+                return "error", {
+                    "code": "inference_stream_failed",
+                    "detail": detail,
+                    "fallback_allowed": exc.fallback_allowed,
+                }
+            if isinstance(exc, InferenceError):
+                detail = "Inference failure"
+                if get_app_environment() != "production":
+                    detail = f"Inference failure: {exc}"
+                return "error", {
+                    "code": "inference_failure",
+                    "detail": detail,
+                    "fallback_allowed": False,
+                }
+            logger.exception("Unexpected message streaming failure")
+            return "error", {
+                "code": "internal_error",
+                "detail": "Message streaming failed",
+                "fallback_allowed": False,
+            }
+
+        async def produce_events(queue: asyncio.Queue[tuple[str, dict] | None]) -> None:
+            try:
+                async for event in session_manager.submit_user_message_stream(
+                    session_id=session_id,
+                    message_id=message_id,
+                    content=payload.content,
+                    current_lesson=lesson,
+                ):
+                    if isinstance(event, SessionMessageDelta):
+                        await queue.put(("delta", {"content": event.content_delta}))
+                        continue
+                    if isinstance(event, SessionMessageComplete):
+                        response = SendMessageResponse(
+                            assistant_message=event.assistant_message,
+                            session=SessionResponse.from_session(event.session),
+                        )
+                        await queue.put(("complete", response.model_dump(mode="json")))
+                        try:
+                            await touch_course_and_lesson(
+                                identity,
+                                course_id,
+                                lesson_id,
+                                lesson_version,
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Failed to update workspace state after streamed message commit"
+                            )
+            except Exception as exc:
+                await queue.put(error_event(exc))
+            finally:
+                await queue.put(None)
+
+        async def event_stream():
+            queue: asyncio.Queue[tuple[str, dict] | None] = asyncio.Queue()
+            producer = asyncio.create_task(produce_events(queue))
+            try:
+                while True:
+                    if await http_request.is_disconnected():
+                        break
+                    try:
+                        item = await asyncio.wait_for(queue.get(), timeout=10.0)
+                    except TimeoutError:
+                        yield ": keep-alive\n\n"
+                        continue
+                    if item is None:
+                        break
+                    event_name, event_payload = item
+                    yield encode_event(event_name, event_payload)
+            finally:
+                if not producer.done():
+                    producer.cancel()
+                with suppress(asyncio.CancelledError):
+                    await producer
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
 
     # Get Session

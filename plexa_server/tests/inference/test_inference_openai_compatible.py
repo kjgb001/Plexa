@@ -41,6 +41,25 @@ class _FakeOpenAICompatibleInference(OpenAICompatibleInference):
         return self._fake_response
 
 
+class _FakeStreamingOpenAICompatibleInference(OpenAICompatibleInference):
+    def __init__(self, *args, lines=None, error=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._fake_lines = lines or []
+        self._stream_error = error
+        self.last_stream_payload = None
+
+    async def _stream_response_lines(self, payload, timeout_s):
+        self.last_stream_payload = payload
+        for line in self._fake_lines:
+            yield line
+        if self._stream_error is not None:
+            raise self._stream_error
+
+
+async def collect_stream(backend, messages, config):
+    return [chunk async for chunk in backend.stream(messages, config)]
+
+
 def test_openai_compatible_backend_name():
     backend = OpenAICompatibleInference(
         base_url="http://localhost:11434/v1",
@@ -216,3 +235,66 @@ def test_openai_compatible_health_check_failure(raised_error):
     )
 
     assert asyncio.run(backend.health_check()) is False
+
+
+def test_openai_compatible_streams_content_and_forces_stream_flag():
+    backend = _FakeStreamingOpenAICompatibleInference(
+        base_url="http://localhost:11434/v1",
+        lines=[
+            'data: {"choices":[{"delta":{"content":"Hello "},"finish_reason":null}]}',
+            "",
+            'data: {"choices":[{"delta":{"content":"world"},"finish_reason":"stop"}]}',
+            "",
+            "data: [DONE]",
+            "",
+        ],
+    )
+    config = ResolvedInferenceConfig(
+        profile="default",
+        backend_id="openai-compatible",
+        backend_name="openai-compatible",
+        model="llama3.1",
+        extra={"stream": False},
+    )
+
+    chunks = asyncio.run(collect_stream(backend, [make_message("user", "hi")], config))
+
+    assert "".join(chunk.content_delta for chunk in chunks) == "Hello world"
+    assert chunks[-1].finish_reason == "stop"
+    assert backend.last_stream_payload["stream"] is True
+    assert backend.last_stream_payload["model"] == "llama3.1"
+
+
+def test_openai_compatible_stream_rejects_invalid_json():
+    backend = _FakeStreamingOpenAICompatibleInference(
+        base_url="http://localhost:11434/v1",
+        lines=["data: not-json", ""],
+    )
+    config = ResolvedInferenceConfig(
+        profile="default",
+        backend_id="openai-compatible",
+        backend_name="openai-compatible",
+        model="llama3.1",
+    )
+
+    with pytest.raises(InferenceMalformedResponse):
+        asyncio.run(collect_stream(backend, [make_message("user", "hi")], config))
+
+
+def test_openai_compatible_stream_requires_terminal_event():
+    backend = _FakeStreamingOpenAICompatibleInference(
+        base_url="http://localhost:11434/v1",
+        lines=[
+            'data: {"choices":[{"delta":{"content":"partial"},"finish_reason":null}]}',
+            "",
+        ],
+    )
+    config = ResolvedInferenceConfig(
+        profile="default",
+        backend_id="openai-compatible",
+        backend_name="openai-compatible",
+        model="llama3.1",
+    )
+
+    with pytest.raises(InferenceBackendUnavailable):
+        asyncio.run(collect_stream(backend, [make_message("user", "hi")], config))

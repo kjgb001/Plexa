@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Iterable
+from typing import AsyncIterator, Iterable
 
 from plexa_server.inference.base import (
     InferenceBackend,
     InferenceConfig,
     InferenceConfigurationError,
+    InferenceChunk,
     InferenceProfile,
     InferenceRejected,
     InferenceResult,
@@ -123,6 +124,17 @@ class InferenceRouter:
         resolved = self.resolve(config)
         backend = self._registry.get_backend(resolved.backend_id)
         return await backend.generate(messages, resolved)
+
+    async def stream(
+        self,
+        messages: list["Message"],
+        config: InferenceConfig,
+    ) -> AsyncIterator[InferenceChunk]:
+        """Resolve and stream an inference request."""
+        resolved = self.resolve(config)
+        backend = self._registry.get_backend(resolved.backend_id)
+        async for chunk in backend.stream(messages, resolved):
+            yield chunk
 
     async def health_check(self, required_backend_ids: set[str] | None = None) -> dict[str, bool]:
         """Return backend health by id for the requested backend set."""

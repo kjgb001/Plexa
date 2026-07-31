@@ -860,6 +860,37 @@ button {
   opacity: 0.8;
 }
 
+.transcript-entry--streaming {
+  opacity: 1;
+}
+
+.streaming-cursor {
+  display: inline-block;
+  width: 0.48rem;
+  height: 1em;
+  margin-left: 0.18rem;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 72%, var(--ink));
+  vertical-align: -0.14em;
+  animation: streaming-cursor-pulse 900ms ease-in-out infinite;
+}
+
+@keyframes streaming-cursor-pulse {
+  0%, 100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .streaming-cursor {
+    animation: none;
+    opacity: 0.75;
+  }
+}
+
 .transcript-entry--reflection {
   border-left-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: color-mix(in srgb, var(--accent-soft) 42%, var(--surface-strong));

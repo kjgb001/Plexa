@@ -1,6 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useApis } from "../api"
-import type { Lesson, Message, Session, SessionReflectionHook } from "../api/interfaces"
+import { MessageStreamError } from "../api/sessions"
+import type {
+  Lesson,
+  Message,
+  SendMessageResult,
+  Session,
+  SessionReflectionHook,
+} from "../api/interfaces"
 import { navigate, studentPaths } from "../app/router"
 
 interface Props {
@@ -13,6 +20,9 @@ interface Props {
 }
 
 const MAX_COMPOSER_HEIGHT_PX = 224
+const AUTO_FOLLOW_THRESHOLD_PX = 72
+
+type ResponsePhase = "idle" | "thinking" | "streaming" | "fallback"
 
 function dispatchSessionChanged(
   courseId: string,
@@ -44,6 +54,9 @@ export default function ChatScreen({
   const suppressAutoDeleteRef = useRef(false)
   const keepComposerFocusRef = useRef(true)
   const suppressComposerBlurRef = useRef(false)
+  const activeMessageRequestRef = useRef<AbortController | null>(null)
+  const streamFrameRef = useRef<number | null>(null)
+  const autoFollowTranscriptRef = useRef(true)
   const [session, setSession] = useState<Session | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
@@ -54,6 +67,8 @@ export default function ChatScreen({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [bootError, setBootError] = useState<string | null>(null)
   const [interactionError, setInteractionError] = useState<string | null>(null)
+  const [responsePhase, setResponsePhase] = useState<ResponsePhase>("idle")
+  const [streamingContent, setStreamingContent] = useState("")
   const [reflectionDrafts, setReflectionDrafts] = useState<Record<string, string>>({})
   const [collapsedReflectionIds, setCollapsedReflectionIds] = useState<Record<string, boolean>>({})
   const [isReflectionDrawerOpen, setIsReflectionDrawerOpen] = useState(false)
@@ -117,6 +132,17 @@ export default function ChatScreen({
   }, [loading, messages, session])
 
   useEffect(() => {
+    return () => {
+      activeMessageRequestRef.current?.abort()
+      activeMessageRequestRef.current = null
+      if (streamFrameRef.current !== null) {
+        cancelAnimationFrame(streamFrameRef.current)
+        streamFrameRef.current = null
+      }
+    }
+  }, [courseId, lessonId, lessonVersion, sessionId])
+
+  useEffect(() => {
     let active = true
 
     async function loadSession() {
@@ -132,6 +158,7 @@ export default function ChatScreen({
       }
 
       keepComposerFocusRef.current = true
+      autoFollowTranscriptRef.current = true
 
       setBooting(true)
       setBootError(null)
@@ -187,10 +214,10 @@ export default function ChatScreen({
   useEffect(() => {
     const element = transcriptRef.current
 
-    if (element) {
+    if (element && autoFollowTranscriptRef.current) {
       element.scrollTop = element.scrollHeight
     }
-  }, [messages, loading, triggeredReflectionKey])
+  }, [messages, responsePhase, streamingContent, triggeredReflectionKey])
 
   function focusComposerIfAllowed(force = false) {
     if (!force && keepComposerFocusRef.current === false) {
@@ -218,7 +245,7 @@ export default function ChatScreen({
     element.style.overflowY = element.scrollHeight > MAX_COMPOSER_HEIGHT_PX ? "auto" : "hidden"
 
     const transcript = transcriptRef.current
-    if (transcript) {
+    if (transcript && autoFollowTranscriptRef.current) {
       transcript.scrollTop = transcript.scrollHeight
     }
   }, [input])
@@ -493,6 +520,8 @@ export default function ChatScreen({
     }
 
     const content = input.trim()
+    const messageId = crypto.randomUUID()
+    const abortController = new AbortController()
     const userMessage: Message = {
       role: "user",
       content,
@@ -502,16 +531,61 @@ export default function ChatScreen({
     setMessages((previous) => [...previous, userMessage])
     setInput("")
     suppressComposerBlurRef.current = true
+    autoFollowTranscriptRef.current = true
+    activeMessageRequestRef.current = abortController
+    setStreamingContent("")
+    setResponsePhase("thinking")
     setLoading(true)
 
     try {
-      const result = await sessionApi.sendMessage(
-        courseId,
-        lessonId,
-        lessonVersion,
-        session.session_id,
-        content,
-      )
+      let streamedText = ""
+      let result: SendMessageResult
+
+      try {
+        result = await sessionApi.streamMessage(
+          courseId,
+          lessonId,
+          lessonVersion,
+          session.session_id,
+          content,
+          messageId,
+          (contentDelta) => {
+            streamedText += contentDelta
+            if (streamFrameRef.current !== null) {
+              return
+            }
+            streamFrameRef.current = requestAnimationFrame(() => {
+              streamFrameRef.current = null
+              setStreamingContent(streamedText)
+              setResponsePhase("streaming")
+            })
+          },
+          abortController.signal,
+        )
+      } catch (error) {
+        if (!(error instanceof MessageStreamError) || !error.fallbackAllowed) {
+          throw error
+        }
+        if (streamFrameRef.current !== null) {
+          cancelAnimationFrame(streamFrameRef.current)
+          streamFrameRef.current = null
+        }
+        setStreamingContent("")
+        setResponsePhase("fallback")
+        result = await sessionApi.sendMessage(
+          courseId,
+          lessonId,
+          lessonVersion,
+          session.session_id,
+          content,
+          messageId,
+        )
+      }
+
+      if (streamFrameRef.current !== null) {
+        cancelAnimationFrame(streamFrameRef.current)
+        streamFrameRef.current = null
+      }
 
       setMessages((previous) => [...previous, result.assistantMessage])
       setSession(result.session)
@@ -520,11 +594,23 @@ export default function ChatScreen({
         session: result.session,
       })
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return
+      }
       console.error("Failed to send message", error)
       setMessages((previous) => previous.slice(0, -1))
       setInput(content)
       setInteractionError("Message delivery failed. Try again.")
     } finally {
+      if (activeMessageRequestRef.current === abortController) {
+        activeMessageRequestRef.current = null
+      }
+      if (streamFrameRef.current !== null) {
+        cancelAnimationFrame(streamFrameRef.current)
+        streamFrameRef.current = null
+      }
+      setStreamingContent("")
+      setResponsePhase("idle")
       setLoading(false)
       focusComposerIfAllowed()
       requestAnimationFrame(() => {
@@ -801,7 +887,19 @@ export default function ChatScreen({
         </header>
 
         <section className="conversation-stage__frame" aria-label="Conversation transcript">
-          <ol ref={transcriptRef} className="transcript transcript-list" aria-label="Messages">
+          <ol
+            ref={transcriptRef}
+            className="transcript transcript-list"
+            aria-label="Messages"
+            aria-busy={responsePhase !== "idle"}
+            onScroll={(event) => {
+              const element = event.currentTarget
+              const distanceFromBottom = (
+                element.scrollHeight - element.scrollTop - element.clientHeight
+              )
+              autoFollowTranscriptRef.current = distanceFromBottom <= AUTO_FOLLOW_THRESHOLD_PX
+            }}
+          >
             {session.is_active === false && session.is_finalized === false ? (
               <li>
                 <p className="empty-panel">
@@ -871,13 +969,22 @@ export default function ChatScreen({
               </li>
             ))}
 
-            {loading ? (
+            {responsePhase !== "idle" ? (
               <li>
-                <article className="transcript-entry transcript-entry--assistant transcript-entry--pending">
+                <article className={`transcript-entry transcript-entry--assistant transcript-entry--pending${responsePhase === "streaming" ? " transcript-entry--streaming" : ""}`}>
                   <header className="transcript-entry__header">
                     <span className="transcript-entry__role">assistant</span>
                   </header>
-                  <p className="message-body">Thinking...</p>
+                  <p className="message-body">
+                    {responsePhase === "fallback"
+                      ? "Switching to standard response..."
+                      : responsePhase === "streaming"
+                        ? streamingContent
+                        : "Thinking..."}
+                    {responsePhase === "streaming" ? (
+                      <span className="streaming-cursor" aria-hidden="true" />
+                    ) : null}
+                  </p>
                 </article>
               </li>
             ) : null}
@@ -917,7 +1024,7 @@ export default function ChatScreen({
                   }
                 }}
                 placeholder="Ask a question, test a prompt, or reflect on the lesson."
-                disabled={composerDisabled}
+                disabled={loading || composerDisabled}
                 rows={1}
               />
             </label>

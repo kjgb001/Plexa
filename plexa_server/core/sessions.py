@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import List
+from dataclasses import dataclass
+from typing import AsyncIterator, List
 from datetime import datetime, UTC
 from uuid import uuid4
 
@@ -47,6 +48,36 @@ class SessionNotFoundError(Exception):
 class SessionCompletionError(Exception):
     """Raised when completion or reflection actions are invalid for session state."""
     pass
+
+
+class SessionMessageConflictError(Exception):
+    """Raised when a message id is reused with conflicting content or state."""
+
+
+class SessionStreamingError(InferenceError):
+    """Normalized streaming failure with an explicit client fallback policy."""
+
+    def __init__(self, detail: str, fallback_allowed: bool):
+        super().__init__(detail)
+        self.fallback_allowed = fallback_allowed
+
+
+@dataclass(frozen=True)
+class SessionMessageDelta:
+    """Ephemeral assistant text that has not yet been committed."""
+
+    content_delta: str
+
+
+@dataclass(frozen=True)
+class SessionMessageComplete:
+    """Canonical persisted result of a streamed user turn."""
+
+    assistant_message: Message
+    session: Session
+
+
+SessionMessageStreamEvent = SessionMessageDelta | SessionMessageComplete
 
 
 class SessionManager:
@@ -220,9 +251,7 @@ class SessionManager:
         Raises:
             SessionNotFoundError: If no session exists for the given id.
         """
-        lock = self._lock_manager.get_lock(session_id)
-
-        with lock:
+        async with self._lock_manager.lock(session_id):
             session = await self.get_session(session_id)
             if not session.is_active:
                 return
@@ -233,13 +262,10 @@ class SessionManager:
             await self._storage.save_session(session)
             inference_config = await self._storage.get_inference_config(session_id)
             await self._persist_encrypted_log(session, inference_config, event_type="closed")
-            self._lock_manager.release_lock(session_id)
 
     async def begin_completion(self, session_id: str, current_lesson: Lesson | None = None) -> Session:
         """Enter soft-completion mode and trigger post reflections."""
-        lock = self._lock_manager.get_lock(session_id)
-
-        with lock:
+        async with self._lock_manager.lock(session_id):
             session = await self.get_session(session_id)
             if session.is_finalized:
                 raise SessionCompletionError("Session is already turned in.")
@@ -258,9 +284,7 @@ class SessionManager:
 
     async def resume_after_completion(self, session_id: str) -> Session:
         """Exit soft-completion mode while the session is still chat-editable."""
-        lock = self._lock_manager.get_lock(session_id)
-
-        with lock:
+        async with self._lock_manager.lock(session_id):
             session = await self.get_session(session_id)
             if session.is_finalized:
                 raise SessionCompletionError("Turned-in sessions cannot be reopened.")
@@ -283,9 +307,7 @@ class SessionManager:
         response_text: str,
     ) -> Session:
         """Create or update a reflection response for a triggered hook."""
-        lock = self._lock_manager.get_lock(session_id)
-
-        with lock:
+        async with self._lock_manager.lock(session_id):
             session = await self.get_session(session_id)
             if session.is_finalized:
                 raise SessionCompletionError("Turned-in sessions cannot edit reflections.")
@@ -315,9 +337,7 @@ class SessionManager:
         hook_id: str,
     ) -> Session:
         """Mark a triggered mid-session reflection as deferred."""
-        lock = self._lock_manager.get_lock(session_id)
-
-        with lock:
+        async with self._lock_manager.lock(session_id):
             session = await self.get_session(session_id)
             if session.is_finalized:
                 raise SessionCompletionError("Turned-in sessions cannot edit reflections.")
@@ -343,9 +363,7 @@ class SessionManager:
 
     async def turn_in_session(self, session_id: str) -> Session:
         """Finalize and lock a session after required reflections are complete."""
-        lock = self._lock_manager.get_lock(session_id)
-
-        with lock:
+        async with self._lock_manager.lock(session_id):
             session = await self.get_session(session_id)
             if session.is_finalized:
                 return session
@@ -376,14 +394,11 @@ class SessionManager:
         Raises:
             SessionNotFoundError: If no session exists for the given id.
         """
-        lock = self._lock_manager.get_lock(session_id)
-
-        with lock:
+        async with self._lock_manager.lock(session_id):
             session = await self.get_session(session_id)
             await self._storage.delete_session(session_id)
             if self._encrypted_logs is not None:
                 await self._encrypted_logs.delete_session_log(session.session_id)
-            self._lock_manager.release_lock(session_id)
 
     async def submit_user_message(
         self,
@@ -409,75 +424,216 @@ class SessionManager:
             InferenceError: If the inference backend fails before the turn is
                 committed.
         """
-        lock = self._lock_manager.get_lock(session_id)
-
-        with lock:
+        async with self._lock_manager.lock(session_id):
             session = await self.get_session(session_id)
+            existing = self._find_committed_assistant(session, message_id, content)
+            if existing is not None:
+                return existing
 
-            if not session.is_active:
-                raise SessionClosedError(session_id)
-
-            if current_lesson is not None:
-                self._sync_reflection_hooks(session, current_lesson)
-            if session.turn_count >= session.max_turns:
-                raise TurnLimitExceededError(session_id)
-            if self._has_pending_mid_reflection(session):
-                raise SessionCompletionError("Mid-session reflection must be answered before continuing.")
-
+            self._validate_new_user_turn(session, current_lesson)
             inference_config = await self._storage.get_inference_config(session_id)
-
-            user_message = Message(
-                message_id=message_id,
-                session_id=session_id,
-                role="user",
-                content=content,
-                created_at=datetime.now(UTC),
-            )
-
-            # Build candidate message list (not yet committed)
+            user_message = self._build_user_message(session_id, message_id, content)
             candidate_messages: List[Message] = session.messages + [user_message]
 
-            try:
-                result = await self._inference.generate(
-                    messages=candidate_messages,
-                    config=inference_config,
-                )
-            except InferenceError:
-                # Do not mutate session on failure
-                raise
-
-            assistant_message = Message(
-                message_id=f"{message_id}-assistant",
-                session_id=session_id,
-                role="assistant",
-                content=result.content,
-                created_at=datetime.now(UTC),
+            result = await self._inference.generate(
+                messages=candidate_messages,
+                config=inference_config,
+            )
+            return await self._commit_user_turn(
+                session=session,
+                user_message=user_message,
+                assistant_content=result.content,
+                inference_config=inference_config,
             )
 
-            # Atomic commit begins here
-            session.messages.append(user_message)
-            session.messages.append(assistant_message)
-            session.turn_count += 1
-            session.updated_at = datetime.now(UTC)
-            if session.turn_count == 1:
-                generated_title = await self._title_generator.generate_title(session, user_message)
-                if generated_title is not None and generated_title.strip():
-                    session.title = generated_title.strip()
+    async def submit_user_message_stream(
+        self,
+        session_id: str,
+        message_id: str,
+        content: str,
+        current_lesson: Lesson | None = None,
+    ) -> AsyncIterator[SessionMessageStreamEvent]:
+        """Stream an assistant draft and atomically commit the completed turn."""
+        async with self._lock_manager.lock(session_id):
+            session = await self.get_session(session_id)
+            existing = self._find_committed_assistant(session, message_id, content)
+            if existing is not None:
+                yield SessionMessageComplete(
+                    assistant_message=existing,
+                    session=session,
+                )
+                return
 
-            self._trigger_mid_reflections(session)
+            self._validate_new_user_turn(session, current_lesson)
+            inference_config = await self._storage.get_inference_config(session_id)
+            user_message = self._build_user_message(session_id, message_id, content)
+            candidate_messages: List[Message] = session.messages + [user_message]
+            content_parts: list[str] = []
 
-            if session.turn_count >= session.max_turns:
-                session.is_completion_started = True
-                if session.completed_at is None:
-                    session.completed_at = datetime.now(UTC)
-                session.is_active = False
-                session.closed_at = datetime.now(UTC)
-                self._trigger_completion_reflections(session)
+            try:
+                async for chunk in self._inference.stream(
+                    messages=candidate_messages,
+                    config=inference_config,
+                ):
+                    if not chunk.content_delta:
+                        continue
+                    content_parts.append(chunk.content_delta)
+                    yield SessionMessageDelta(content_delta=chunk.content_delta)
+            except InferenceError as exc:
+                if content_parts:
+                    raise SessionStreamingError(
+                        str(exc) or "Inference stream was interrupted.",
+                        fallback_allowed=True,
+                    ) from exc
+                try:
+                    result = await self._inference.generate(
+                        messages=candidate_messages,
+                        config=inference_config,
+                    )
+                except InferenceError as fallback_exc:
+                    raise SessionStreamingError(
+                        str(fallback_exc) or "Inference failed.",
+                        fallback_allowed=False,
+                    ) from fallback_exc
+                content_parts.append(result.content)
+                if result.content:
+                    yield SessionMessageDelta(content_delta=result.content)
 
-            await self._storage.save_session(session)
-            await self._persist_encrypted_log(session, inference_config, event_type="message_commit")
+            if not content_parts:
+                try:
+                    result = await self._inference.generate(
+                        messages=candidate_messages,
+                        config=inference_config,
+                    )
+                except InferenceError as fallback_exc:
+                    raise SessionStreamingError(
+                        str(fallback_exc) or "Inference failed.",
+                        fallback_allowed=False,
+                    ) from fallback_exc
+                content_parts.append(result.content)
+                if result.content:
+                    yield SessionMessageDelta(content_delta=result.content)
 
-            return assistant_message
+            assistant_message = await self._commit_user_turn(
+                session=session,
+                user_message=user_message,
+                assistant_content="".join(content_parts),
+                inference_config=inference_config,
+            )
+            yield SessionMessageComplete(
+                assistant_message=assistant_message,
+                session=session,
+            )
+
+    def _find_committed_assistant(
+        self,
+        session: Session,
+        message_id: str,
+        content: str,
+    ) -> Message | None:
+        """Return the committed assistant reply for an idempotent retry."""
+        matching_indexes = [
+            index
+            for index, message in enumerate(session.messages)
+            if message.message_id == message_id
+        ]
+        if not matching_indexes:
+            return None
+        if len(matching_indexes) != 1:
+            raise SessionMessageConflictError("Message id is not unique in this session.")
+
+        user_index = matching_indexes[0]
+        user_message = session.messages[user_index]
+        if user_message.role != "user" or user_message.content != content:
+            raise SessionMessageConflictError(
+                "Message id was already used with different content."
+            )
+
+        assistant_id = f"{message_id}-assistant"
+        for message in session.messages[user_index + 1:]:
+            if message.message_id == assistant_id and message.role == "assistant":
+                return message
+        raise SessionMessageConflictError(
+            "Message id belongs to an incomplete or malformed committed turn."
+        )
+
+    def _validate_new_user_turn(
+        self,
+        session: Session,
+        current_lesson: Lesson | None,
+    ) -> None:
+        """Apply session state and reflection gates before inference begins."""
+        if not session.is_active:
+            raise SessionClosedError(session.session_id)
+        if current_lesson is not None:
+            self._sync_reflection_hooks(session, current_lesson)
+        if session.turn_count >= session.max_turns:
+            raise TurnLimitExceededError(session.session_id)
+        if self._has_pending_mid_reflection(session):
+            raise SessionCompletionError(
+                "Mid-session reflection must be answered before continuing."
+            )
+
+    def _build_user_message(
+        self,
+        session_id: str,
+        message_id: str,
+        content: str,
+    ) -> Message:
+        """Build an uncommitted user transcript entry."""
+        return Message(
+            message_id=message_id,
+            session_id=session_id,
+            role="user",
+            content=content,
+            created_at=datetime.now(UTC),
+        )
+
+    async def _commit_user_turn(
+        self,
+        session: Session,
+        user_message: Message,
+        assistant_content: str,
+        inference_config,
+    ) -> Message:
+        """Persist one completed user/assistant turn and derived session state."""
+        assistant_message = Message(
+            message_id=f"{user_message.message_id}-assistant",
+            session_id=session.session_id,
+            role="assistant",
+            content=assistant_content,
+            created_at=datetime.now(UTC),
+        )
+
+        session.messages.append(user_message)
+        session.messages.append(assistant_message)
+        session.turn_count += 1
+        session.updated_at = datetime.now(UTC)
+        if session.turn_count == 1:
+            generated_title = await self._title_generator.generate_title(
+                session,
+                user_message,
+            )
+            if generated_title is not None and generated_title.strip():
+                session.title = generated_title.strip()
+
+        self._trigger_mid_reflections(session)
+
+        if session.turn_count >= session.max_turns:
+            session.is_completion_started = True
+            if session.completed_at is None:
+                session.completed_at = datetime.now(UTC)
+            session.is_active = False
+            session.closed_at = datetime.now(UTC)
+            self._trigger_completion_reflections(session)
+
+        await self._storage.save_session(session)
+        await self._persist_encrypted_log(
+            session,
+            inference_config,
+            event_type="message_commit",
+        )
+        return assistant_message
 
     def _trigger_mid_reflections(self, session: Session) -> None:
         """Trigger any mid-session reflections due at the current turn count."""

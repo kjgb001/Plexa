@@ -4,13 +4,22 @@ import pytest
 from datetime import datetime, UTC
 
 from plexa_server.inference.stub import StubInference
-from plexa_server.inference.base import InferenceError, InferenceProfile
+from plexa_server.inference.base import (
+    InferenceBackendUnavailable,
+    InferenceChunk,
+    InferenceError,
+    InferenceProfile,
+)
 from plexa_server.inference.routing import InferenceRegistry, InferenceRouter
 from plexa_server.core.sessions import (
     SessionManager,
     SessionClosedError,
     TurnLimitExceededError,
     SessionCompletionError,
+    SessionMessageComplete,
+    SessionMessageConflictError,
+    SessionMessageDelta,
+    SessionStreamingError,
 )
 from plexa_server.models.course import Course
 from plexa_server.models.lesson import Lesson
@@ -19,6 +28,29 @@ from plexa_server.tests.fixtures import make_valid_lesson_payload
 
 def run(coro):
     return asyncio.run(coro)
+
+
+async def collect_stream(stream):
+    return [event async for event in stream]
+
+
+class ChunkedInference(StubInference):
+    async def stream(self, messages, config):
+        yield InferenceChunk(content_delta="Chunk one ")
+        yield InferenceChunk(content_delta="and two", finish_reason="stop")
+
+
+class PreDeltaFailureInference(StubInference):
+    async def stream(self, messages, config):
+        if False:
+            yield InferenceChunk()
+        raise InferenceBackendUnavailable("streaming unsupported")
+
+
+class PartialFailureInference(StubInference):
+    async def stream(self, messages, config):
+        yield InferenceChunk(content_delta="partial")
+        raise InferenceBackendUnavailable("connection dropped")
 
 
 def answer_triggered_mid_reflections(manager, storage, session_id: str):
@@ -72,6 +104,109 @@ def test_turn_increment_and_message_append(setup_manager, storage_backend):
     assert session.messages[1].role == "user"
     assert session.messages[2].role == "assistant"
     assert assistant_message.role == "assistant"
+
+
+def test_streamed_turn_commits_once_after_all_deltas(setup_manager, storage_backend):
+    manager, storage = setup_manager(inference_backend=ChunkedInference())
+    lesson = Lesson.model_validate(make_valid_lesson_payload())
+    run(manager.create_session(
+        session_id="s1",
+        lesson=lesson,
+        user_id="user-1",
+        course_id="CS101",
+    ))
+
+    events = run(collect_stream(manager.submit_user_message_stream(
+        session_id="s1",
+        message_id="stream-1",
+        content="Hello stream",
+    )))
+
+    assert [event.content_delta for event in events if isinstance(event, SessionMessageDelta)] == [
+        "Chunk one ",
+        "and two",
+    ]
+    assert isinstance(events[-1], SessionMessageComplete)
+    assert events[-1].assistant_message.content == "Chunk one and two"
+    stored = run(storage.get_session("s1"))
+    assert stored.turn_count == 1
+    assert [message.role for message in stored.messages[-2:]] == ["user", "assistant"]
+    mid_hook = next(hook for hook in stored.reflection_hooks if hook.phase == "mid")
+    assert mid_hook.triggered_at is not None
+
+
+def test_stream_failure_before_delta_uses_standard_generation(setup_manager, storage_backend):
+    manager, storage = setup_manager(inference_backend=PreDeltaFailureInference())
+    lesson = Lesson.model_validate(make_valid_lesson_payload())
+    run(manager.create_session(
+        session_id="s1",
+        lesson=lesson,
+        user_id="user-1",
+        course_id="CS101",
+    ))
+
+    events = run(collect_stream(manager.submit_user_message_stream(
+        session_id="s1",
+        message_id="fallback-1",
+        content="Use fallback",
+    )))
+
+    deltas = [event.content_delta for event in events if isinstance(event, SessionMessageDelta)]
+    assert len(deltas) == 1
+    assert "[STUB RESPONSE]" in deltas[0]
+    assert isinstance(events[-1], SessionMessageComplete)
+    assert run(storage.get_session("s1")).turn_count == 1
+
+
+def test_partial_stream_failure_does_not_commit_turn(setup_manager, storage_backend):
+    manager, storage = setup_manager(inference_backend=PartialFailureInference())
+    lesson = Lesson.model_validate(make_valid_lesson_payload())
+    run(manager.create_session(
+        session_id="s1",
+        lesson=lesson,
+        user_id="user-1",
+        course_id="CS101",
+    ))
+
+    with pytest.raises(SessionStreamingError) as exc_info:
+        run(collect_stream(manager.submit_user_message_stream(
+            session_id="s1",
+            message_id="partial-1",
+            content="Do not commit",
+        )))
+
+    assert exc_info.value.fallback_allowed is True
+    stored = run(storage.get_session("s1"))
+    assert stored.turn_count == 0
+    assert all(message.message_id != "partial-1" for message in stored.messages)
+
+
+def test_message_id_retry_is_idempotent_even_after_session_closes(
+    setup_manager,
+    storage_backend,
+):
+    manager, storage = setup_manager()
+    payload = make_valid_lesson_payload()
+    payload["constraints"]["turn_limit"] = 1
+    lesson = Lesson.model_validate(payload)
+    run(manager.create_session(
+        session_id="s1",
+        lesson=lesson,
+        user_id="user-1",
+        course_id="CS101",
+    ))
+
+    first = run(manager.submit_user_message("s1", "stable-id", "One turn"))
+    retry = run(manager.submit_user_message("s1", "stable-id", "One turn"))
+
+    assert retry == first
+    stored = run(storage.get_session("s1"))
+    assert stored.turn_count == 1
+    assert stored.is_active is False
+    assert len([message for message in stored.messages if message.role == "user"]) == 1
+
+    with pytest.raises(SessionMessageConflictError):
+        run(manager.submit_user_message("s1", "stable-id", "Changed content"))
 
 
 def test_mid_reflection_triggers_after_configured_turn(setup_manager, storage_backend):

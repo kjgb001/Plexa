@@ -13,7 +13,7 @@ export class HttpClient {
     this.getAuthHeaders = getAuthHeaders
   }
 
-  async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  private async fetchResponse(path: string, options: RequestInit = {}): Promise<Response> {
     const headers = {
       "Content-Type": "application/json",
       ...(await this.getAuthHeaders()),
@@ -31,12 +31,22 @@ export class HttpClient {
       throw this.mapError(response.status, body)
     }
 
+    return response
+  }
+
+  async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const response = await this.fetchResponse(path, options)
+
     const contentType = response.headers.get("content-type")
     if (contentType?.includes("application/json")) {
       return response.json()
     }
 
     return undefined as T
+  }
+
+  async stream(path: string, options: RequestInit = {}): Promise<Response> {
+    return this.fetchResponse(path, options)
   }
 
   private mapError(status: number, body?: unknown): Error {

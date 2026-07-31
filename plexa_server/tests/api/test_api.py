@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 from fastapi.testclient import TestClient
 
@@ -53,6 +54,88 @@ def test_send_message_success(client, session_factory, api_prefix, storage_backe
     assert data["assistant_message"]["role"] == "assistant"
     assert "content" in data["assistant_message"]
     assert data["session"]["turn_count"] >= 1
+
+
+def test_stream_message_emits_delta_then_canonical_completion(
+    client,
+    session_factory,
+    api_prefix,
+    storage_backend,
+):
+    session_id, lesson_id, lesson_version = session_factory()
+    course_id = "CS101"
+    path = (
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}"
+        f"/sessions/{session_id}/messages/stream"
+    )
+
+    response = client.post(
+        path,
+        json={"content": "Hello stream", "message_id": "stream-api-1"},
+        headers={"X-User-Id": "tester"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.headers["cache-control"] == "no-cache, no-transform"
+    assert "event: delta\n" in response.text
+    assert "event: complete\n" in response.text
+
+    complete_frame = next(
+        frame for frame in response.text.split("\n\n")
+        if frame.startswith("event: complete\n")
+    )
+    complete_payload = json.loads(
+        next(line[6:] for line in complete_frame.splitlines() if line.startswith("data: "))
+    )
+    assert complete_payload["assistant_message"]["role"] == "assistant"
+    assert complete_payload["session"]["turn_count"] == 1
+
+    retry = client.post(
+        path.removesuffix("/stream"),
+        json={"content": "Hello stream", "message_id": "stream-api-1"},
+        headers={"X-User-Id": "tester"},
+    )
+    assert retry.status_code == 200
+    assert retry.json()["session"]["turn_count"] == 1
+    assert retry.json()["assistant_message"] == complete_payload["assistant_message"]
+
+
+def test_stream_message_reports_non_fallback_domain_error(
+    client,
+    session_factory,
+    api_prefix,
+    storage_backend,
+):
+    session_id, lesson_id, lesson_version = session_factory()
+    course_id = "CS101"
+    base_path = (
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}"
+        f"/sessions/{session_id}/messages"
+    )
+    first = client.post(
+        base_path,
+        json={"content": "Trigger the mid reflection", "message_id": "first-turn"},
+        headers={"X-User-Id": "tester"},
+    )
+    assert first.status_code == 200
+
+    response = client.post(
+        f"{base_path}/stream",
+        json={"content": "Blocked turn", "message_id": "blocked-turn"},
+        headers={"X-User-Id": "tester"},
+    )
+
+    assert response.status_code == 200
+    error_frame = next(
+        frame for frame in response.text.split("\n\n")
+        if frame.startswith("event: error\n")
+    )
+    error_payload = json.loads(
+        next(line[6:] for line in error_frame.splitlines() if line.startswith("data: "))
+    )
+    assert error_payload["code"] == "reflection_required"
+    assert error_payload["fallback_allowed"] is False
 
 
 def test_get_session(client, session_factory, api_prefix, storage_backend):

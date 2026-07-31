@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import datetime, UTC
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, AsyncIterator, Dict, List, Literal, Optional
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
@@ -172,6 +172,19 @@ class InferenceResult(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class InferenceChunk(BaseModel):
+    """Incremental assistant output from an inference backend."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    content_delta: str = ""
+    finish_reason: Optional[FinishReason] = None
+    usage: Optional[Usage] = None
+    backend: Optional[str] = None
+    model: Optional[str] = None
+    latency_ms: Optional[int] = Field(default=None, ge=0)
+
+
 # Inference adapter interface
 
 class InferenceBackend(ABC):
@@ -205,6 +218,22 @@ class InferenceBackend(ABC):
         Raises:
             InferenceError: Any backend failure must be normalized to this family.
         """
+
+    async def stream(
+        self,
+        messages: List["Message"],
+        config: ResolvedInferenceConfig,
+    ) -> AsyncIterator[InferenceChunk]:
+        """Stream a reply, falling back to one completed chunk by default."""
+        result = await self.generate(messages, config)
+        yield InferenceChunk(
+            content_delta=result.content,
+            finish_reason=result.finish_reason,
+            usage=result.usage,
+            backend=result.backend,
+            model=result.model,
+            latency_ms=result.latency_ms,
+        )
 
     async def health_check(self) -> bool:
         """Best-effort backend readiness check.

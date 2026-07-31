@@ -1,50 +1,92 @@
-import threading
+import asyncio
 
 from plexa_server.utils.lock_manager import LockManager
 
 
-def test_same_session_returns_same_lock():
-    manager = LockManager()
-
-    lock1 = manager.get_lock("s1")
-    lock2 = manager.get_lock("s1")
-
-    assert lock1 is lock2
+def run(coro):
+    return asyncio.run(coro)
 
 
-def test_different_sessions_return_different_locks():
-    manager = LockManager()
+def test_same_session_mutations_are_serialized():
+    async def scenario():
+        manager = LockManager()
+        first_entered = asyncio.Event()
+        release_first = asyncio.Event()
+        order: list[str] = []
 
-    lock1 = manager.get_lock("s1")
-    lock2 = manager.get_lock("s2")
+        async def first():
+            async with manager.lock("s1"):
+                order.append("first-entered")
+                first_entered.set()
+                await release_first.wait()
+                order.append("first-leaving")
 
-    assert lock1 is not lock2
+        async def second():
+            await first_entered.wait()
+            async with manager.lock("s1"):
+                order.append("second-entered")
+
+        first_task = asyncio.create_task(first())
+        second_task = asyncio.create_task(second())
+        await first_entered.wait()
+        await asyncio.sleep(0)
+        assert order == ["first-entered"]
+        release_first.set()
+        await asyncio.gather(first_task, second_task)
+
+        assert order == ["first-entered", "first-leaving", "second-entered"]
+        assert manager._locks == {}
+
+    run(scenario())
 
 
-def test_release_removes_lock():
-    manager = LockManager()
+def test_different_sessions_can_mutate_concurrently():
+    async def scenario():
+        manager = LockManager()
+        both_entered = asyncio.Event()
+        entered: set[str] = set()
 
-    lock1 = manager.get_lock("s1")
-    manager.release_lock("s1")
-    lock2 = manager.get_lock("s1")
+        async def worker(session_id: str):
+            async with manager.lock(session_id):
+                entered.add(session_id)
+                if len(entered) == 2:
+                    both_entered.set()
+                await asyncio.wait_for(both_entered.wait(), timeout=1)
 
-    assert lock1 is not lock2
+        await asyncio.gather(worker("s1"), worker("s2"))
+        assert entered == {"s1", "s2"}
+        assert manager._locks == {}
+
+    run(scenario())
 
 
-def test_thread_safe_lock_creation():
-    manager = LockManager()
-    locks = []
+def test_cancelled_waiter_does_not_leak_lock_entry():
+    async def scenario():
+        manager = LockManager()
+        holder_entered = asyncio.Event()
+        release_holder = asyncio.Event()
 
-    def get_lock():
-        locks.append(manager.get_lock("s1"))
+        async def holder():
+            async with manager.lock("s1"):
+                holder_entered.set()
+                await release_holder.wait()
 
-    threads = [threading.Thread(target=get_lock) for _ in range(20)]
+        async def waiter():
+            async with manager.lock("s1"):
+                raise AssertionError("cancelled waiter entered the lock")
 
-    for t in threads:
-        t.start()
+        holder_task = asyncio.create_task(holder())
+        await holder_entered.wait()
+        waiter_task = asyncio.create_task(waiter())
+        await asyncio.sleep(0)
+        waiter_task.cancel()
+        try:
+            await waiter_task
+        except asyncio.CancelledError:
+            pass
+        release_holder.set()
+        await holder_task
 
-    for t in threads:
-        t.join()
+        assert manager._locks == {}
 
-    first = locks[0]
-    assert all(lock is first for lock in locks)
+    run(scenario())
