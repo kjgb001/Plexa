@@ -70,6 +70,10 @@ def test_seeded_lessons_have_distinct_goal_oriented_content(tmp_path: Path):
         assert initial_message.startswith("**Goal**\n")
         assert "\n\n**Deliverable**\n" in initial_message
         assert "\n\n**Start here**\n" in initial_message
+        assert "Track the student's progress across the conversation" in system_prompt
+        assert "begin with 'Goal complete.'" in system_prompt
+        assert "Do not ask an open-ended 'what next' question" in system_prompt
+        assert "do not claim the session is submitted" in system_prompt
 
         system_anchor, initial_anchor = content_anchors[lesson_id]
         assert system_anchor in system_prompt

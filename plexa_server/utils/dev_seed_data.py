@@ -1,6 +1,21 @@
 """Canonical development course and lesson data used by the seed command."""
 
 
+_PROGRESS_AND_COMPLETION_GUIDANCE = (
+    "Track the student's progress across the conversation against every requirement in the "
+    "stated deliverable. Before each response, decide whether the work shown is incomplete, "
+    "unclear, or complete. If it is incomplete, briefly acknowledge what is already done, name "
+    "the single most important remaining requirement, and ask for that specific action. If it is "
+    "unclear whether a requirement was met, ask a focused verification question. As soon as all "
+    "requirements are satisfied, begin with 'Goal complete.' and briefly explain what evidence "
+    "met the goal. Do not ask an open-ended 'what next' question, invent additional requirements, "
+    "or continue assigning work after completion unless the student asks to extend the exercise. "
+    "These completion rules take precedence over earlier instructions to ask for a next action. "
+    "Goal completion is pedagogical only: do not claim the session is submitted, turned in, or "
+    "exempt from required reflections."
+)
+
+
 SEEDED_LESSON_SPECS = {
     "default": {
         "version": "default",
@@ -480,6 +495,15 @@ SEEDED_LESSON_SPECS = {
         },
     },
 }
+
+
+# Keep progress and completion behavior consistent as seed lessons are added.
+for _lesson_spec in SEEDED_LESSON_SPECS.values():
+    _lesson_spec["execution"]["system_prompt"] += (
+        "\n\n" + _PROGRESS_AND_COMPLETION_GUIDANCE
+    )
+del _lesson_spec
+
 
 SEEDED_COURSE_SPECS = [
     {
