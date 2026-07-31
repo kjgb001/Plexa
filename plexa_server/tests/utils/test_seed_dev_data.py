@@ -8,12 +8,83 @@ from plexa_server.storage.filesystem import (
     FileSystemCourseStorage,
     FileSystemSessionStorage,
 )
-from plexa_server.tests.fixtures import SEEDED_LESSON_SPECS
+from plexa_server.utils.dev_seed_data import SEEDED_LESSON_SPECS
 from plexa_server.utils.seed_dev_data import seed_storages
 
 
 def run(coro):
     return asyncio.run(coro)
+
+
+def test_seeded_lessons_have_distinct_goal_oriented_content(tmp_path: Path):
+    artifact_storage = FileSystemArtifactStorage(tmp_path)
+    course_storage = FileSystemCourseStorage(tmp_path)
+
+    run(seed_storages(artifact_storage, course_storage))
+
+    lessons = {
+        lesson_id: run(artifact_storage.load_lesson(lesson_id, spec["version"]))
+        for lesson_id, spec in SEEDED_LESSON_SPECS.items()
+    }
+    assert all(lesson is not None for lesson in lessons.values())
+
+    content_anchors = {
+        "default": ("controlled-comparison", "vague request"),
+        "The Danger of Hallucinations": (
+            "source-grounded hallucination audit",
+            "Unverified AI summary",
+        ),
+        "The Power of Prompt Engineering": (
+            "prompt-design coach",
+            "200-word orientation handout",
+        ),
+        "Managing Context Decay": (
+            "context-management coach",
+            "Workshop requirements",
+        ),
+        "Context Windows and Tradeoffs": (
+            "context-window tradeoffs",
+            "Original brief",
+        ),
+        "Prompt Engineering for Data Viz": (
+            "data-visualization prompt coach",
+            "| Month | Tickets",
+        ),
+        "LLM Assisted Data Evaluation": (
+            "analytical-review coach",
+            "| Cohort | Students",
+        ),
+    }
+
+    system_prompts: set[str] = set()
+    initial_messages: set[str] = set()
+    learning_objectives: set[str] = set()
+    behavioral_focuses: set[str] = set()
+    for lesson_id, lesson in lessons.items():
+        system_prompt = lesson.execution.system_prompt
+        initial_message = lesson.execution.initial_assistant_message
+        assert initial_message is not None
+        assert system_prompt != "You are a helpful assistant."
+        assert lesson.intent.learning_objective != "Understand model response patterns."
+        assert lesson.intent.behavioral_focus != "Critical reasoning"
+        assert initial_message.startswith("**Goal**\n")
+        assert "\n\n**Deliverable**\n" in initial_message
+        assert "\n\n**Start here**\n" in initial_message
+
+        system_anchor, initial_anchor = content_anchors[lesson_id]
+        assert system_anchor in system_prompt
+        assert initial_anchor in initial_message
+
+        system_prompts.add(system_prompt)
+        initial_messages.add(initial_message)
+        learning_objectives.add(lesson.intent.learning_objective)
+        behavioral_focuses.add(lesson.intent.behavioral_focus)
+
+    lesson_count = len(SEEDED_LESSON_SPECS)
+    assert len(system_prompts) == lesson_count
+    assert len(initial_messages) == lesson_count
+    assert len(learning_objectives) == lesson_count
+    assert len(behavioral_focuses) == lesson_count
 
 
 def test_seeded_cs101_lessons_cover_user_reflection_states(tmp_path: Path):

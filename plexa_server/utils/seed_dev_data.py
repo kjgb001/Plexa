@@ -9,12 +9,11 @@ from plexa_server.models.lesson import Lesson
 from plexa_server.storage.filesystem import FileSystemArtifactStorage, FileSystemCourseStorage
 from plexa_server.storage.postgres import PostgresArtifactStorage, PostgresCourseStorage
 from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage
-from plexa_server.tests.fixtures import (
+from plexa_server.utils.dev_seed_data import (
     SEEDED_COURSE_SPECS,
     SEEDED_LESSON_SPECS,
     make_seeded_lesson_payload,
     seeded_course_base_payload,
-    valid_course,
 )
 from plexa_server.utils.filesystem_data_dir import get_data_dir_path
 
@@ -57,7 +56,7 @@ async def seed_course(
     instructor_name: str | None,
     course_storage: CourseStorage,
 ) -> None:
-    """Create a fixture-backed course and bind the supplied lesson versions."""
+    """Create a development course and bind the supplied lesson versions."""
     payload = seeded_course_base_payload()
     if course_title != "default":
         payload["course_id"] = course_title
