@@ -45,13 +45,13 @@ source .venv/bin/activate
 Install the server dependencies into that environment. At minimum, the database path requires:
 
 ```bash
-python -m pip install sqlalchemy alembic asyncpg pytest cryptography
+python3 -m pip install sqlalchemy alembic asyncpg pytest cryptography
 ```
 
 If `pytest` resolves to a system binary on your machine, prefer:
 
 ```bash
-python -m pytest
+python3 -m pytest
 ```
 
 ## PostgreSQL Setup
@@ -117,31 +117,31 @@ The generated inference defaults are meant to be edited locally as needed. By de
 Initialize both development and test databases:
 
 ```bash
-python -m plexa_server.bootstrap --init-dev --init-test
+python3 -m plexa_server.bootstrap --init-dev --init-test
 ```
 
 Initialize both and import the filesystem dataset into each:
 
 ```bash
-python -m plexa_server.bootstrap --init-dev --init-test --import-filesystem
+python3 -m plexa_server.bootstrap --init-dev --init-test --import-filesystem
 ```
 
 Initialize only the development database:
 
 ```bash
-python -m plexa_server.bootstrap --init-dev
+python3 -m plexa_server.bootstrap --init-dev
 ```
 
 Initialize only the test database:
 
 ```bash
-python -m plexa_server.bootstrap --init-test
+python3 -m plexa_server.bootstrap --init-test
 ```
 
 Write a production env template with placeholders only:
 
 ```bash
-python -m plexa_server.bootstrap --write-prod-template
+python3 -m plexa_server.bootstrap --write-prod-template
 ```
 
 The lower-level Postgres-specific helpers remain in [db/bootstrap.py](db/bootstrap.py), but the intended user-facing entrypoint is the top-level bootstrap module.
@@ -184,13 +184,13 @@ The one-way importer lives at [utils/import_filesystem_to_postgres.py](utils/imp
 Import the filesystem dataset into the development database:
 
 ```bash
-python -m plexa_server.utils.import_filesystem_to_postgres --target dev
+python3 -m plexa_server.utils.import_filesystem_to_postgres --target dev
 ```
 
 Import it into the test database:
 
 ```bash
-python -m plexa_server.utils.import_filesystem_to_postgres --target test
+python3 -m plexa_server.utils.import_filesystem_to_postgres --target test
 ```
 
 In normal local setup, it is simpler to let the bootstrap command handle this with `--import-filesystem`.
@@ -406,25 +406,25 @@ Supported values:
 Run the full suite:
 
 ```bash
-python -m pytest -q plexa_server/tests
+python3 -m pytest -q plexa_server/tests
 ```
 
 Run backend-agnostic suites against both backends:
 
 ```bash
-python -m pytest -q plexa_server/tests --storage-backend=both
+python3 -m pytest -q plexa_server/tests --storage-backend=both
 ```
 
 Run only the Postgres-specific DB tests:
 
 ```bash
-python -m pytest -q plexa_server/tests/storage/test_db_postgres_storage.py
+python3 -m pytest -q plexa_server/tests/storage/test_db_postgres_storage.py
 ```
 
 Run only the API suite against Postgres:
 
 ```bash
-python -m pytest -q plexa_server/tests/api --storage-backend=postgres
+python3 -m pytest -q plexa_server/tests/api --storage-backend=postgres
 ```
 
 The backend-aware test wiring is centralized in [tests/conftest.py](tests/conftest.py).

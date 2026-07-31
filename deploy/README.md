@@ -42,7 +42,7 @@ The automated setup script generates the encrypted log key for you. Generate one
 manually only when you are not using the script:
 
 ```bash
-python - <<'PY'
+python3 - <<'PY'
 from plexa_server.utils.cryptography import generate_encryption_key
 print(generate_encryption_key())
 PY
@@ -233,18 +233,18 @@ Then open the site in a browser and sign in with a temporary username if dev log
 Use the backend test suite before relying on the deployment stack:
 
 ```bash
-python -m plexa_server.bootstrap --init-dev --init-test --import-filesystem
-python -m pytest -q plexa_server/tests --storage-backend=both
+python3 -m plexa_server.bootstrap --init-dev --init-test --import-filesystem
+python3 -m pytest -q plexa_server/tests --storage-backend=both
 ```
 
 For a faster deployment-focused backend pass:
 
 ```bash
-python -m pytest -q plexa_server/tests/api/test_main.py
-python -m pytest -q plexa_server/tests/bootstrap
-python -m pytest -q plexa_server/tests/auth
-python -m pytest -q plexa_server/tests/inference
-python -m pytest -q plexa_server/tests/storage/test_db_postgres_storage.py
+python3 -m pytest -q plexa_server/tests/api/test_main.py
+python3 -m pytest -q plexa_server/tests/bootstrap
+python3 -m pytest -q plexa_server/tests/auth
+python3 -m pytest -q plexa_server/tests/inference
+python3 -m pytest -q plexa_server/tests/storage/test_db_postgres_storage.py
 ```
 
 Validate the deployment helpers without starting services:

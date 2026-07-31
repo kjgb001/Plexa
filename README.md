@@ -84,7 +84,7 @@ For local server work:
 1. create and activate a virtual environment
 2. start the Postgres container from `plexa_server/docker-compose.yml`
 3. bootstrap the development and test databases
-4. run tests through `python -m pytest`
+4. run tests through `python3 -m pytest`
 
 The detailed server workflow is documented in:
 - [plexa_server/README.md](plexa_server/README.md)
@@ -116,9 +116,9 @@ Supported backend test modes:
 Typical examples:
 
 ```bash
-python -m pytest -q plexa_server/tests
-python -m pytest -q plexa_server/tests --storage-backend=postgres
-python -m pytest -q plexa_server/tests --storage-backend=both
+python3 -m pytest -q plexa_server/tests
+python3 -m pytest -q plexa_server/tests --storage-backend=postgres
+python3 -m pytest -q plexa_server/tests --storage-backend=both
 ```
 
 ## License

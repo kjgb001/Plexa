@@ -127,6 +127,15 @@ require_value "--email" "$email"
 require_value "--inference-url" "$inference_url"
 require_value "--model" "$model"
 
+if command -v python3 >/dev/null 2>&1; then
+  python_bin="python3"
+elif command -v python >/dev/null 2>&1; then
+  python_bin="python"
+else
+  echo "Python 3 is required to generate deployment secrets, but neither python3 nor python was found." >&2
+  exit 1
+fi
+
 if [ "$local_mode" != "true" ]; then
   case "$domain" in
     http://*|https://*|*/*|:*)
@@ -155,8 +164,8 @@ fi
 
 fast_model="${fast_model:-$model}"
 reasoning_model="${reasoning_model:-$model}"
-postgres_password="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
-log_encryption_key="$(python -c 'import base64, secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii"))')"
+postgres_password="$("$python_bin" -c 'import secrets; print(secrets.token_urlsafe(32))')"
+log_encryption_key="$("$python_bin" -c 'import base64, secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii"))')"
 
 mkdir -p "$(dirname "$output")"
 if [ "$local_mode" = "true" ]; then
