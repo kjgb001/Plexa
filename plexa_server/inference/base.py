@@ -85,7 +85,7 @@ class InferenceConfig(BaseModel):
 
     # Timeouts
     timeout_s: Optional[float] = Field(
-        default=30.0, gt=0.0, description="Request timeout in seconds."
+        default=None, gt=0.0, description="Optional lesson-level request timeout override."
     )
 
     # Future-proofing knobs (not all backends will support these)

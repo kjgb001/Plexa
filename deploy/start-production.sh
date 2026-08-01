@@ -14,7 +14,7 @@ if [ ! -f "$env_file" ]; then
 Missing env file: $env_file
 
 Create it first, for example:
-  deploy/create-production-env.sh --domain plexa.example.edu --email admin@example.edu --inference-url https://inference.example.edu/v1 --model llama3.1
+  deploy/create-production-env.sh --domain plexa.example.edu --email admin@example.edu --inference-url https://inference.example.edu/v1 --model llama3.1 --oidc-authority https://login.example.edu --oidc-client-id plexa --oidc-audience plexa-api --admin-user <initial-admin-subject> --retention-days 365
 EOF
   exit 1
 fi

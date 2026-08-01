@@ -36,9 +36,8 @@ def test_full_lesson_lifecycle_with_stub(setup_manager, storage_backend):
 
     session = run(storage.get_session("s1"))
 
-    # Initial system injection
-    assert len(session.messages) == 1
-    assert session.messages[0].role == "system"
+    # The private system prompt is injected only at inference time, never persisted.
+    assert session.messages == []
     assert session.turn_count == 0
     assert session.is_active is True
 
@@ -48,7 +47,7 @@ def test_full_lesson_lifecycle_with_stub(setup_manager, storage_backend):
     session = run(storage.get_session("s1"))
 
     assert session.turn_count == 1
-    assert len(session.messages) == 3  # system + user + assistant
+    assert len(session.messages) == 2
     assert session.messages[-2].role == "user"
     assert session.messages[-1].role == "assistant"
     assert session.is_active is True
@@ -62,7 +61,7 @@ def test_full_lesson_lifecycle_with_stub(setup_manager, storage_backend):
 
     assert session.turn_count == 2
     assert session.is_active is False
-    assert len(session.messages) == 5  # system + 2 user/assistant pairs
+    assert len(session.messages) == 4
 
     # Further submission should fail
     with pytest.raises(SessionClosedError):
@@ -72,7 +71,6 @@ def test_full_lesson_lifecycle_with_stub(setup_manager, storage_backend):
     roles = [m.role for m in session.messages]
 
     assert roles == [
-        "system",
         "user",
         "assistant",
         "user",

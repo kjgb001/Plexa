@@ -10,19 +10,42 @@ from plexa_server.models.session import Session
 from plexa_server.models.workspace_state import UserCourseState, UserLessonState
 
 
+class CourseRevisionConflictError(RuntimeError):
+    """Raised when a stale course aggregate would overwrite newer state."""
+
+
+class LessonRevisionConflictError(RuntimeError):
+    """Raised when a stale lesson artifact would overwrite newer content."""
+
+
+class SessionRevisionConflictError(RuntimeError):
+    """Raised when stale session state would overwrite a newer revision."""
+
+
 class ArtifactStorage(ABC):
     """Abstract storage contract for lesson artifacts and encrypted logs."""
 
     @abstractmethod
-    async def save_lesson(self, lesson: Lesson) -> None:
+    async def save_lesson(
+        self,
+        lesson: Lesson,
+        course_id: str,
+        expected_revision: int | None = None,
+    ) -> int:
         """Persist a lesson artifact.
 
         Args:
             lesson: Lesson document to store.
+            course_id: Course that owns the mutable artifact.
         """
 
     @abstractmethod
-    async def load_lesson(self, lesson_id: str, version: str) -> Optional[Lesson]:
+    async def load_lesson(
+        self,
+        lesson_id: str,
+        version: str,
+        course_id: str,
+    ) -> Optional[Lesson]:
         """Load a lesson artifact by identifier and version.
 
         Args:
@@ -32,6 +55,15 @@ class ArtifactStorage(ABC):
         Returns:
             Optional[Lesson]: Stored lesson document, or `None` if absent.
         """
+
+    @abstractmethod
+    async def get_lesson_revision(
+        self,
+        lesson_id: str,
+        version: str,
+        course_id: str,
+    ) -> int | None:
+        """Return the current mutable artifact revision, if the lesson exists."""
 
     @abstractmethod
     async def save_encrypted_log(
@@ -101,6 +133,10 @@ class ArtifactStorage(ABC):
         Args:
             instance_id: Identifier for the encrypted log.
         """
+
+    @abstractmethod
+    async def expire_encrypted_log_content(self, instance_id: str) -> None:
+        """Delete encrypted content while retaining content-free metadata."""
 
     @abstractmethod
     async def save_encrypted_log_access_audit(
@@ -235,21 +271,6 @@ class CourseStorage(ABC):
 
         Returns:
             List[Course]: All persisted courses.
-        """
-
-    @abstractmethod
-    async def bind_lesson_to_course(
-        self,
-        course_id: str,
-        lesson_id: str,
-        version: str,
-    ) -> None:
-        """Bind a lesson version into a course document.
-
-        Args:
-            course_id: Identifier of the course to update.
-            lesson_id: Lesson identifier to bind.
-            version: Lesson version to store.
         """
 
     @abstractmethod

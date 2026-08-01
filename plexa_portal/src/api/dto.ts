@@ -24,6 +24,8 @@ export interface ApiSessionResponse {
   is_finalized: boolean
   turned_in_at?: string | null
   logging_policy: string
+  transcript_available: boolean
+  transcript_unavailable_reason?: string | null
   reflection_hooks: ApiSessionReflectionHook[]
 }
 
@@ -68,10 +70,17 @@ export interface ApiCourse {
   description?: string
   instructor?: string
   term?: string
-  owner_id: string
+  owner_id?: string
+  instructor_ids?: string[]
   discoverable: boolean
-  enrolled_users: string[]
-  pending_requests: string[]
+  archived_at?: string | null
+  enrolled_users?: string[]
+  pending_requests?: string[]
+  viewer_is_owner: boolean
+  viewer_is_instructor: boolean
+  viewer_is_enrolled: boolean
+  viewer_has_pending_request: boolean
+  revision?: number
   created_at: string
   lessons: Record<string, string>
   lesson_timeline: ApiCourseLessonWindow[]
@@ -150,6 +159,11 @@ export interface ApiLessonFullDocument {
   reflection: ApiLessonReflection
 }
 
+export interface ApiLessonArtifactResponse {
+  lesson: ApiLessonFullDocument
+  artifact_revision: number
+}
+
 export interface ApiCourseLessonsResponse {
   lessons: ApiLessonDocument[]
   lesson_timeline: ApiCourseLessonWindow[]
@@ -198,6 +212,7 @@ export interface ApiEncryptedLogMetadata {
   last_event_type: string
   last_event_at: string
   key_id: string
+  content_available: boolean
 }
 
 export interface ApiEncryptedLogListResponse {
@@ -213,4 +228,5 @@ export interface ApiUploadLessonResponse {
   lesson_id: string
   version: string
   overwritten: boolean
+  artifact_revision: number
 }

@@ -33,3 +33,4 @@ class EncryptedLogMetadata(BaseModel):
     last_event_type: EncryptedLogEventType
     last_event_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     key_id: str
+    content_available: bool = True

@@ -18,9 +18,15 @@ class DevHeaderAuthenticator(RequestAuthenticator):
         user_id = request.headers.get(self._config.user_header_name)
         if user_id is None or not user_id.strip():
             return UserIdentity()
+        normalized_user_id = user_id.strip()
+        if len(normalized_user_id) > 255 or any(
+            ord(character) < 32 or ord(character) == 127
+            for character in normalized_user_id
+        ):
+            return UserIdentity()
 
         identity = UserIdentity(
-            user_id=user_id.strip(),
+            user_id=normalized_user_id,
             roles={"user"},
             auth_type="dev_header",
         )

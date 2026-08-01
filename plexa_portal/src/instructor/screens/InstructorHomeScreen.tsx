@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react"
 import { useApis } from "../../api"
 import type { Course } from "../../api/interfaces"
+import { useAuth } from "../../auth/useAuth"
 
 export function InstructorHomeScreen({
   onOpenCourse,
 }: {
   onOpenCourse(courseId: string): void
 }) {
-  const { courseApi } = useApis()
+  const { instructorApi } = useApis()
+  const { user } = useAuth()
   const [courses, setCourses] = useState<Course[]>([])
   const [loading, setLoading] = useState(true)
   const [lookupCourseId, setLookupCourseId] = useState("")
@@ -17,9 +19,14 @@ export function InstructorHomeScreen({
 
     async function loadCourses() {
       try {
-        const result = await courseApi.listDiscoverable()
+        const result = await instructorApi.listCourses()
         if (active) {
-          setCourses(result.courses)
+          const allowed = new Set(user?.instructedCourseIds ?? [])
+          setCourses(
+            user?.isAdmin
+              ? result
+              : result.filter((course) => allowed.has(course.course_id)),
+          )
         }
       } finally {
         if (active) {
@@ -33,7 +40,7 @@ export function InstructorHomeScreen({
     return () => {
       active = false
     }
-  }, [courseApi])
+  }, [instructorApi, user?.instructedCourseIds, user?.isAdmin])
 
   return (
     <section className="portal-stage" aria-labelledby="instructor-home-title">
@@ -51,8 +58,7 @@ export function InstructorHomeScreen({
             <h2>Open a course</h2>
           </header>
           <p>
-            Discoverable courses appear below. If you manage a course that is not discoverable,
-            open it directly by course ID.
+            Courses assigned to your authenticated instructor account appear below.
           </p>
           <div className="portal-inline-form">
             <input
@@ -76,11 +82,11 @@ export function InstructorHomeScreen({
 
         <article className="portal-card">
           <header className="portal-card__header">
-            <h2>Discoverable courses</h2>
+            <h2>Your courses</h2>
           </header>
           {loading ? <p className="status-note">Loading courses...</p> : null}
           {!loading && courses.length === 0 ? (
-            <p className="empty-panel">No discoverable courses are currently visible.</p>
+            <p className="empty-panel">No courses are assigned to this account.</p>
           ) : null}
           <div className="portal-list">
             {courses.map((course) => (
@@ -90,7 +96,9 @@ export function InstructorHomeScreen({
                 onClick={() => onOpenCourse(course.course_id)}
               >
                 <span className="portal-list__title">{course.title}</span>
-                <span className="portal-list__meta">{course.course_id}</span>
+                <span className="portal-list__meta">
+                  {course.course_id}{course.archived_at ? " | Archived" : ""}
+                </span>
               </button>
             ))}
           </div>

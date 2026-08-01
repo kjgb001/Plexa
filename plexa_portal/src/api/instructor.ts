@@ -1,6 +1,7 @@
 import { HttpClient } from "./http"
 import type {
   ApiCourse,
+  ApiCourseListResponse,
   ApiCourseLessonTimelineResponse,
   ApiCourseInstructorsResponse,
   ApiCourseLessonsResponse,
@@ -31,6 +32,13 @@ export class InstructorApi {
 
   constructor(http: HttpClient) {
     this.http = http
+  }
+
+  async listCourses(): Promise<Course[]> {
+    const result = await this.http.request<ApiCourseListResponse>(
+      "/courses?include_archived=true",
+    )
+    return result.courses.map(mapCourse)
   }
 
   async getCourse(courseId: string): Promise<Course> {

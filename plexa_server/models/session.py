@@ -4,6 +4,8 @@ from datetime import datetime, UTC
 from uuid import uuid4
 
 from plexa_server.models.message import Message
+from plexa_server.models.lesson import Lesson
+from plexa_server.inference.base import InferenceConfig
 
 
 class SessionReflectionHook(BaseModel):
@@ -36,6 +38,10 @@ class Session(BaseModel):
     course_id: str
 
     messages: List[Message] = Field(default_factory=list)
+    lesson_snapshot: Lesson | None = None
+    frozen_inference_config: InferenceConfig | None = None
+    lesson_artifact_revision: int = 1
+    lesson_content_sha256: str | None = None
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -50,4 +56,7 @@ class Session(BaseModel):
     is_finalized: bool = False
     turned_in_at: Optional[datetime] = None
     logging_policy: Literal["default", "metadata_only", "disabled"] = "default"
+    transcript_available: bool = True
+    transcript_unavailable_reason: str | None = None
+    persistence_revision: int = 0
     reflection_hooks: List[SessionReflectionHook] = Field(default_factory=list)

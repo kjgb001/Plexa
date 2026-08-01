@@ -1,11 +1,3 @@
-*json
-!plexa_portal/package.json
-!plexa_portal/package-lock.json
-!plexa_portal/tsconfig.json
-!plexa_portal/tsconfig.app.json
-!plexa_portal/tsconfig.node.json
-!plexa_portal/typedoc.json
-
 # Python
 __pycache__/
 *.pyc
@@ -14,12 +6,17 @@ __pycache__/
 
 .env
 .venv/
+.vscode/
+
+plexa_server/data/
 
 plexa_server/.env
 plexa_client/src/.env
 plexa_portal/src/.env
 deploy/production.env
 deploy/local-production.env
+deploy/secrets/
+backups/
 
 docs/build/
 

@@ -88,6 +88,18 @@ function AppView() {
     )
   }
 
+  if (!user?.canAccessInstructorPortal) {
+    return (
+      <div className="portal-stage">
+        <h1>Instructor access unavailable</h1>
+        <p>Your authenticated account does not manage or teach any Plexa courses.</p>
+        <button className="primary-button" onClick={() => navigate(studentPaths.courses())}>
+          Open student portal
+        </button>
+      </div>
+    )
+  }
+
   return (
     <InstructorApp
       route={route}

@@ -15,7 +15,12 @@ Usage:
     --domain plexa.example.edu \
     --email admin@example.edu \
     --inference-url https://inference.example.edu/v1 \
-    --model llama3.1
+    --model llama3.1 \
+    --oidc-authority https://login.example.edu \
+    --oidc-client-id plexa \
+    --oidc-audience plexa-api \
+    --admin-user <initial-admin-subject> \
+    --retention-days 365
 
   deploy/create-production-env.sh --local --model llama3.1
 
@@ -24,18 +29,29 @@ Options:
   --domain VALUE         Public Plexa hostname, for example plexa.example.edu.
   --email VALUE          ACME contact email for Caddy certificate issuance.
   --inference-url VALUE  OpenAI-compatible inference base URL ending in /v1.
+  --allow-insecure-inference Allow HTTP inference only on a trusted private network.
   --api-key PATH         Optional file containing an inference bearer API key.
   --timeout VALUE        Optional inference timeout in seconds. Defaults to 30.0.
   --model VALUE          Model name for default, fast, and reasoning profiles.
   --fast-model VALUE     Optional model override for the fast profile.
   --reasoning-model VALUE Optional model override for the reasoning profile.
-  --admin-user VALUE     Temporary admin user id. Defaults to admin.
+  --oidc-authority VALUE OIDC issuer/authority URL for a domain deployment.
+  --oidc-discovery-url VALUE Optional discovery URL override.
+  --oidc-client-id VALUE Public OIDC client identifier.
+  --oidc-audience VALUE  Required access-token audience.
+  --oidc-scope VALUE     Portal scopes. Defaults to "openid profile email".
+  --user-id-claim VALUE  Access-token user id claim. Defaults to sub.
+  --roles-claim VALUE    Optional access-token roles claim.
+  --admin-role VALUE     Optional institutional role mapped to Plexa admin.
+  --retention-days VALUE Required domain content retention period; local defaults to 30.
+  --temporary-dev-login  Explicitly use unsafe dev login for a domain smoke test.
+  --admin-user VALUE     Initial admin id; required for dev login and optional with OIDC role mapping.
   --output VALUE         Env file path. Defaults to deploy/production.env.
   --force                Overwrite the output file if it already exists.
   -h, --help             Show this help text.
 
-This creates a temporary dev-login production env for smoke testing. Replace
-dev login with institutional auth before real student use.
+Local mode uses development login. Domain mode requires OIDC unless the unsafe
+--temporary-dev-login flag is explicitly supplied.
 EOF
 }
 
@@ -47,10 +63,21 @@ timeout_s="30.0"
 model=""
 fast_model=""
 reasoning_model=""
-admin_user="admin"
+admin_user=""
 output="deploy/production.env"
 force="false"
 local_mode="false"
+temporary_dev_login="false"
+allow_insecure_inference="false"
+oidc_authority=""
+oidc_discovery_url=""
+oidc_client_id=""
+oidc_audience=""
+oidc_scope="openid profile email"
+user_id_claim="sub"
+roles_claim=""
+admin_role=""
+retention_days=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -74,6 +101,10 @@ while [ "$#" -gt 0 ]; do
       inference_url="${2:-}"
       shift 2
       ;;
+    --allow-insecure-inference)
+      allow_insecure_inference="true"
+      shift
+      ;;
     --api-key)
       api_key_file="${2:-}"
       shift 2
@@ -93,6 +124,46 @@ while [ "$#" -gt 0 ]; do
     --reasoning-model)
       reasoning_model="${2:-}"
       shift 2
+      ;;
+    --oidc-authority)
+      oidc_authority="${2:-}"
+      shift 2
+      ;;
+    --oidc-discovery-url)
+      oidc_discovery_url="${2:-}"
+      shift 2
+      ;;
+    --oidc-client-id)
+      oidc_client_id="${2:-}"
+      shift 2
+      ;;
+    --oidc-audience)
+      oidc_audience="${2:-}"
+      shift 2
+      ;;
+    --oidc-scope)
+      oidc_scope="${2:-}"
+      shift 2
+      ;;
+    --user-id-claim)
+      user_id_claim="${2:-}"
+      shift 2
+      ;;
+    --roles-claim)
+      roles_claim="${2:-}"
+      shift 2
+      ;;
+    --admin-role)
+      admin_role="${2:-}"
+      shift 2
+      ;;
+    --retention-days)
+      retention_days="${2:-}"
+      shift 2
+      ;;
+    --temporary-dev-login)
+      temporary_dev_login="true"
+      shift
       ;;
     --admin-user)
       admin_user="${2:-}"
@@ -144,7 +215,56 @@ require_value "--email" "$email"
 require_value "--inference-url" "$inference_url"
 require_value "--model" "$model"
 
+if [ "$local_mode" = "true" ]; then
+  retention_days="${retention_days:-30}"
+  admin_user="${admin_user:-admin}"
+  allow_insecure_inference="true"
+elif [ "$temporary_dev_login" = "true" ]; then
+  require_value "--admin-user" "$admin_user"
+  require_value "--retention-days" "$retention_days"
+else
+  require_value "--oidc-authority" "$oidc_authority"
+  require_value "--oidc-client-id" "$oidc_client_id"
+  require_value "--oidc-audience" "$oidc_audience"
+  require_value "--retention-days" "$retention_days"
+  if [ -z "$admin_user" ] && { [ -z "$roles_claim" ] || [ -z "$admin_role" ]; }; then
+    echo "OIDC setup requires --admin-user, or both --roles-claim and --admin-role, to bootstrap administration." >&2
+    exit 2
+  fi
+  if { [ -n "$roles_claim" ] && [ -z "$admin_role" ]; } || { [ -z "$roles_claim" ] && [ -n "$admin_role" ]; }; then
+    echo "--roles-claim and --admin-role must be supplied together." >&2
+    exit 2
+  fi
+fi
+
 python_bin="$(plexa_resolve_python)"
+
+if ! "$python_bin" - "$inference_url" "$allow_insecure_inference" <<'PY'
+import sys
+from urllib.parse import urlsplit
+
+url = sys.argv[1]
+allow_insecure = sys.argv[2] == "true"
+parsed = urlsplit(url)
+if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+    print("--inference-url must be an absolute HTTP(S) URL.", file=sys.stderr)
+    raise SystemExit(1)
+if parsed.username or parsed.password or parsed.query or parsed.fragment:
+    print("--inference-url must not contain credentials, a query, or a fragment.", file=sys.stderr)
+    raise SystemExit(1)
+if parsed.path.rstrip("/").endswith("/v1") is False:
+    print("--inference-url must end in /v1.", file=sys.stderr)
+    raise SystemExit(1)
+if parsed.scheme != "https" and not allow_insecure:
+    print(
+        "HTTP inference requires --allow-insecure-inference and a trusted private network.",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+PY
+then
+  exit 2
+fi
 
 if [ "$local_mode" != "true" ]; then
   case "$domain" in
@@ -163,7 +283,16 @@ for pair in \
   "model:$model" \
   "fast_model:${fast_model:-$model}" \
   "reasoning_model:${reasoning_model:-$model}" \
-  "admin_user:$admin_user"
+  "admin_user:$admin_user" \
+  "oidc_authority:$oidc_authority" \
+  "oidc_discovery_url:$oidc_discovery_url" \
+  "oidc_client_id:$oidc_client_id" \
+  "oidc_audience:$oidc_audience" \
+  "oidc_scope:$oidc_scope" \
+  "user_id_claim:$user_id_claim" \
+  "roles_claim:$roles_claim" \
+  "admin_role:$admin_role" \
+  "retention_days:$retention_days"
 do
   reject_unsafe_env_value "${pair%%:*}" "${pair#*:}"
 done
@@ -179,6 +308,22 @@ except ValueError:
 
 if timeout <= 0:
     print("--timeout must be greater than zero.", file=sys.stderr)
+    raise SystemExit(1)
+PY
+then
+  exit 2
+fi
+
+if ! "$python_bin" - "$retention_days" <<'PY'
+import sys
+
+try:
+    days = int(sys.argv[1])
+except ValueError:
+    print("--retention-days must be a positive integer.", file=sys.stderr)
+    raise SystemExit(1)
+if days <= 0:
+    print("--retention-days must be a positive integer.", file=sys.stderr)
     raise SystemExit(1)
 PY
 then
@@ -220,25 +365,81 @@ fast_model="${fast_model:-$model}"
 reasoning_model="${reasoning_model:-$model}"
 postgres_password="$("$python_bin" -c 'import secrets; print(secrets.token_urlsafe(32))')"
 log_encryption_key="$("$python_bin" -c 'import base64, secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii"))')"
-inference_backends="$("$python_bin" - "$inference_url" "$timeout_s" "$api_key" <<'PY'
+inference_backends="$("$python_bin" - "$inference_url" "$timeout_s" <<'PY'
 import json
 import sys
 
 base_url = sys.argv[1]
 timeout_s = float(sys.argv[2])
-api_key = sys.argv[3]
 
 backend = {
     "type": "openai-compatible",
     "base_url": base_url,
     "timeout_s": timeout_s,
 }
-if api_key:
-    backend["api_key"] = api_key
+backend["api_key_file"] = "/run/secrets/inference_api_key"
 
 print(json.dumps({"primary": backend}, separators=(",", ":")))
 PY
 )"
+
+oidc_issuer=""
+oidc_jwks_url=""
+if [ "$local_mode" != "true" ] && [ "$temporary_dev_login" != "true" ]; then
+  if [ -z "$oidc_discovery_url" ]; then
+    oidc_discovery_url="${oidc_authority%/}/.well-known/openid-configuration"
+  fi
+  oidc_values="$("$python_bin" - "$oidc_authority" "$oidc_discovery_url" <<'PY'
+import json
+import sys
+import urllib.request
+from urllib.parse import urlsplit
+
+authority, url = sys.argv[1:3]
+
+def require_secure_url(label, value):
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.fragment
+    ):
+        print(f"{label} must be an absolute HTTPS URL without credentials or a fragment.", file=sys.stderr)
+        raise SystemExit(1)
+
+require_secure_url("--oidc-authority", authority)
+require_secure_url("OIDC discovery URL", url)
+try:
+    with urllib.request.urlopen(url, timeout=10) as response:
+        if urlsplit(response.geturl()).scheme != "https":
+            print("OIDC discovery may not redirect to an insecure transport.", file=sys.stderr)
+            raise SystemExit(1)
+        document = json.load(response)
+except Exception as exc:
+    print(f"Unable to load OIDC discovery document {url}: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+issuer = document.get("issuer")
+jwks_uri = document.get("jwks_uri")
+if not isinstance(issuer, str) or not issuer or not isinstance(jwks_uri, str) or not jwks_uri:
+    print("OIDC discovery document must provide issuer and jwks_uri.", file=sys.stderr)
+    raise SystemExit(1)
+require_secure_url("OIDC issuer", issuer)
+require_secure_url("OIDC jwks_uri", jwks_uri)
+if issuer.rstrip("/") != authority.rstrip("/"):
+    print(
+        "OIDC discovery issuer must match --oidc-authority.",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+print(issuer)
+print(jwks_uri)
+PY
+)"
+  oidc_issuer="$(printf '%s\n' "$oidc_values" | sed -n '1p')"
+  oidc_jwks_url="$(printf '%s\n' "$oidc_values" | sed -n '2p')"
+fi
 inference_profiles="$("$python_bin" - "$model" "$fast_model" "$reasoning_model" <<'PY'
 import json
 import sys
@@ -267,6 +468,48 @@ else
   https_port="443"
 fi
 
+secret_dir="deploy/secrets"
+mkdir -p "$secret_dir"
+secret_stem="$(basename "$output" | tr -c 'A-Za-z0-9._-' '_')"
+inference_key_secret="$secret_dir/$secret_stem.inference-api-key"
+log_key_secret="$secret_dir/$secret_stem.log-encryption-key"
+printf '%s\n' "$api_key" > "$inference_key_secret"
+printf '{"server-managed:v1":"%s"}\n' "$log_encryption_key" > "$log_key_secret"
+chmod 600 "$inference_key_secret" "$log_key_secret"
+
+if [ "$local_mode" = "true" ] || [ "$temporary_dev_login" = "true" ]; then
+  server_auth="PLEXA_AUTH_MODE=dev-header
+PLEXA_ENABLE_DEV_LOGIN=true
+PLEXA_ADMIN_USER_IDS=[\"$admin_user\"]"
+  portal_auth="VITE_AUTH_MODE=dev
+VITE_ENABLE_DEV_LOGIN=true"
+else
+  server_auth="PLEXA_AUTH_MODE=bearer-jwt
+PLEXA_ENABLE_DEV_LOGIN=false
+PLEXA_ADMIN_USER_IDS=[\"$admin_user\"]
+PLEXA_AUTH_ISSUER=$oidc_issuer
+PLEXA_AUTH_AUDIENCE=$oidc_audience
+PLEXA_AUTH_JWKS_URL=$oidc_jwks_url
+PLEXA_AUTH_ALLOWED_ALGORITHMS=RS256
+PLEXA_AUTH_REQUIRE_EXP=true
+PLEXA_AUTH_USER_ID_CLAIM=$user_id_claim
+PLEXA_AUTH_ROLES_CLAIM=$roles_claim
+PLEXA_AUTH_ADMIN_ROLE_NAME=$admin_role"
+  portal_auth="VITE_AUTH_MODE=oidc
+VITE_ENABLE_DEV_LOGIN=false
+VITE_AUTH_AUTHORITY=$oidc_authority
+VITE_AUTH_DISCOVERY_URL=$oidc_discovery_url
+VITE_AUTH_CLIENT_ID=$oidc_client_id
+VITE_AUTH_SCOPE=$oidc_scope
+VITE_AUTH_REDIRECT_URI=$site_url/auth/callback
+VITE_AUTH_LOGOUT_REDIRECT_URI=$site_url/login"
+fi
+
+auth_label="OIDC"
+if [ "$local_mode" = "true" ] || [ "$temporary_dev_login" = "true" ]; then
+  auth_label="temporary dev login"
+fi
+
 cat > "$output" <<EOF
 # Generated by deploy/create-production-env.sh.
 # Keep this file out of git.
@@ -278,7 +521,6 @@ PLEXA_SITE_ADDRESS=$domain
 ACME_EMAIL=$email
 PLEXA_HTTP_PORT=$http_port
 PLEXA_HTTPS_PORT=$https_port
-
 # Local Postgres container credentials.
 POSTGRES_DB=plexa
 POSTGRES_USER=plexa
@@ -288,23 +530,27 @@ POSTGRES_PASSWORD=$postgres_password
 PLEXA_ENV=production
 PLEXA_DATABASE_URL=postgresql+asyncpg://plexa:$postgres_password@postgres:5432/plexa
 PLEXA_DATABASE_SYNC_URL=postgresql://plexa:$postgres_password@postgres:5432/plexa
-PLEXA_AUTH_MODE=dev-header
-PLEXA_ENABLE_DEV_LOGIN=true
-PLEXA_ADMIN_USER_IDS=["$admin_user"]
+$server_auth
 PLEXA_CORS_ALLOWED_ORIGINS=["$cors_origin"]
-PLEXA_LOG_ENCRYPTION_KEY=$log_encryption_key
+PLEXA_LOG_ENCRYPTION_KEYS_FILE=/run/secrets/log_encryption_key
+PLEXA_LOG_ENCRYPTION_ACTIVE_KEY_ID=server-managed:v1
+PLEXA_LOG_ENCRYPTION_KEY_HOST_FILE=$log_key_secret
+PLEXA_CONTENT_RETENTION_DAYS=$retention_days
+PLEXA_WEB_CONCURRENCY=1
+PLEXA_LOG_FORMAT=json
+PLEXA_ALLOW_INSECURE_INFERENCE=$allow_insecure_inference
 
 # Backend-only inference target.
 PLEXA_INFERENCE_BACKENDS=$inference_backends
 PLEXA_INFERENCE_PROFILES=$inference_profiles
 PLEXA_INFERENCE_REQUIRED_BACKENDS=["primary"]
+PLEXA_INFERENCE_API_KEY_HOST_FILE=$inference_key_secret
 
 # Portal build-time config.
 VITE_APP_ENV=production
 VITE_API_BASE_URL=/api
 TARGET_API_VERSION=v1
-VITE_AUTH_MODE=dev
-VITE_ENABLE_DEV_LOGIN=true
+$portal_auth
 EOF
 
 chmod 600 "$output"
@@ -326,5 +572,5 @@ Next:
   2. $second_step
      $site_url
 
-Temporary dev login is enabled for smoke testing. Replace it before real student use.
+Authentication mode: $auth_label
 EOF

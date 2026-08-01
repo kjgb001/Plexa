@@ -241,10 +241,16 @@ check_env_basics() {
     PLEXA_ENABLE_DEV_LOGIN
     PLEXA_ADMIN_USER_IDS
     PLEXA_CORS_ALLOWED_ORIGINS
-    PLEXA_LOG_ENCRYPTION_KEY
+    PLEXA_LOG_ENCRYPTION_KEYS_FILE
+    PLEXA_LOG_ENCRYPTION_ACTIVE_KEY_ID
+    PLEXA_LOG_ENCRYPTION_KEY_HOST_FILE
+    PLEXA_CONTENT_RETENTION_DAYS
+    PLEXA_WEB_CONCURRENCY
+    PLEXA_ALLOW_INSECURE_INFERENCE
     PLEXA_INFERENCE_BACKENDS
     PLEXA_INFERENCE_PROFILES
     PLEXA_INFERENCE_REQUIRED_BACKENDS
+    PLEXA_INFERENCE_API_KEY_HOST_FILE
     VITE_APP_ENV
     VITE_API_BASE_URL
     TARGET_API_VERSION
@@ -256,7 +262,7 @@ check_env_basics() {
     require_env_value "$key"
   done
 
-  for key in PLEXA_ADMIN_USER_IDS PLEXA_CORS_ALLOWED_ORIGINS PLEXA_INFERENCE_BACKENDS PLEXA_INFERENCE_PROFILES PLEXA_INFERENCE_REQUIRED_BACKENDS; do
+  for key in PLEXA_CORS_ALLOWED_ORIGINS PLEXA_INFERENCE_BACKENDS PLEXA_INFERENCE_PROFILES PLEXA_INFERENCE_REQUIRED_BACKENDS; do
     validate_json_env "$key"
   done
 
@@ -266,7 +272,79 @@ check_env_basics() {
 
   if [ "$(env_value PLEXA_AUTH_MODE)" = "dev-header" ] || [ "$(env_value VITE_AUTH_MODE)" = "dev" ]; then
     warn_check "Temporary dev login is enabled. This is acceptable for smoke testing only, not real student use."
+    require_env_value PLEXA_ADMIN_USER_IDS
+    validate_json_env PLEXA_ADMIN_USER_IDS
+  else
+    for key in PLEXA_AUTH_ISSUER PLEXA_AUTH_AUDIENCE PLEXA_AUTH_JWKS_URL PLEXA_AUTH_ALLOWED_ALGORITHMS PLEXA_AUTH_REQUIRE_EXP VITE_AUTH_AUTHORITY VITE_AUTH_DISCOVERY_URL VITE_AUTH_CLIENT_ID VITE_AUTH_SCOPE VITE_AUTH_REDIRECT_URI VITE_AUTH_LOGOUT_REDIRECT_URI; do
+      require_env_value "$key"
+    done
+    if "$python_bin" - \
+      "$(env_value PLEXA_AUTH_ISSUER)" \
+      "$(env_value PLEXA_AUTH_JWKS_URL)" \
+      "$(env_value VITE_AUTH_AUTHORITY)" \
+      "$(env_value VITE_AUTH_DISCOVERY_URL)" <<'PY'
+import sys
+from urllib.parse import urlsplit
+
+for label, value in zip(
+    ("PLEXA_AUTH_ISSUER", "PLEXA_AUTH_JWKS_URL", "VITE_AUTH_AUTHORITY", "VITE_AUTH_DISCOVERY_URL"),
+    sys.argv[1:],
+):
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.fragment
+    ):
+        print(f"{label} must be an absolute HTTPS URL without credentials or a fragment.", file=sys.stderr)
+        raise SystemExit(1)
+PY
+    then
+      ok "OIDC authority, discovery, issuer, and JWKS URLs use secure transports."
+    else
+      fail_check "OIDC URL validation failed."
+    fi
+    if [ "$(env_value PLEXA_AUTH_ALLOWED_ALGORITHMS)" != "RS256" ]; then
+      fail_check "OIDC production requires PLEXA_AUTH_ALLOWED_ALGORITHMS=RS256."
+    fi
+    if [ "$(env_value PLEXA_AUTH_REQUIRE_EXP)" != "true" ]; then
+      fail_check "OIDC production requires PLEXA_AUTH_REQUIRE_EXP=true."
+    fi
+    validate_json_env PLEXA_ADMIN_USER_IDS
+    if "$python_bin" - \
+      "$(env_value PLEXA_ADMIN_USER_IDS)" \
+      "$(env_value PLEXA_AUTH_ROLES_CLAIM)" \
+      "$(env_value PLEXA_AUTH_ADMIN_ROLE_NAME)" <<'PY'
+import json
+import sys
+
+admin_ids = json.loads(sys.argv[1])
+roles_claim, admin_role = sys.argv[2:4]
+if admin_ids or (roles_claim and admin_role):
+    raise SystemExit(0)
+print("Configure at least one admin user id or an OIDC roles/admin-role mapping.", file=sys.stderr)
+raise SystemExit(1)
+PY
+    then
+      ok "OIDC administration has an explicit bootstrap path."
+    else
+      fail_check "OIDC administration has no bootstrap path."
+    fi
   fi
+
+  if [ "$(env_value PLEXA_WEB_CONCURRENCY)" != "1" ]; then
+    fail_check "PLEXA_WEB_CONCURRENCY must remain 1 for this release."
+  fi
+
+  for key in PLEXA_INFERENCE_API_KEY_HOST_FILE PLEXA_LOG_ENCRYPTION_KEY_HOST_FILE; do
+    if [ -f "$(env_value "$key")" ] && [ -r "$(env_value "$key")" ]; then
+      ok "$key points to a readable secret file."
+    else
+      fail_check "$key does not point to an existing secret file."
+    fi
+  done
 }
 
 check_mode_config() {
@@ -313,9 +391,37 @@ check_mode_config() {
       if [ "$acme_email" = "admin@example.invalid" ] || [[ "$acme_email" == *@example.* ]]; then
         fail_check "Domain mode ACME_EMAIL must be a real contact email for certificate issuance."
       fi
+      if [ "$(env_value PLEXA_AUTH_MODE)" = "bearer-jwt" ]; then
+        if [ "$(env_value VITE_AUTH_REDIRECT_URI)" != "https://${site_address}/auth/callback" ]; then
+          fail_check "VITE_AUTH_REDIRECT_URI must match https://${site_address}/auth/callback."
+        fi
+        if [ "$(env_value VITE_AUTH_LOGOUT_REDIRECT_URI)" != "https://${site_address}/login" ]; then
+          fail_check "VITE_AUTH_LOGOUT_REDIRECT_URI must match https://${site_address}/login."
+        fi
+      fi
       ;;
     *)
       plexa_die "--mode must be local, domain, or auto."
+      ;;
+  esac
+}
+
+check_inference_transport() {
+  case "$inference_base_url" in
+    https://*)
+      ok "Inference transport uses HTTPS."
+      ;;
+    http://*)
+      if [ "$(env_value PLEXA_ALLOW_INSECURE_INFERENCE)" != "true" ]; then
+        fail_check "HTTP inference requires PLEXA_ALLOW_INSECURE_INFERENCE=true."
+      elif [ "$mode" = "domain" ]; then
+        warn_check "HTTP inference is enabled. Keep it on a trusted private network that is not publicly reachable."
+      else
+        ok "Local HTTP inference is explicitly enabled."
+      fi
+      ;;
+    *)
+      fail_check "Inference base URL must use HTTP or HTTPS."
       ;;
   esac
 }
@@ -349,6 +455,7 @@ load_inference_info() {
   if ! output="$("$python_bin" - "$backends" "$profiles" <<'PY' 2>&1
 import json
 import sys
+from urllib.parse import urlsplit
 
 backends = json.loads(sys.argv[1])
 profiles = json.loads(sys.argv[2])
@@ -369,6 +476,22 @@ base_url = spec.get("base_url")
 if not isinstance(base_url, str) or not base_url.strip():
     print(f"Inference backend {backend_id!r} needs a base_url.", file=sys.stderr)
     raise SystemExit(1)
+parsed_url = urlsplit(base_url)
+if (
+    parsed_url.scheme not in {"http", "https"}
+    or not parsed_url.hostname
+    or parsed_url.username
+    or parsed_url.password
+    or parsed_url.query
+    or parsed_url.fragment
+    or not parsed_url.path.rstrip("/").endswith("/v1")
+):
+    print(f"Inference backend {backend_id!r} has an invalid /v1 base_url.", file=sys.stderr)
+    raise SystemExit(1)
+timeout_s = spec.get("timeout_s", 30)
+if isinstance(timeout_s, bool) or not isinstance(timeout_s, (int, float)) or timeout_s <= 0:
+    print(f"Inference backend {backend_id!r} needs a positive timeout_s.", file=sys.stderr)
+    raise SystemExit(1)
 
 models = []
 for profile in profiles.values():
@@ -376,7 +499,7 @@ for profile in profiles.values():
         models.append(str(profile["model"]))
 
 print(f"base_url={base_url.rstrip('/')}")
-print(f"api_key_present={'true' if spec.get('api_key') else 'false'}")
+print(f"api_key_present={'true' if spec.get('api_key') or spec.get('api_key_file') else 'false'}")
 print(f"api_key={spec.get('api_key', '')}")
 print(f"models={','.join(sorted(set(models)))}")
 PY
@@ -401,6 +524,14 @@ PY
         ;;
     esac
   done <<< "$output"
+
+  if [ -z "$inference_api_key" ]; then
+    local host_key_file
+    host_key_file="$(env_value PLEXA_INFERENCE_API_KEY_HOST_FILE)"
+    if [ -r "$host_key_file" ]; then
+      inference_api_key="$(tr -d '\r\n' < "$host_key_file")"
+    fi
+  fi
 
   ok "Inference backend config resolves to $inference_base_url."
   if [ "$inference_api_key_present" = "true" ]; then
@@ -557,8 +688,12 @@ backend_id = "primary" if "primary" in backends else next(iter(backends))
 spec = backends[backend_id]
 url = spec["base_url"].rstrip("/") + "/models"
 headers = {"Accept": "application/json"}
-if spec.get("api_key"):
-    headers["Authorization"] = f"Bearer {spec['api_key']}"
+api_key = spec.get("api_key")
+if not api_key and spec.get("api_key_file"):
+    from pathlib import Path
+    api_key = Path(spec["api_key_file"]).read_text(encoding="utf-8").strip()
+if api_key:
+    headers["Authorization"] = f"Bearer {api_key}"
 
 try:
     req = request.Request(url, headers=headers)
@@ -595,6 +730,7 @@ run_prestart_checks() {
   infer_mode
   check_mode_config
   load_inference_info
+  check_inference_transport
   check_compose_config
 
   http_port="$(env_value PLEXA_HTTP_PORT)"

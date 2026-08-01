@@ -94,7 +94,7 @@ def require_admin_token(request: Request) -> str:
 
 
 def ensure_course_owner(course_owner_id: str, identity: UserIdentity) -> None:
-    """Require that the caller owns the referenced course.
+    """Require that the caller owns the course or is a Plexa administrator.
 
     Args:
         course_owner_id: Owning course user id.
@@ -103,13 +103,13 @@ def ensure_course_owner(course_owner_id: str, identity: UserIdentity) -> None:
     Raises:
         HTTPException: If the caller is not the course owner.
     """
-    if identity.user_id != course_owner_id:
+    if not identity.is_admin and identity.user_id != course_owner_id:
         raise HTTPException(status_code=404, detail="Course not found")
 
 
 def ensure_course_instructor(course: Course, identity: UserIdentity) -> None:
     """Require that the caller is an authorized instructor for the course."""
-    if not course.has_instructor_access(identity.user_id):
+    if not identity.is_admin and not course.has_instructor_access(identity.user_id):
         raise HTTPException(status_code=404, detail="Course not found")
 
 
@@ -133,7 +133,12 @@ def ensure_enrolled_or_owner(
         raise HTTPException(status_code=404, detail="Course not found")
 
 
-async def get_owned_session(session_manager, session_id: str, identity: UserIdentity):
+async def get_owned_session(
+    session_manager,
+    session_id: str,
+    identity: UserIdentity,
+    course_storage=None,
+):
     """Return a session only when it exists and belongs to the caller.
 
     Args:
@@ -154,5 +159,17 @@ async def get_owned_session(session_manager, session_id: str, identity: UserIden
 
     if session.user_id != identity.user_id:
         raise HTTPException(status_code=404, detail="Session not found")
+
+    if course_storage is not None:
+        course = await course_storage.get_course(session.course_id)
+        if (
+            course is None
+            or course.archived_at is not None
+            or (
+                identity.user_id not in course.enrolled_users
+                and not course.has_instructor_access(identity.user_id)
+            )
+        ):
+            raise HTTPException(status_code=404, detail="Session not found")
 
     return session

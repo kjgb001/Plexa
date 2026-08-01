@@ -98,11 +98,10 @@ def test_turn_increment_and_message_append(setup_manager, storage_backend):
     session = run(storage.get_session("s1"))
 
     assert session.turn_count == 1
-    assert len(session.messages) == 3
+    assert len(session.messages) == 2
     assert session.title == "Hello world"
-    assert session.messages[0].role == "system"
-    assert session.messages[1].role == "user"
-    assert session.messages[2].role == "assistant"
+    assert session.messages[0].role == "user"
+    assert session.messages[1].role == "assistant"
     assert assistant_message.role == "assistant"
 
 
@@ -188,6 +187,7 @@ def test_message_id_retry_is_idempotent_even_after_session_closes(
     manager, storage = setup_manager()
     payload = make_valid_lesson_payload()
     payload["constraints"]["turn_limit"] = 1
+    payload["reflection"]["hooks"] = []
     lesson = Lesson.model_validate(payload)
     run(manager.create_session(
         session_id="s1",
@@ -285,22 +285,8 @@ def test_carry_forward_mid_reflection_does_not_trigger_on_final_turn(setup_manag
             "carry_to_post": True,
         }
     ]
-    lesson = Lesson.model_validate(payload)
-
-    run(manager.create_session(
-        session_id="s1",
-        lesson=lesson,
-        user_id="user-1",
-        course_id="CS101"
-    ))
-
-    run(manager.submit_user_message("s1", "m1", "First turn"))
-    run(manager.submit_user_message("s1", "m2", "Final turn"))
-    session = run(storage.get_session("s1"))
-    assert session.is_active is False
-    assert session.is_completion_started is True
-    assert session.reflection_hooks[0].trigger_source == "carry_to_post"
-    assert session.reflection_hooks[0].carried_to_post is True
+    with pytest.raises(ValueError):
+        Lesson.model_validate(payload)
 
 
 def test_turn_limit_auto_completion_triggers_post_reflections(setup_manager, storage_backend):
@@ -377,14 +363,12 @@ def test_completion_requires_triggered_reflections_before_turn_in(setup_manager,
     assert stored.is_finalized is True
 
 
-def test_completion_backfills_missing_post_hooks_from_current_lesson(setup_manager, storage_backend):
+def test_completion_preserves_frozen_reflection_hooks(setup_manager, storage_backend):
     manager, storage = setup_manager()
-    current_payload = make_valid_lesson_payload()
-    stale_payload = deepcopy(current_payload)
+    stale_payload = deepcopy(make_valid_lesson_payload())
     stale_payload["reflection"] = {"hooks": [], "logging_policy": "default"}
 
     stale_lesson = Lesson.model_validate(stale_payload)
-    current_lesson = Lesson.model_validate(current_payload)
 
     session = run(manager.create_session(
         session_id="s1",
@@ -394,14 +378,12 @@ def test_completion_backfills_missing_post_hooks_from_current_lesson(setup_manag
     ))
     assert session.reflection_hooks == []
 
-    session = run(manager.begin_completion("s1", current_lesson=current_lesson))
+    session = run(manager.begin_completion("s1"))
 
-    post_hooks = [hook for hook in session.reflection_hooks if hook.phase == "post"]
-    assert [hook.hook_id for hook in post_hooks] == ["post-confidence", "post-overconfidence"]
-    assert all(hook.trigger_source == "soft_complete" for hook in post_hooks)
+    assert session.reflection_hooks == []
 
     stored = run(storage.get_session("s1"))
-    assert len(stored.reflection_hooks) == 3
+    assert stored.reflection_hooks == []
 
 
 def test_pending_mid_reflection_blocks_next_message_until_answered(setup_manager, storage_backend):
@@ -537,13 +519,23 @@ def test_atomic_rollback_on_inference_failure(setup_manager, storage_backend):
     session = run(storage.get_session("s1"))
 
     assert session.turn_count == 0
-    assert len(session.messages) == 1
+    assert len(session.messages) == 0
     assert session.is_active is True
 
 
-def test_initial_system_message_injected(setup_manager, storage_backend):
-    manager, storage = setup_manager()
+def test_system_prompt_is_frozen_but_not_persisted_as_a_message(setup_manager, storage_backend):
+    class CapturingInference(StubInference):
+        def __init__(self):
+            self.messages = []
+
+        async def generate(self, messages, config):
+            self.messages = list(messages)
+            return await super().generate(messages, config)
+
+    inference = CapturingInference()
+    manager, storage = setup_manager(inference_backend=inference)
     lesson = Lesson.model_validate(make_valid_lesson_payload())
+    original_prompt = lesson.execution.system_prompt
 
     run(manager.create_session(
         session_id="s1",
@@ -554,9 +546,71 @@ def test_initial_system_message_injected(setup_manager, storage_backend):
 
     session = run(storage.get_session("s1"))
 
-    assert len(session.messages) == 1
-    assert session.messages[0].role == "system"
-    assert session.messages[0].content == lesson.execution.system_prompt
+    assert session.messages == []
+    assert session.lesson_snapshot is not None
+    assert session.lesson_snapshot.execution.system_prompt == original_prompt
+
+    lesson.execution.system_prompt = "Mutated after session creation."
+    run(manager.submit_user_message("s1", "frozen-prompt-message", "Use the frozen prompt."))
+    assert inference.messages[0].role == "system"
+    assert inference.messages[0].content == original_prompt
+
+
+def test_disabled_logging_keeps_transcript_only_in_manager_memory(
+    setup_manager,
+    storage_backend,
+):
+    manager, storage = setup_manager()
+    payload = make_valid_lesson_payload()
+    payload["reflection"] = {"hooks": [], "logging_policy": "disabled"}
+    lesson = Lesson.model_validate(payload)
+
+    run(
+        manager.create_session(
+            session_id="disabled-transcript",
+            lesson=lesson,
+            user_id="user-1",
+            course_id="CS101",
+        )
+    )
+    run(
+        manager.submit_user_message(
+            "disabled-transcript",
+            "disabled-message",
+            "Do not persist this transcript.",
+        )
+    )
+
+    persisted = run(storage.get_session("disabled-transcript"))
+    in_process = run(manager.get_session("disabled-transcript"))
+    assert persisted is not None
+    assert persisted.messages == []
+    assert [message.role for message in in_process.messages] == ["user", "assistant"]
+
+    restarted_manager = SessionManager(storage=storage, inference_backend=StubInference())
+    after_restart = run(restarted_manager.get_session("disabled-transcript"))
+    assert after_restart.messages == []
+    assert after_restart.transcript_available is False
+    assert after_restart.transcript_unavailable_reason == "server_restart"
+    assert after_restart.is_active is False
+    persisted_after_restart = run(storage.get_session("disabled-transcript"))
+    assert persisted_after_restart is not None
+    assert persisted_after_restart.is_active is False
+    assert persisted_after_restart.closed_at is not None
+
+
+def test_expired_session_rejects_new_reflection_content(setup_manager, storage_backend):
+    manager, storage = setup_manager()
+    lesson = Lesson.model_validate(make_valid_lesson_payload())
+    session = run(manager.create_session(lesson, user_id="user-1", course_id="CS101"))
+    hook = session.reflection_hooks[0]
+    hook.triggered_at = datetime.now(UTC)
+    session.transcript_available = False
+    session.transcript_unavailable_reason = "content_expired"
+    run(storage.save_session(session))
+
+    with pytest.raises(SessionCompletionError, match="retention policy"):
+        run(manager.save_reflection_response(session.session_id, hook.hook_id, "late response"))
 
 
 def test_initial_assistant_message_injected(setup_manager, storage_backend):
@@ -576,10 +630,9 @@ def test_initial_assistant_message_injected(setup_manager, storage_backend):
 
     session = run(storage.get_session("s1"))
 
-    assert len(session.messages) == 2
-    assert session.messages[0].role == "system"
-    assert session.messages[1].role == "assistant"
-    assert session.messages[1].content == "Welcome student."
+    assert len(session.messages) == 1
+    assert session.messages[0].role == "assistant"
+    assert session.messages[0].content == "Welcome student."
 
 
 def test_turn_limit_derived_from_lesson(setup_manager, storage_backend):
@@ -637,6 +690,32 @@ def test_delete_session_removes_session_and_config(setup_manager, storage_backen
     assert run(storage.get_inference_config("s1")) is None
 
 
+def test_delete_session_rejects_turned_in_work(setup_manager, storage_backend):
+    manager, storage = setup_manager()
+    lesson = Lesson.model_validate(make_valid_lesson_payload())
+    session = run(manager.create_session(
+        session_id="turned-in",
+        lesson=lesson,
+        user_id="user-1",
+        course_id="CS101",
+    ))
+    session = run(manager.begin_completion(session.session_id))
+    for hook in session.reflection_hooks:
+        session = run(
+            manager.save_reflection_response(
+                session.session_id,
+                hook.hook_id,
+                f"Response for {hook.hook_id}",
+            )
+        )
+    run(manager.turn_in_session(session.session_id))
+
+    with pytest.raises(SessionCompletionError, match="cannot be deleted"):
+        run(manager.delete_session(session.session_id))
+
+    assert run(storage.get_session(session.session_id)) is not None
+
+
 def test_session_manager_routes_by_lesson_profile(
     session_storage,
     course_storage,
@@ -662,18 +741,24 @@ def test_session_manager_routes_by_lesson_profile(
         "discoverable": True,
         "lessons": {},
     }
-    run(course_storage.save_course(Course.model_validate(course)))
-
+    persisted_course = Course.model_validate(course)
+    run(course_storage.save_course(persisted_course))
     alpha_payload = make_valid_lesson_payload()
     alpha_payload["execution"]["profile"] = "alpha"
     alpha_lesson = Lesson.model_validate(alpha_payload)
-    run(artifact_storage.save_lesson(alpha_lesson))
+    run(artifact_storage.save_lesson(alpha_lesson, course_id="CS101"))
 
     beta_payload = make_valid_lesson_payload()
     beta_payload["identity"]["lesson_id"] = "test-beta"
     beta_payload["execution"]["profile"] = "beta"
     beta_lesson = Lesson.model_validate(beta_payload)
-    run(artifact_storage.save_lesson(beta_lesson))
+    run(artifact_storage.save_lesson(beta_lesson, course_id="CS101"))
+
+    persisted_course.lessons = {
+        alpha_lesson.identity.lesson_id: alpha_lesson.identity.version,
+        beta_lesson.identity.lesson_id: beta_lesson.identity.version,
+    }
+    run(course_storage.save_course(persisted_course))
 
     run(manager.create_session(
         session_id="alpha-session",

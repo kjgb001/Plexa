@@ -1,4 +1,5 @@
 import json
+import base64
 from pathlib import Path
 from typing import Optional
 from typing import List
@@ -13,7 +14,10 @@ from plexa_server.models.log_access_audit import EncryptedLogAccessAuditAction, 
 from plexa_server.models.workspace_state import UserCourseState, UserLessonState
 from plexa_server.storage.storage_interface import (
     ArtifactStorage,
+    CourseRevisionConflictError,
     CourseStorage,
+    LessonRevisionConflictError,
+    SessionRevisionConflictError,
     SessionStorage,
     WorkspaceStateStorage,
 )
@@ -32,6 +36,11 @@ def _atomic_write(path: Path, data: str) -> None:
     with temp_path.open("w", encoding="utf-8") as f:
         f.write(data)
     temp_path.replace(path)
+
+
+def _safe_component(value: str) -> str:
+    """Encode an external identifier as one traversal-safe path component."""
+    return base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii").rstrip("=")
 
 
 class FileSystemArtifactStorage(ArtifactStorage):
@@ -56,11 +65,21 @@ class FileSystemArtifactStorage(ArtifactStorage):
         self.logs_path.mkdir(parents=True, exist_ok=True)
         self.log_access_audits_path.mkdir(parents=True, exist_ok=True)
 
-    async def save_lesson(self, lesson: Lesson) -> None:
+    def _lesson_path(self, lesson_id: str, version: str, course_id: str | None) -> Path:
+        scope = "_legacy" if course_id is None else _safe_component(course_id)
+        return self.lessons_path / scope / f"{_safe_component(lesson_id)}.{_safe_component(version)}.json"
+
+    async def save_lesson(
+        self,
+        lesson: Lesson,
+        course_id: str,
+        expected_revision: int | None = None,
+    ) -> int:
         """Persist a lesson document under its lesson id and version.
 
         Args:
             lesson: Lesson document to serialize and store.
+            course_id: Course that owns the mutable artifact.
 
         Raises:
             ValueError: If the lesson is missing an id or version.
@@ -71,20 +90,36 @@ class FileSystemArtifactStorage(ArtifactStorage):
         if not lesson.identity.version.strip():
             raise ValueError("Lesson version must be specified before saving.")
 
-        lesson_file = self.lessons_path / (
-            f"{lesson.identity.lesson_id}_{lesson.identity.version}.json"
+        lesson_file = self._lesson_path(
+            lesson.identity.lesson_id,
+            lesson.identity.version,
+            course_id,
         )
+        revision = 1
+        if lesson_file.exists():
+            with lesson_file.open("r", encoding="utf-8") as f:
+                existing = json.load(f)
+            current_revision = int(existing.get("artifact_revision", 1))
+            if expected_revision is not None and expected_revision != current_revision:
+                raise LessonRevisionConflictError(
+                    f"Lesson changed since revision {expected_revision}; reload and retry."
+                )
+            revision = current_revision + 1
+        elif expected_revision is not None:
+            raise LessonRevisionConflictError("Lesson no longer exists; reload before saving.")
+        serialized = json.dumps(
+            {"artifact_revision": revision, "lesson": lesson.model_dump(mode="json")},
+            indent=2,
+        )
+        _atomic_write(lesson_file, serialized)
+        return revision
 
-        temp_file = lesson_file.with_suffix(".tmp")
-
-        serialized = lesson.model_dump_json(indent=2)
-
-        with temp_file.open("w", encoding="utf-8") as f:
-            f.write(serialized)
-
-        temp_file.replace(lesson_file)
-
-    async def load_lesson(self, lesson_id: str, version: str) -> Optional[Lesson]:
+    async def load_lesson(
+        self,
+        lesson_id: str,
+        version: str,
+        course_id: str | None,
+    ) -> Optional[Lesson]:
         """Load a lesson version from disk.
 
         Args:
@@ -95,14 +130,37 @@ class FileSystemArtifactStorage(ArtifactStorage):
             Optional[Lesson]: Parsed lesson document, or `None` if no matching
             file exists.
         """
-        lesson_file = self.lessons_path / f"{lesson_id}_{version}.json"
+        lesson_file = self._lesson_path(lesson_id, version, course_id)
+        if (
+            not lesson_file.exists()
+            and course_id is None
+            and "/" not in lesson_id
+            and "/" not in version
+            and ".." not in lesson_id
+            and ".." not in version
+        ):
+            legacy_file = self.lessons_path / f"{lesson_id}_{version}.json"
+            lesson_file = legacy_file
         if not lesson_file.exists():
             return None
 
         with lesson_file.open("r", encoding="utf-8") as f:
             data = json.load(f)
 
-        return Lesson.model_validate(data)
+        return Lesson.model_validate(data.get("lesson", data))
+
+    async def get_lesson_revision(
+        self,
+        lesson_id: str,
+        version: str,
+        course_id: str | None,
+    ) -> int | None:
+        lesson_file = self._lesson_path(lesson_id, version, course_id)
+        if not lesson_file.exists():
+            return None
+        with lesson_file.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        return int(data.get("artifact_revision", 1))
 
     async def save_encrypted_log(
         self,
@@ -117,11 +175,15 @@ class FileSystemArtifactStorage(ArtifactStorage):
             encrypted_blob: Encrypted bytes to store without inspection.
             metadata: Optional plaintext metadata describing the artifact.
         """
-        log_file = self.logs_path / f"{instance_id}.log"
+        stem = _safe_component(instance_id)
+        existing_metadata = await self.load_encrypted_log_metadata(instance_id)
+        if existing_metadata is not None and not existing_metadata.content_available:
+            return
+        log_file = self.logs_path / f"{stem}.log"
         with log_file.open("wb") as f:
             f.write(encrypted_blob)
         if metadata is not None:
-            metadata_file = self.logs_path / f"{instance_id}.meta.json"
+            metadata_file = self.logs_path / f"{stem}.meta.json"
             _atomic_write(metadata_file, metadata.model_dump_json(indent=2))
 
     async def load_encrypted_log(self, instance_id: str) -> Optional[bytes]:
@@ -134,7 +196,7 @@ class FileSystemArtifactStorage(ArtifactStorage):
             Optional[bytes]: Stored encrypted bytes, or `None` if no matching
             log exists.
         """
-        log_file = self.logs_path / f"{instance_id}.log"
+        log_file = self.logs_path / f"{_safe_component(instance_id)}.log"
         if not log_file.exists():
             return None
 
@@ -150,7 +212,7 @@ class FileSystemArtifactStorage(ArtifactStorage):
         Returns:
             Optional[EncryptedLogMetadata]: Stored metadata, or `None` if absent.
         """
-        metadata_file = self.logs_path / f"{instance_id}.meta.json"
+        metadata_file = self.logs_path / f"{_safe_component(instance_id)}.meta.json"
         if not metadata_file.exists():
             return None
 
@@ -205,10 +267,23 @@ class FileSystemArtifactStorage(ArtifactStorage):
         Args:
             instance_id: Identifier used as the log filename stem.
         """
-        log_file = self.logs_path / f"{instance_id}.log"
+        stem = _safe_component(instance_id)
+        log_file = self.logs_path / f"{stem}.log"
         log_file.unlink(missing_ok=True)
-        metadata_file = self.logs_path / f"{instance_id}.meta.json"
+        metadata_file = self.logs_path / f"{stem}.meta.json"
         metadata_file.unlink(missing_ok=True)
+
+    async def expire_encrypted_log_content(self, instance_id: str) -> None:
+        """Delete encrypted content while retaining its lookup metadata."""
+        stem = _safe_component(instance_id)
+        (self.logs_path / f"{stem}.log").unlink(missing_ok=True)
+        metadata = await self.load_encrypted_log_metadata(instance_id)
+        if metadata is not None and metadata.content_available:
+            metadata.content_available = False
+            _atomic_write(
+                self.logs_path / f"{stem}.meta.json",
+                metadata.model_dump_json(indent=2),
+            )
 
     async def save_encrypted_log_access_audit(
         self,
@@ -282,8 +357,24 @@ class FileSystemSessionStorage(SessionStorage):
         Args:
             session: Session object to persist.
         """
-        path = self.sessions_path / f"{session.session_id}.json"
-        serialized = session.model_dump_json(indent=2)
+        path = self.sessions_path / f"{_safe_component(session.session_id)}.json"
+        if path.exists():
+            with path.open("r", encoding="utf-8") as existing_file:
+                existing = Session.model_validate(json.load(existing_file))
+            if existing.persistence_revision != session.persistence_revision:
+                raise SessionRevisionConflictError(
+                    "Session changed concurrently; reload and retry."
+                )
+            session.persistence_revision += 1
+        persisted = session
+        if session.logging_policy == "disabled":
+            persisted = session.model_copy(
+                update={
+                    "messages": [],
+                    "transcript_available": session.transcript_available,
+                }
+            )
+        serialized = persisted.model_dump_json(indent=2)
         _atomic_write(path, serialized)
 
     async def get_session(self, session_id: str) -> Optional[Session]:
@@ -296,7 +387,7 @@ class FileSystemSessionStorage(SessionStorage):
             Optional[Session]: Parsed session document, or `None` if it does
             not exist.
         """
-        path = self.sessions_path / f"{session_id}.json"
+        path = self.sessions_path / f"{_safe_component(session_id)}.json"
         if not path.exists():
             return None
 
@@ -311,10 +402,10 @@ class FileSystemSessionStorage(SessionStorage):
         Args:
             session_id: Identifier of the session to delete.
         """
-        path = self.sessions_path / f"{session_id}.json"
+        path = self.sessions_path / f"{_safe_component(session_id)}.json"
         path.unlink(missing_ok=True)
 
-        config_path = self.configs_path / f"{session_id}.json"
+        config_path = self.configs_path / f"{_safe_component(session_id)}.json"
         config_path.unlink(missing_ok=True)
 
     async def save_inference_config(
@@ -328,7 +419,7 @@ class FileSystemSessionStorage(SessionStorage):
             session_id: Identifier of the session that owns the config.
             config: Frozen inference config to persist.
         """
-        path = self.configs_path / f"{session_id}.json"
+        path = self.configs_path / f"{_safe_component(session_id)}.json"
         serialized = config.model_dump_json(indent=2)
         _atomic_write(path, serialized)
 
@@ -345,9 +436,10 @@ class FileSystemSessionStorage(SessionStorage):
             Optional[InferenceConfig]: Parsed inference config, or `None` if no
             stored config exists.
         """
-        path = self.configs_path / f"{session_id}.json"
+        path = self.configs_path / f"{_safe_component(session_id)}.json"
         if not path.exists():
-            return None
+            session = await self.get_session(session_id)
+            return None if session is None else session.frozen_inference_config
 
         with path.open("r", encoding="utf-8") as f:
             data = json.load(f)
@@ -406,7 +498,7 @@ class FileSystemCourseStorage(CourseStorage):
         Returns:
             Path: Filesystem path where the course document is stored.
         """
-        return self.courses_path / f"{course_id}.json"
+        return self.courses_path / f"{_safe_component(course_id)}.json"
 
     async def save_course(self, course: Course) -> None:
         """Persist a course document using its course id as the filename.
@@ -415,8 +507,40 @@ class FileSystemCourseStorage(CourseStorage):
             course: Course document to serialize and store.
         """
         path = self._course_path(course.course_id)
-        serialized = course.model_dump_json(indent=2)
+        next_revision = course.revision
+        if path.exists():
+            with path.open("r", encoding="utf-8") as f:
+                current = Course.model_validate(json.load(f))
+            if current.revision != course.revision:
+                raise CourseRevisionConflictError(
+                    f"Course changed since revision {course.revision}; reload and retry."
+                )
+            next_revision += 1
+        for lesson_id, version in course.lessons.items():
+            target = (
+                self.base_path
+                / "lessons"
+                / _safe_component(course.course_id)
+                / f"{_safe_component(lesson_id)}.{_safe_component(version)}.json"
+            )
+            if target.exists():
+                continue
+            legacy = (
+                self.base_path
+                / "lessons"
+                / "_legacy"
+                / f"{_safe_component(lesson_id)}.{_safe_component(version)}.json"
+            )
+            if legacy.exists():
+                _atomic_write(target, legacy.read_text(encoding="utf-8"))
+            if not target.exists():
+                raise ValueError(
+                    f"Lesson {lesson_id}@{version} does not exist for course {course.course_id}."
+                )
+        persisted = course.model_copy(update={"revision": next_revision})
+        serialized = persisted.model_dump_json(indent=2)
         _atomic_write(path, serialized)
+        course.revision = next_revision
 
     async def get_course(self, course_id: str) -> Optional[Course]:
         """Load a course document from disk.
@@ -456,48 +580,11 @@ class FileSystemCourseStorage(CourseStorage):
         results: List[Course] = []
 
         for file in self.courses_path.glob("*.json"):
-            if not file:
-                return None
             with file.open("r", encoding="utf-8") as f:
                 data = json.load(f)
                 results.append(Course.model_validate(data))
 
         return results
-
-    async def bind_lesson_to_course(self, course_id: str, lesson_id: str, version: str) -> None:
-        """Bind or replace a lesson version in a course document.
-
-        Args:
-            course_id: Identifier of the course to update.
-            lesson_id: Lesson identifier to bind.
-            version: Lesson version to store for the bound lesson.
-        """
-
-        # Course storage path
-        courses_dir = self.base_path / "configs" / "courses"
-        courses_dir.mkdir(parents=True, exist_ok=True)
-
-        course_path = courses_dir / f"{course_id}.json"
-
-        if course_path.exists():
-            with open(course_path, "r") as f:
-                course_data = json.load(f)
-        else:
-            course_data = {
-                "course_id": course_id,
-                "lessons": {},
-            }
-
-        # Replace or insert
-        course_data["lessons"][lesson_id] = version
-        course_data["lesson_timeline"] = [
-            window
-            for window in course_data.get("lesson_timeline", [])
-            if window.get("lesson_id") != lesson_id
-        ]
-
-        with open(course_path, "w") as f:
-            json.dump(course_data, f, indent=2)
 
     async def health_check(self) -> bool:
         """Report whether the course filesystem path is available.
@@ -520,7 +607,7 @@ class FileSystemWorkspaceStateStorage(WorkspaceStateStorage):
         self.lesson_states_path.mkdir(parents=True, exist_ok=True)
 
     def _course_state_path(self, user_id: str, course_id: str) -> Path:
-        return self.course_states_path / user_id / f"{course_id}.json"
+        return self.course_states_path / _safe_component(user_id) / f"{_safe_component(course_id)}.json"
 
     def _lesson_state_path(
         self,
@@ -529,8 +616,10 @@ class FileSystemWorkspaceStateStorage(WorkspaceStateStorage):
         lesson_id: str,
         lesson_version: str,
     ) -> Path:
-        filename = f"{course_id}__{lesson_id}__{lesson_version}.json"
-        return self.lesson_states_path / user_id / filename
+        filename = ".".join(
+            (_safe_component(course_id), _safe_component(lesson_id), _safe_component(lesson_version))
+        ) + ".json"
+        return self.lesson_states_path / _safe_component(user_id) / filename
 
     async def touch_course(
         self,
@@ -561,7 +650,7 @@ class FileSystemWorkspaceStateStorage(WorkspaceStateStorage):
         return state
 
     async def list_course_states(self, user_id: str) -> list[UserCourseState]:
-        directory = self.course_states_path / user_id
+        directory = self.course_states_path / _safe_component(user_id)
         if not directory.exists():
             return []
 
@@ -576,7 +665,7 @@ class FileSystemWorkspaceStateStorage(WorkspaceStateStorage):
         user_id: str,
         course_id: str | None = None,
     ) -> list[UserLessonState]:
-        directory = self.lesson_states_path / user_id
+        directory = self.lesson_states_path / _safe_component(user_id)
         if not directory.exists():
             return []
 

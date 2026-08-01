@@ -57,6 +57,8 @@ export function mapSession(session: ApiSessionResponse): Session {
     is_finalized: session.is_finalized,
     turned_in_at: session.turned_in_at,
     logging_policy: session.logging_policy,
+    transcript_available: session.transcript_available,
+    transcript_unavailable_reason: session.transcript_unavailable_reason,
     reflection_hooks: session.reflection_hooks.map((hook) => ({ ...hook })),
   }
 }
@@ -68,10 +70,16 @@ export function mapCourse(course: ApiCourse): Course {
     description: course.description,
     owner_id: course.owner_id,
     discoverable: course.discoverable,
+    archived_at: course.archived_at,
     lessons: course.lessons,
     lesson_timeline: (course.lesson_timeline ?? []).map((window) => ({ ...window })),
-    enrolled_users: course.enrolled_users,
-    pending_requests: course.pending_requests,
+    enrolled_users: course.enrolled_users ?? [],
+    pending_requests: course.pending_requests ?? [],
+    viewer_is_owner: course.viewer_is_owner,
+    viewer_is_instructor: course.viewer_is_instructor,
+    viewer_is_enrolled: course.viewer_is_enrolled,
+    viewer_has_pending_request: course.viewer_has_pending_request,
+    revision: course.revision,
   }
 }
 

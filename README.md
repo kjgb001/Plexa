@@ -60,10 +60,14 @@ What is implemented in `plexa_server` now:
 - PostgreSQL integration using SQLAlchemy, Alembic, and `asyncpg`
 - database bootstrap and legacy filesystem import tooling
 - backend-aware pytest support for `filesystem`, `postgres`, and `both`
+- course-scoped mutable lesson authoring with per-session execution snapshots
+- verified OIDC/JWT production auth, retention, encrypted-log key rotation, and deployment tooling
 
 The server is no longer just a schema experiment or runtime sketch. It has a working persistence layer, migration path, and testable backend selection model.
 
-The portal now has a real student surface and an instructor skeleton, but still needs deeper instructor workflow development.
+The portal has functional student and instructor surfaces, including lesson
+authoring/timelines, streaming chat and reflections, roster operations, and
+encrypted session-log review.
 
 ## Architectural Direction
 

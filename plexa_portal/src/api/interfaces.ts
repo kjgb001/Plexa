@@ -20,6 +20,8 @@ export interface Session {
   is_finalized: boolean
   turned_in_at?: string | null
   logging_policy: string
+  transcript_available: boolean
+  transcript_unavailable_reason?: string | null
   reflection_hooks: SessionReflectionHook[]
 }
 
@@ -45,10 +47,16 @@ export interface Course {
   description?: string
   owner_id?: string
   discoverable: boolean
+  archived_at?: string | null
   lessons: Record<string, string>
   lesson_timeline: CourseLessonWindow[]
   enrolled_users: string[]
   pending_requests?: string[]
+  viewer_is_owner: boolean
+  viewer_is_instructor: boolean
+  viewer_is_enrolled: boolean
+  viewer_has_pending_request: boolean
+  revision?: number
 }
 
 export interface CourseLessonWindow {
@@ -182,6 +190,7 @@ export interface EncryptedLogMetadata {
   last_event_type: string
   last_event_at: string
   key_id: string
+  content_available: boolean
 }
 
 export interface CourseRequestsResult {
@@ -197,4 +206,10 @@ export interface UploadLessonResult {
   lesson_id: string
   version: string
   overwritten: boolean
+  artifact_revision: number
+}
+
+export interface LessonArtifactResult {
+  lesson: LessonDocument
+  artifactRevision: number
 }

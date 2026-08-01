@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import asyncio
+import hashlib
+import json
 from typing import AsyncIterator, List
 from datetime import datetime, UTC
 from uuid import uuid4
@@ -26,7 +29,10 @@ from plexa_server.core.session_titles import (
     default_session_title,
 )
 from plexa_server.core.workspace import order_sessions_by_updated_at
-from plexa_server.storage.storage_interface import SessionStorage
+from plexa_server.storage.storage_interface import (
+    SessionRevisionConflictError,
+    SessionStorage,
+)
 from plexa_server.utils.lock_manager import LockManager
 
 
@@ -52,6 +58,10 @@ class SessionCompletionError(Exception):
 
 class SessionMessageConflictError(Exception):
     """Raised when a message id is reused with conflicting content or state."""
+
+
+class SessionConcurrencyLimitError(Exception):
+    """Raised when a user already has two inference calls in flight."""
 
 
 class SessionStreamingError(InferenceError):
@@ -122,6 +132,9 @@ class SessionManager:
         self._encrypted_logs = encrypted_log_service
         self._title_generator = title_generator or DeterministicSessionTitleGenerator()
         self._lock_manager = LockManager()
+        self._ephemeral_transcripts: dict[str, list[Message]] = {}
+        self._active_inferences: dict[str, int] = {}
+        self._inference_count_lock = asyncio.Lock()
 
     async def create_session(
         self,
@@ -129,6 +142,7 @@ class SessionManager:
         user_id: str,
         course_id: str,
         session_id: str | None = None,
+        lesson_artifact_revision: int = 1,
     ) -> Session:
         """Create and persist a new session seeded from a lesson definition.
 
@@ -169,6 +183,16 @@ class SessionManager:
             user_id=user_id,
             course_id=course_id,
             messages=initial_messages,
+            lesson_snapshot=lesson.model_copy(deep=True),
+            frozen_inference_config=inference_config,
+            lesson_artifact_revision=lesson_artifact_revision,
+            lesson_content_sha256=hashlib.sha256(
+                json.dumps(
+                    lesson.model_dump(mode="json"),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest(),
             turn_count=0,
             max_turns=turn_limit,
             created_at=datetime.now(UTC),
@@ -190,9 +214,16 @@ class SessionManager:
         )
         session.title = default_session_title(session)
 
+        if session.logging_policy == "disabled":
+            self._ephemeral_transcripts[session.session_id] = list(initial_messages)
+
         await self._storage.save_session(session)
-        await self._storage.save_inference_config(session_id, inference_config)
-        await self._persist_encrypted_log(session, inference_config, event_type="created")
+        try:
+            await self._persist_encrypted_log(session, inference_config, event_type="created")
+        except Exception:
+            await self._storage.delete_session(session.session_id)
+            self._ephemeral_transcripts.pop(session.session_id, None)
+            raise
 
         return session
 
@@ -211,6 +242,13 @@ class SessionManager:
         session = await self._storage.get_session(session_id)
         if session is None:
             raise SessionNotFoundError(session_id)
+        if self._hydrate_ephemeral_transcript(session):
+            try:
+                await self._storage.save_session(session)
+            except SessionRevisionConflictError:
+                session = await self._storage.get_session(session_id)
+                if session is None:
+                    raise SessionNotFoundError(session_id)
         return session
 
     async def list_sessions(
@@ -231,9 +269,18 @@ class SessionManager:
         Returns:
             List[Session]: Matching sessions ordered from newest to oldest.
         """
+        stored_sessions = await self._storage.list_sessions()
+        for index, stored_session in enumerate(stored_sessions):
+            if self._hydrate_ephemeral_transcript(stored_session):
+                try:
+                    await self._storage.save_session(stored_session)
+                except SessionRevisionConflictError:
+                    current = await self._storage.get_session(stored_session.session_id)
+                    if current is not None:
+                        stored_sessions[index] = current
         sessions = [
             session
-            for session in await self._storage.list_sessions()
+            for session in stored_sessions
             if session.user_id == user_id
             and session.course_id == course_id
             and session.lesson_id == lesson_id
@@ -254,6 +301,8 @@ class SessionManager:
         async with self._lock_manager.lock(session_id):
             session = await self.get_session(session_id)
             if not session.is_active:
+                inference_config = await self._storage.get_inference_config(session_id)
+                await self._persist_encrypted_log(session, inference_config, event_type="closed")
                 return
 
             session.is_active = False
@@ -263,15 +312,13 @@ class SessionManager:
             inference_config = await self._storage.get_inference_config(session_id)
             await self._persist_encrypted_log(session, inference_config, event_type="closed")
 
-    async def begin_completion(self, session_id: str, current_lesson: Lesson | None = None) -> Session:
+    async def begin_completion(self, session_id: str) -> Session:
         """Enter soft-completion mode and trigger post reflections."""
         async with self._lock_manager.lock(session_id):
             session = await self.get_session(session_id)
             if session.is_finalized:
                 raise SessionCompletionError("Session is already turned in.")
 
-            if current_lesson is not None:
-                self._sync_reflection_hooks(session, current_lesson)
             session.is_completion_started = True
             if session.completed_at is None:
                 session.completed_at = datetime.now(UTC)
@@ -311,6 +358,10 @@ class SessionManager:
             session = await self.get_session(session_id)
             if session.is_finalized:
                 raise SessionCompletionError("Turned-in sessions cannot edit reflections.")
+            if session.transcript_unavailable_reason == "content_expired":
+                raise SessionCompletionError(
+                    "Session content expired under the retention policy."
+                )
 
             hook = next((item for item in session.reflection_hooks if item.hook_id == hook_id), None)
             if hook is None:
@@ -366,6 +417,8 @@ class SessionManager:
         async with self._lock_manager.lock(session_id):
             session = await self.get_session(session_id)
             if session.is_finalized:
+                inference_config = await self._storage.get_inference_config(session_id)
+                await self._persist_encrypted_log(session, inference_config, event_type="closed")
                 return session
             if not session.is_completion_started:
                 raise SessionCompletionError("Completion must begin before turn-in.")
@@ -396,7 +449,10 @@ class SessionManager:
         """
         async with self._lock_manager.lock(session_id):
             session = await self.get_session(session_id)
+            if session.is_finalized:
+                raise SessionCompletionError("Turned-in sessions cannot be deleted.")
             await self._storage.delete_session(session_id)
+            self._ephemeral_transcripts.pop(session_id, None)
             if self._encrypted_logs is not None:
                 await self._encrypted_logs.delete_session_log(session.session_id)
 
@@ -405,7 +461,6 @@ class SessionManager:
         session_id: str,
         message_id: str,
         content: str,
-        current_lesson: Lesson | None = None,
     ) -> Message:
         """Append a user turn, run inference, and atomically persist the reply.
 
@@ -428,48 +483,64 @@ class SessionManager:
             session = await self.get_session(session_id)
             existing = self._find_committed_assistant(session, message_id, content)
             if existing is not None:
+                inference_config = await self._storage.get_inference_config(session_id)
+                await self._persist_encrypted_log(
+                    session,
+                    inference_config,
+                    event_type="message_commit",
+                )
                 return existing
 
-            self._validate_new_user_turn(session, current_lesson)
+            self._validate_new_user_turn(session)
             inference_config = await self._storage.get_inference_config(session_id)
             user_message = self._build_user_message(session_id, message_id, content)
-            candidate_messages: List[Message] = session.messages + [user_message]
+            candidate_messages = self._build_inference_messages(session, user_message)
 
-            result = await self._inference.generate(
-                messages=candidate_messages,
-                config=inference_config,
-            )
-            return await self._commit_user_turn(
-                session=session,
-                user_message=user_message,
-                assistant_content=result.content,
-                inference_config=inference_config,
-            )
+            await self._acquire_inference_slot(session.user_id)
+            try:
+                result = await self._inference.generate(
+                    messages=candidate_messages,
+                    config=inference_config,
+                )
+                return await self._commit_user_turn(
+                    session=session,
+                    user_message=user_message,
+                    assistant_content=result.content,
+                    inference_config=inference_config,
+                )
+            finally:
+                await self._release_inference_slot(session.user_id)
 
     async def submit_user_message_stream(
         self,
         session_id: str,
         message_id: str,
         content: str,
-        current_lesson: Lesson | None = None,
     ) -> AsyncIterator[SessionMessageStreamEvent]:
         """Stream an assistant draft and atomically commit the completed turn."""
         async with self._lock_manager.lock(session_id):
             session = await self.get_session(session_id)
             existing = self._find_committed_assistant(session, message_id, content)
             if existing is not None:
+                inference_config = await self._storage.get_inference_config(session_id)
+                await self._persist_encrypted_log(
+                    session,
+                    inference_config,
+                    event_type="message_commit",
+                )
                 yield SessionMessageComplete(
                     assistant_message=existing,
                     session=session,
                 )
                 return
 
-            self._validate_new_user_turn(session, current_lesson)
+            self._validate_new_user_turn(session)
             inference_config = await self._storage.get_inference_config(session_id)
             user_message = self._build_user_message(session_id, message_id, content)
-            candidate_messages: List[Message] = session.messages + [user_message]
+            candidate_messages = self._build_inference_messages(session, user_message)
             content_parts: list[str] = []
 
+            await self._acquire_inference_slot(session.user_id)
             try:
                 async for chunk in self._inference.stream(
                     messages=candidate_messages,
@@ -499,7 +570,11 @@ class SessionManager:
                 if result.content:
                     yield SessionMessageDelta(content_delta=result.content)
 
+            finally:
+                await self._release_inference_slot(session.user_id)
+
             if not content_parts:
+                await self._acquire_inference_slot(session.user_id)
                 try:
                     result = await self._inference.generate(
                         messages=candidate_messages,
@@ -510,6 +585,8 @@ class SessionManager:
                         str(fallback_exc) or "Inference failed.",
                         fallback_allowed=False,
                     ) from fallback_exc
+                finally:
+                    await self._release_inference_slot(session.user_id)
                 content_parts.append(result.content)
                 if result.content:
                     yield SessionMessageDelta(content_delta=result.content)
@@ -560,13 +637,10 @@ class SessionManager:
     def _validate_new_user_turn(
         self,
         session: Session,
-        current_lesson: Lesson | None,
     ) -> None:
         """Apply session state and reflection gates before inference begins."""
         if not session.is_active:
             raise SessionClosedError(session.session_id)
-        if current_lesson is not None:
-            self._sync_reflection_hooks(session, current_lesson)
         if session.turn_count >= session.max_turns:
             raise TurnLimitExceededError(session.session_id)
         if self._has_pending_mid_reflection(session):
@@ -628,6 +702,8 @@ class SessionManager:
             self._trigger_completion_reflections(session)
 
         await self._storage.save_session(session)
+        if session.logging_policy == "disabled":
+            self._ephemeral_transcripts[session.session_id] = list(session.messages)
         await self._persist_encrypted_log(
             session,
             inference_config,
@@ -658,30 +734,6 @@ class SessionManager:
         if hook.trigger_turn is not None:
             return hook.trigger_turn
         return max(1, (turn_limit + 1) // 2)
-
-    def _sync_reflection_hooks(self, session: Session, lesson: Lesson) -> None:
-        """Add lesson reflection hooks missing from older frozen sessions."""
-        known_hook_ids = {hook.hook_id for hook in session.reflection_hooks}
-        turn_limit = session.max_turns or lesson.constraints.turn_limit
-        if turn_limit is None:
-            return
-
-        for hook in lesson.reflection.hooks:
-            if hook.hook_id in known_hook_ids:
-                continue
-            session.reflection_hooks.append(
-                SessionReflectionHook(
-                    hook_id=hook.hook_id,
-                    prompt=hook.prompt,
-                    phase=hook.phase,
-                    order_index=hook.order_index,
-                    trigger_turn=self._resolve_reflection_trigger_turn(hook, turn_limit),
-                    carry_to_post=hook.carry_to_post,
-                )
-            )
-            known_hook_ids.add(hook.hook_id)
-
-        session.reflection_hooks.sort(key=lambda hook: (hook.order_index, hook.hook_id))
 
     def _trigger_completion_reflections(self, session: Session) -> None:
         """Trigger post reflections and any carry-forward mid reflections."""
@@ -752,3 +804,62 @@ class SessionManager:
         if self._encrypted_logs is None:
             return
         await self._encrypted_logs.persist_session_log(session, inference_config, event_type=event_type)
+
+    def _hydrate_ephemeral_transcript(self, session: Session) -> bool:
+        """Attach process-local messages and report whether restart closure must persist."""
+        if session.logging_policy != "disabled":
+            return False
+        cached = self._ephemeral_transcripts.get(session.session_id)
+        if cached is not None:
+            session.messages = list(cached)
+            session.transcript_available = True
+            session.transcript_unavailable_reason = None
+            return False
+        if session.turn_count == 0 and session.lesson_snapshot is not None:
+            session.messages = build_initial_messages(session.lesson_snapshot, session.session_id)
+            self._ephemeral_transcripts[session.session_id] = list(session.messages)
+            session.transcript_available = True
+            session.transcript_unavailable_reason = None
+            return False
+        session.messages = []
+        session.transcript_available = False
+        interrupted = session.is_active
+        if interrupted:
+            now = datetime.now(UTC)
+            session.transcript_unavailable_reason = "server_restart"
+            session.is_active = False
+            session.closed_at = now
+            session.updated_at = now
+        elif session.transcript_unavailable_reason is None:
+            session.transcript_unavailable_reason = "not_persisted"
+        return interrupted
+
+    def _build_inference_messages(self, session: Session, user_message: Message) -> list[Message]:
+        """Build model context with the private snapshot prompt prepended server-side."""
+        if session.lesson_snapshot is None:
+            raise SessionCompletionError("Session lesson snapshot is unavailable.")
+        system_message = Message(
+            message_id="system-runtime",
+            session_id=session.session_id,
+            role="system",
+            content=session.lesson_snapshot.execution.system_prompt,
+            created_at=session.created_at,
+        )
+        return [system_message, *session.messages, user_message]
+
+    async def _acquire_inference_slot(self, user_id: str) -> None:
+        async with self._inference_count_lock:
+            active = self._active_inferences.get(user_id, 0)
+            if active >= 2:
+                raise SessionConcurrencyLimitError(
+                    "At most two inference requests may run concurrently."
+                )
+            self._active_inferences[user_id] = active + 1
+
+    async def _release_inference_slot(self, user_id: str) -> None:
+        async with self._inference_count_lock:
+            active = self._active_inferences.get(user_id, 0)
+            if active <= 1:
+                self._active_inferences.pop(user_id, None)
+            else:
+                self._active_inferences[user_id] = active - 1

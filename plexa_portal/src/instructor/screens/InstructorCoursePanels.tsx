@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import type { Course, CourseInstructors, CourseLessonWindow, EncryptedLogMetadata, Lesson } from "../../api/interfaces"
 
 function formatTimestamp(value: string | null | undefined): string {
@@ -152,7 +152,14 @@ export function InstructorLessonsPanel({
   mutating: boolean
   onUpdateTimeline(lessonTimeline: CourseLessonWindow[]): Promise<void>
 }) {
-  const [draftTimeline, setDraftTimeline] = useState<TimelineDraftWindow[]>([])
+  const [draftTimeline, setDraftTimeline] = useState<TimelineDraftWindow[]>(() =>
+    course.lesson_timeline.map((window) => ({
+      lesson_id: window.lesson_id,
+      lesson_version: window.lesson_version,
+      starts_at: toDatetimeLocal(window.starts_at),
+      ends_at: toDatetimeLocal(window.ends_at),
+    })),
+  )
   const [timelineError, setTimelineError] = useState<string | null>(null)
   const lessonOptions = useMemo(
     () => lessons.map((lesson) => ({
@@ -165,16 +172,6 @@ export function InstructorLessonsPanel({
     () => lessons.find((lesson) => lesson.is_pinned_now) ?? null,
     [lessons],
   )
-
-  useEffect(() => {
-    setDraftTimeline(course.lesson_timeline.map((window) => ({
-      lesson_id: window.lesson_id,
-      lesson_version: window.lesson_version,
-      starts_at: toDatetimeLocal(window.starts_at),
-      ends_at: toDatetimeLocal(window.ends_at),
-    })))
-    setTimelineError(null)
-  }, [course.lesson_timeline])
 
   function addWindow() {
     const firstLesson = lessons[0]
@@ -512,7 +509,7 @@ export function InstructorLogsPanel({
     : sortMode === "za"
       ? "Sort: Z-A"
       : "Sort: latest turn-in"
-  const userGroupedLogs = useMemo(() => {
+  const userGroupedLogs = (() => {
     const grouped = sortedLogs.reduce<Map<string, Map<string, EncryptedLogMetadata[]>>>((users, log) => {
       const lessonKey = `${log.lesson_id}:${log.lesson_version}`
       const userLessons = users.get(log.user_id) ?? new Map<string, EncryptedLogMetadata[]>()
@@ -526,8 +523,8 @@ export function InstructorLogsPanel({
       }
     })
     return sortUserEntries(Array.from(grouped))
-  }, [learnerIds, latestTurnInByUser, sortMode, sortedLogs])
-  const lessonGroupedLogs = useMemo(() => {
+  })()
+  const lessonGroupedLogs = (() => {
     const entries = sortTopLevelEntries(
       Array.from(
         sortedLogs.reduce<Map<string, Map<string, EncryptedLogMetadata[]>>>((lessonsByKey, log) => {
@@ -549,14 +546,15 @@ export function InstructorLogsPanel({
       }
       return leftPinned ? -1 : 1
     })
-  }, [lessonTitles, latestTurnInByLesson, pinnedLessonKeys, sortMode, sortedLogs])
+  })()
   function renderSessionLogButton(log: EncryptedLogMetadata) {
     const turnedIn = isLogTurnedIn(log)
     return (
       <button
         key={log.instance_id}
         className={turnedIn ? "portal-list__item portal-list__item--active portal-list__item--split" : "portal-list__item portal-list__item--split"}
-        onClick={() => void onOpenLog(log.instance_id)}
+        onClick={() => log.content_available && void onOpenLog(log.instance_id)}
+        disabled={!log.content_available}
       >
         <span className="portal-log-session-summary">
           <span className="portal-list__title">{formatTimestamp(log.last_event_at)}</span>
@@ -565,7 +563,7 @@ export function InstructorLogsPanel({
           </span>
         </span>
         <span className={turnedIn ? "section-chip section-chip--strong" : "section-chip"}>
-          {turnedIn ? "Turned in" : "Review"}
+          {!log.content_available ? "Expired" : turnedIn ? "Turned in" : "Review"}
         </span>
       </button>
     )

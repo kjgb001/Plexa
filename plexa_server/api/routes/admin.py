@@ -1,12 +1,14 @@
 from fastapi import APIRouter, HTTPException, Depends, status
-from fastapi.responses import JSONResponse
-from pydantic import ValidationError
+from datetime import UTC, datetime
 
-from plexa_server.models.lesson import Lesson
 from plexa_server.models.course import Course
 from plexa_server.auth.dependencies import require_admin
 from plexa_server.auth.identity import UserIdentity
-from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage
+from plexa_server.storage.storage_interface import (
+    ArtifactStorage,
+    CourseRevisionConflictError,
+    CourseStorage,
+)
 
 
 # Router Factory
@@ -27,6 +29,12 @@ def get_admin_router(
 
     router = APIRouter(prefix="/admin", tags=["admin"])
 
+    async def save_course_or_409(course: Course) -> None:
+        try:
+            await course_storage.save_course(course)
+        except CourseRevisionConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     # Upload Lesson
 
     @router.post("/lessons")
@@ -44,33 +52,10 @@ def get_admin_router(
             dict | JSONResponse: Success metadata for the stored lesson, or a
             validation failure payload.
         """
-        try:
-            lesson = Lesson.model_validate(lesson_payload)
-        except ValidationError as e:
-            return JSONResponse(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                content={
-                    "error": "validation_failed",
-                    "message": "Lesson validation failed",
-                    "details": e.errors(),
-                },
-            )
-
-        existing = await artifact_storage.load_lesson(
-            lesson.identity.lesson_id,
-            lesson.identity.version,
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Use the course-scoped /courses/{course_id}/lesson-artifacts endpoint.",
         )
-
-        overwritten = existing is not None
-
-        await artifact_storage.save_lesson(lesson)
-
-        return {
-            "status": "ok",
-            "lesson_id": lesson.identity.lesson_id,
-            "version": lesson.identity.version,
-            "overwritten": overwritten,
-        }
 
 
     # Get Lesson
@@ -94,15 +79,10 @@ def get_admin_router(
         Raises:
             HTTPException: If the requested lesson does not exist.
         """
-        lesson = await artifact_storage.load_lesson(lesson_id, version)
-
-        if lesson is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Lesson not found",
-            )
-
-        return lesson
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Use the course-scoped lesson-artifact endpoint.",
+        )
 
 
     # Create Course
@@ -131,8 +111,13 @@ def get_admin_router(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Course already exists",
             )
+        if payload.lessons or payload.lesson_timeline:
+            raise HTTPException(
+                status_code=400,
+                detail="Create the course first, then upload and bind course-scoped lessons.",
+            )
 
-        await course_storage.save_course(payload)
+        await save_course_or_409(payload)
         return payload
 
 
@@ -212,12 +197,17 @@ def get_admin_router(
                 status_code=404,
                 detail="Course not found",
             )
+        if payload.course_id != course_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Path course_id does not match payload course_id.",
+            )
 
         # Preserve lesson bindings
         payload.lessons = existing.lessons
         payload.lesson_timeline = existing.lesson_timeline
 
-        await course_storage.save_course(payload)
+        await save_course_or_409(payload)
         return payload
 
 
@@ -248,10 +238,12 @@ def get_admin_router(
                 detail="Course not found",
             )
 
-        await course_storage.delete_course(course_id)
+        existing.archived_at = datetime.now(UTC)
+        existing.discoverable = False
+        await save_course_or_409(existing)
 
         return {
-            "status": "deleted",
+            "status": "archived",
             "course_id": course_id,
         }
 
@@ -278,44 +270,10 @@ def get_admin_router(
         Raises:
             HTTPException: If the requested lesson does not exist.
         """
-        lesson_id = payload.get("lesson_id")
-        version = payload.get("version")
-
-        if not lesson_id or not version:
-            return JSONResponse(
-                status_code=422,
-                content={
-                    "error": "validation_failed",
-                    "message": "lesson_id and version are required",
-                    "details": [],
-                },
-            )
-
-        lesson = await artifact_storage.load_lesson(lesson_id, version)
-        if lesson is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Lesson not found",
-            )
-
-        course = await course_storage.get_course(course_id)
-        if course is None:
-            course = Course(
-                course_id=course_id,
-                title=course_id,
-                owner_id="system",
-                lessons={lesson_id: version},
-            )
-            await course_storage.save_course(course)
-        else:
-            await course_storage.bind_lesson_to_course(course_id, lesson_id, version)
-
-        return {
-            "status": "ok",
-            "course_id": course_id,
-            "lesson_id": lesson_id,
-            "version": version,
-        }
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Use the course-scoped /courses/{course_id}/lessons endpoint.",
+        )
 
 
     # Get Course Lessons

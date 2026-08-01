@@ -11,4 +11,3 @@ export const AUTH_REDIRECT_URI =
   import.meta.env.VITE_AUTH_REDIRECT_URI ?? `${window.location.origin}/auth/callback`
 export const AUTH_LOGOUT_REDIRECT_URI =
   import.meta.env.VITE_AUTH_LOGOUT_REDIRECT_URI ?? `${window.location.origin}/login`
-export const AUTH_USER_ID_CLAIM = import.meta.env.VITE_AUTH_USER_ID_CLAIM ?? "sub"

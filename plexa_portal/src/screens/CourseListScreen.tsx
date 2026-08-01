@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { useApis } from "../api"
 import type { Course } from "../api/interfaces"
-import { getRememberedPortalChoice } from "../auth/portalEntry"
-import { useAuth } from "../auth/useAuth"
 
 interface Props {
   onSelectCourse: (courseId: string) => void
@@ -10,14 +8,10 @@ interface Props {
 
 export default function CourseListScreen({ onSelectCourse }: Props) {
   const { courseApi } = useApis()
-  const { user } = useAuth()
   const [courses, setCourses] = useState<Course[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [requestState, setRequestState] = useState<Record<string, string>>({})
-
-  const canUseInstructorPortal = getRememberedPortalChoice() === "instructor"
-  const currentUserId = user?.userId ?? null
 
   useEffect(() => {
     let active = true
@@ -72,9 +66,7 @@ export default function CourseListScreen({ onSelectCourse }: Props) {
           course.course_id === courseId
             ? {
                 ...course,
-                pending_requests: currentUserId
-                  ? Array.from(new Set([...(course.pending_requests ?? []), currentUserId]))
-                  : course.pending_requests,
+                viewer_has_pending_request: true,
               }
             : course,
         ),
@@ -121,10 +113,10 @@ export default function CourseListScreen({ onSelectCourse }: Props) {
 
           <ol className="catalog-list">
             {filteredCourses.map((course, index) => {
-              const isOwner = currentUserId !== null && course.owner_id === currentUserId
-              const isEnrolled = currentUserId !== null && course.enrolled_users.includes(currentUserId)
-              const isPending = currentUserId !== null && (course.pending_requests ?? []).includes(currentUserId)
-              const canOpenCourse = isOwner || isEnrolled || canUseInstructorPortal
+              const isOwner = course.viewer_is_owner
+              const isEnrolled = course.viewer_is_enrolled
+              const isPending = course.viewer_has_pending_request
+              const canOpenCourse = isOwner || isEnrolled || course.viewer_is_instructor
 
               return (
               <li key={course.course_id}>

@@ -42,16 +42,20 @@ def test_validate_fails_on_non_positive_turn_limit():
         validate_lesson_runtime(lesson)
 
 
-def test_build_initial_messages_system_only():
+def test_lesson_rejects_invalid_execution_parameters():
+    payload = make_valid_lesson_payload()
+    payload["execution"]["parameters"] = {"top_p": 2.0}
+
+    with pytest.raises(ValueError, match="execution parameters"):
+        Lesson.model_validate(payload)
+
+
+def test_build_initial_messages_does_not_persist_system_prompt():
     lesson = Lesson.model_validate(make_valid_lesson_payload())
 
     messages = build_initial_messages(lesson, session_id="s1")
 
-    assert len(messages) == 1
-    assert messages[0].role == "system"
-    assert messages[0].content == lesson.execution.system_prompt
-    assert messages[0].session_id == "s1"
-    assert isinstance(messages[0].created_at, datetime)
+    assert messages == []
 
 
 def test_build_initial_messages_with_assistant_seed():
@@ -60,10 +64,11 @@ def test_build_initial_messages_with_assistant_seed():
 
     messages = build_initial_messages(lesson, session_id="s1")
 
-    assert len(messages) == 2
-    assert messages[0].role == "system"
-    assert messages[1].role == "assistant"
-    assert messages[1].content == "Welcome student."
+    assert len(messages) == 1
+    assert messages[0].role == "assistant"
+    assert messages[0].content == "Welcome student."
+    assert messages[0].session_id == "s1"
+    assert isinstance(messages[0].created_at, datetime)
 
 
 def test_freeze_inference_config_maps_fields_correctly():
@@ -75,7 +80,7 @@ def test_freeze_inference_config_maps_fields_correctly():
     assert config.model == lesson.execution.profile
     assert config.temperature == 0.4
     assert config.top_p == 0.9
-    assert config.timeout_s == 30.0  # default
+    assert config.timeout_s is None
 
 
 def test_freeze_inference_config_handles_missing_parameters():

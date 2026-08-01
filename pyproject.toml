@@ -1,6 +1,7 @@
 [project]
 name = "plexa"
 version = "0.0.0"
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "alembic",
     "asyncpg",
@@ -15,6 +16,11 @@ dependencies = [
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "pytest",
+]
 
 [tool.setuptools]
 include-package-data = true

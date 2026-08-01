@@ -1,12 +1,6 @@
 import asyncio
 import json
 
-from fastapi.testclient import TestClient
-
-from plexa_server.storage.filesystem import FileSystemArtifactStorage
-from plexa_server.models.lesson import Lesson, LessonIdentity
-
-
 def run(coro):
     return asyncio.run(coro)
 
@@ -16,12 +10,31 @@ def test_app_builds(client, api_prefix, storage_backend):
     assert response.status_code == 200
 
 
-def test_create_session_success(client, lesson_factory, course_factory, api_prefix, storage_backend):
+def test_create_session_success(
+    client,
+    lesson_factory,
+    course_factory,
+    admin_headers,
+    api_prefix,
+    storage_backend,
+):
     lesson = lesson_factory()
     lesson_id = lesson.identity.lesson_id
     lesson_version = lesson.identity.version
 
     course_id = course_factory()
+    upload = client.post(
+        f"{api_prefix}/courses/{course_id}/lesson-artifacts",
+        json=lesson.model_dump(mode="json"),
+        headers=admin_headers,
+    )
+    assert upload.status_code == 200
+    binding = client.post(
+        f"{api_prefix}/courses/{course_id}/lessons",
+        json={"lesson_id": lesson_id, "version": lesson_version},
+        headers=admin_headers,
+    )
+    assert binding.status_code == 200
 
     response = client.post(
         f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions",
@@ -330,7 +343,36 @@ def test_discoverable_courses_visible(client, course_factory, api_prefix, storag
     assert any(c["course_id"] == f"{course_id}" for c in courses)
 
 
-def test_invite_only_hidden_from_listing(client, admin_headers, valid_course_payload, api_prefix, storage_backend):
+def test_invite_only_hidden_from_uninvited_user_listing(
+    client,
+    admin_headers,
+    valid_course_payload,
+    api_prefix,
+    storage_backend,
+):
+    payload = valid_course_payload
+    payload["discoverable"] = False
+    course_id = payload["course_id"]
+
+    client.post(f"{api_prefix}/admin/courses", json=payload, headers=admin_headers)
+
+    response = client.get(
+        f"{api_prefix}/courses",
+        headers={"X-User-Id": "uninvited-student"},
+    )
+
+    courses = response.json()["courses"]
+
+    assert all(c["course_id"] != f"{course_id}" for c in courses)
+
+
+def test_enrolled_user_sees_invite_only_course_in_listing(
+    client,
+    admin_headers,
+    valid_course_payload,
+    api_prefix,
+    storage_backend,
+):
     payload = valid_course_payload
     payload["discoverable"] = False
     course_id = payload["course_id"]
@@ -339,9 +381,9 @@ def test_invite_only_hidden_from_listing(client, admin_headers, valid_course_pay
 
     response = client.get(f"{api_prefix}/courses", headers={"X-User-Id": "tester"})
 
+    assert response.status_code == 200
     courses = response.json()["courses"]
-
-    assert all(c["course_id"] != f"{course_id}" for c in courses)
+    assert any(c["course_id"] == course_id for c in courses)
 
 
 def test_owner_sees_invite_only_course_in_listing(client, admin_headers, valid_course_payload, api_prefix, storage_backend):
@@ -451,7 +493,12 @@ def test_session_creation_requires_enrollment(
     lesson_version = lesson.identity.version
 
     client.post(
-        f"{api_prefix}/admin/courses/{course_id}/lessons",
+        f"{api_prefix}/courses/{course_id}/lesson-artifacts",
+        json=lesson.model_dump(mode="json"),
+        headers=admin_headers,
+    )
+    client.post(
+        f"{api_prefix}/courses/{course_id}/lessons",
         json={"lesson_id": "test", "version": "0.1.0"},
         headers=admin_headers,
     )
@@ -482,7 +529,12 @@ def test_session_creation_after_enrollment(
     lesson_version = lesson.identity.version
 
     client.post(
-        f"{api_prefix}/admin/courses/{course_id}/lessons",
+        f"{api_prefix}/courses/{course_id}/lesson-artifacts",
+        json=lesson.model_dump(mode="json"),
+        headers=admin_headers,
+    )
+    client.post(
+        f"{api_prefix}/courses/{course_id}/lessons",
         json={"lesson_id": "test", "version": "0.1.0"},
         headers=admin_headers,
     )
@@ -508,10 +560,15 @@ def test_session_creation_after_enrollment(
 
 def test_lesson_list(client, course_factory, lesson_factory, api_prefix, admin_headers, storage_backend):
     course_id = course_factory()
-    lesson_factory()
+    lesson = lesson_factory()
 
+    client.post(
+        f"{api_prefix}/courses/{course_id}/lesson-artifacts",
+        json=lesson.model_dump(mode="json"),
+        headers=admin_headers,
+    )
     bind_response = client.post(
-        f"{api_prefix}/admin/courses/CS101/lessons",
+        f"{api_prefix}/courses/CS101/lessons",
         json={
             "lesson_id": "test",
             "version": "0.1.0",
@@ -526,6 +583,114 @@ def test_lesson_list(client, course_factory, lesson_factory, api_prefix, admin_h
 
     assert response.status_code == 200
     assert response.json()["lessons"][0]["identity"]["lesson_id"] == "test"
+
+
+def test_student_course_and_lesson_projections_hide_private_authoring_data(
+    client,
+    session_factory,
+    api_prefix,
+    storage_backend,
+):
+    _, lesson_id, lesson_version = session_factory()
+    course_id = "CS101"
+
+    course_response = client.get(
+        f"{api_prefix}/courses/{course_id}",
+        headers={"X-User-Id": "tester"},
+    )
+    lessons_response = client.get(
+        f"{api_prefix}/courses/{course_id}/lessons",
+        headers={"X-User-Id": "tester"},
+    )
+
+    assert course_response.status_code == 200
+    assert "owner_id" not in course_response.json()
+    assert "instructor_ids" not in course_response.json()
+    assert "enrolled_users" not in course_response.json()
+    assert "pending_requests" not in course_response.json()
+    assert lessons_response.status_code == 200
+    lesson_payload = next(
+        item
+        for item in lessons_response.json()["lessons"]
+        if item["identity"]["lesson_id"] == lesson_id
+        and item["identity"]["version"] == lesson_version
+    )
+    assert "execution" not in lesson_payload
+    assert "constraints" not in lesson_payload
+    assert "reflection" not in lesson_payload
+    assert "system_prompt" not in lessons_response.text
+
+
+def test_unenrollment_revokes_access_to_existing_sessions(
+    client,
+    session_factory,
+    api_prefix,
+    storage_backend,
+):
+    session_id, lesson_id, lesson_version = session_factory()
+    course_id = "CS101"
+
+    removed = client.post(
+        f"{api_prefix}/courses/{course_id}/remove",
+        json={"user_id": "tester"},
+        headers={"X-User-Id": "ignored"},
+    )
+    assert removed.status_code == 200
+
+    session_response = client.get(
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}"
+        f"/sessions/{session_id}",
+        headers={"X-User-Id": "tester"},
+    )
+    message_response = client.post(
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}"
+        f"/sessions/{session_id}/messages",
+        json={"content": "This should be revoked."},
+        headers={"X-User-Id": "tester"},
+    )
+
+    assert session_response.status_code == 404
+    assert message_response.status_code == 404
+
+
+def test_lesson_edit_affects_new_sessions_but_preserves_existing_snapshot(
+    client,
+    session_factory,
+    session_storage,
+    api_prefix,
+    storage_backend,
+):
+    first_session_id, lesson_id, lesson_version = session_factory()
+    course_id = "CS101"
+    artifact_path = (
+        f"{api_prefix}/courses/{course_id}/lesson-artifacts/{lesson_id}/{lesson_version}"
+    )
+    current = client.get(artifact_path, headers={"X-User-Id": "ignored"})
+    assert current.status_code == 200
+    old_prompt = current.json()["lesson"]["execution"]["system_prompt"]
+    updated_lesson = current.json()["lesson"]
+    updated_lesson["execution"]["system_prompt"] = "Updated private system prompt."
+
+    updated = client.post(
+        f"{api_prefix}/courses/{course_id}/lesson-artifacts"
+        f"?expected_revision={current.json()['artifact_revision']}",
+        json=updated_lesson,
+        headers={"X-User-Id": "ignored"},
+    )
+    assert updated.status_code == 200
+    second = client.post(
+        f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{lesson_version}/sessions",
+        headers={"X-User-Id": "tester"},
+    )
+    assert second.status_code == 201
+
+    first_session = run(session_storage.get_session(first_session_id))
+    second_session = run(session_storage.get_session(second.json()["session"]["session_id"]))
+    assert first_session is not None and first_session.lesson_snapshot is not None
+    assert second_session is not None and second_session.lesson_snapshot is not None
+    assert first_session.lesson_snapshot.execution.system_prompt == old_prompt
+    assert second_session.lesson_snapshot.execution.system_prompt == "Updated private system prompt."
+    assert first_session.lesson_artifact_revision < second_session.lesson_artifact_revision
 
 
 def test_discoverable_courses_order_by_last_accessed(
@@ -576,25 +741,42 @@ def test_lesson_list_orders_last_accessed_first_and_pinned_second(
     gamma_payload["identity"]["lesson_id"] = "gamma"
     gamma_payload["identity"]["title"] = "Gamma"
 
-    for payload in [alpha_payload, beta_payload, gamma_payload]:
-        response = client.post(f"{api_prefix}/admin/lessons", json=payload, headers=admin_headers)
-        assert response.status_code == 200
-
     course_payload = dict(valid_course_payload)
-    course_payload["lessons"] = {
-        "alpha": "0.1.0",
-        "beta": "0.1.0",
-        "gamma": "0.1.0",
-    }
-    course_payload["lesson_timeline"] = [
+    course_payload["lessons"] = {}
+    course_payload["lesson_timeline"] = []
+    created = client.post(f"{api_prefix}/admin/courses", json=course_payload, headers=admin_headers)
+    assert created.status_code == 200
+
+    for payload in [alpha_payload, beta_payload, gamma_payload]:
+        response = client.post(
+            f"{api_prefix}/courses/{course_payload['course_id']}/lesson-artifacts",
+            json=payload,
+            headers=admin_headers,
+        )
+        assert response.status_code == 200
+        bound = client.post(
+            f"{api_prefix}/courses/{course_payload['course_id']}/lessons",
+            json={
+                "lesson_id": payload["identity"]["lesson_id"],
+                "version": payload["identity"]["version"],
+            },
+            headers=admin_headers,
+        )
+        assert bound.status_code == 200
+
+    timeline = [
         {
             "lesson_id": "beta",
             "lesson_version": "0.1.0",
             "starts_at": "2026-01-01T00:00:00Z",
         }
     ]
-    created = client.post(f"{api_prefix}/admin/courses", json=course_payload, headers=admin_headers)
-    assert created.status_code == 200
+    updated = client.put(
+        f"{api_prefix}/courses/{course_payload['course_id']}/lesson-timeline",
+        json={"lesson_timeline": timeline},
+        headers={"X-User-Id": "ignored"},
+    )
+    assert updated.status_code == 200
 
     touched = client.get(
         f"{api_prefix}/courses/{course_payload['course_id']}/lessons",
@@ -730,7 +912,12 @@ def test_parallel_instructor_can_create_own_session_but_list_only_their_own(
     lesson_version = lesson.identity.version
 
     client.post(
-        f"{api_prefix}/admin/courses/{course_id}/lessons",
+        f"{api_prefix}/courses/{course_id}/lesson-artifacts",
+        json=lesson.model_dump(mode="json"),
+        headers=admin_headers,
+    )
+    client.post(
+        f"{api_prefix}/courses/{course_id}/lessons",
         json={"lesson_id": lesson_id, "version": lesson_version},
         headers=admin_headers,
     )

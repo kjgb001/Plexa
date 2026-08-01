@@ -13,6 +13,7 @@ from plexa_server.core.sessions import (
     SessionCompletionError,
     SessionMessageComplete,
     SessionMessageConflictError,
+    SessionConcurrencyLimitError,
     SessionMessageDelta,
     SessionStreamingError,
 )
@@ -33,6 +34,7 @@ from plexa_server.auth.dependencies import get_owned_session, require_identity
 from plexa_server.auth.identity import UserIdentity
 from plexa_server.core.sessions import SessionManager
 from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage, WorkspaceStateStorage
+from plexa_server.core.rate_limits import InMemoryRateLimiter, RateLimitExceeded
 
 
 logger = logging.getLogger(__name__)
@@ -56,6 +58,22 @@ def get_sessions_router(
     """
 
     router = APIRouter(tags=["sessions"])
+    limiter = InMemoryRateLimiter()
+
+    def enforce_limit(
+        key: str,
+        limit: int,
+        window_s: int,
+        event_id: str | None = None,
+    ) -> None:
+        try:
+            limiter.check(key, limit=limit, window_s=window_s, event_id=event_id)
+        except RateLimitExceeded as exc:
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded",
+                headers={"Retry-After": str(exc.retry_after_s)},
+            ) from exc
 
     async def touch_course_and_lesson(
         identity: UserIdentity,
@@ -73,10 +91,15 @@ def get_sessions_router(
         )
 
 
-    async def load_lesson_or_404(lesson_id: str, lesson_version: str):
+    async def load_lesson_or_404(
+        course_id: str,
+        lesson_id: str,
+        lesson_version: str,
+    ):
         lesson = await artifact_storage.load_lesson(
             lesson_id=lesson_id,
             version=lesson_version,
+            course_id=course_id,
         )
         if lesson is None:
             raise HTTPException(
@@ -84,15 +107,6 @@ def get_sessions_router(
                 detail="Lesson not found",
             )
         return lesson
-
-
-    async def refresh_completion_reflections(session: Session) -> Session:
-        """Ensure sessions already in completion mode have current reflection hooks."""
-        if session.is_completion_started is False or session.is_finalized:
-            return session
-
-        lesson = await load_lesson_or_404(session.lesson_id, session.lesson_version)
-        return await session_manager.begin_completion(session.session_id, current_lesson=lesson)
 
 
     def check_session_path(
@@ -148,30 +162,38 @@ def get_sessions_router(
             HTTPException: If the lesson does not exist, the course does not
                 exist, or the caller is not allowed to create a session.
         """
-        lesson = await load_lesson_or_404(lesson_id, lesson_version)
-
+        enforce_limit(f"session-create:{identity.user_id}", 20, 3600)
         course = await course_storage.get_course(course_id)
-        if course is None:
+        if course is None or course.archived_at is not None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Course not found."
             )
+        if course.lessons.get(lesson_id) != lesson_version:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+        lesson = await load_lesson_or_404(course_id, lesson_id, lesson_version)
         if identity.user_id not in course.enrolled_users and not course.has_instructor_access(identity.user_id):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Course not found."
             )
 
+        artifact_revision = await artifact_storage.get_lesson_revision(
+            lesson_id,
+            lesson_version,
+            course_id=course_id,
+        )
         session = await session_manager.create_session(
             lesson=lesson,
             user_id=identity.user_id,
-            course_id=course_id
+            course_id=course_id,
+            lesson_artifact_revision=artifact_revision or 1,
         )
         await touch_course_and_lesson(identity, course_id, lesson_id, lesson_version)
 
         return CreateSessionResponse(
             session=SessionResponse.from_session(session),
-            messages=session.messages,
+            messages=[message for message in session.messages if message.role != "system"],
         )
 
 
@@ -202,14 +224,14 @@ def get_sessions_router(
             HTTPException: If the lesson does not exist, the course does not
                 exist, or the caller is not allowed to view sessions for it.
         """
-        lesson = await load_lesson_or_404(lesson_id, lesson_version)
-
         course = await course_storage.get_course(course_id)
-        if course is None:
+        if course is None or course.archived_at is not None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Course not found."
             )
+        if course.lessons.get(lesson_id) != lesson_version:
+            raise HTTPException(status_code=404, detail="Lesson not found")
         if (
             identity.user_id not in course.enrolled_users
             and not course.has_instructor_access(identity.user_id)
@@ -262,15 +284,21 @@ def get_sessions_router(
         message_id = request.message_id or str(uuid4())
 
         try:
-            session = await get_owned_session(session_manager, session_id, identity)
+            session = await get_owned_session(
+                session_manager, session_id, identity, course_storage
+            )
             check_session_path(session, course_id, lesson_id, lesson_version)
-            lesson = await load_lesson_or_404(lesson_id, lesson_version)
+            enforce_limit(
+                f"message:{identity.user_id}",
+                10,
+                60,
+                event_id=message_id,
+            )
 
             assistant_message = await session_manager.submit_user_message(
                 session_id=session_id,
                 message_id=message_id,
                 content=request.content,
-                current_lesson=lesson,
             )
 
             session = await session_manager.get_session(session_id)
@@ -293,6 +321,13 @@ def get_sessions_router(
         except SessionMessageConflictError as exc:
             raise HTTPException(status_code=409, detail=str(exc))
 
+        except SessionConcurrencyLimitError as exc:
+            raise HTTPException(
+                status_code=429,
+                detail=str(exc),
+                headers={"Retry-After": "1"},
+            ) from exc
+
         except InferenceError as exc:
             detail = "Inference failure"
             if get_app_environment() != "production":
@@ -314,9 +349,16 @@ def get_sessions_router(
     ) -> StreamingResponse:
         """Stream an assistant reply and finish with the canonical committed turn."""
         message_id = payload.message_id or str(uuid4())
-        session = await get_owned_session(session_manager, session_id, identity)
+        session = await get_owned_session(
+            session_manager, session_id, identity, course_storage
+        )
         check_session_path(session, course_id, lesson_id, lesson_version)
-        lesson = await load_lesson_or_404(lesson_id, lesson_version)
+        enforce_limit(
+            f"message:{identity.user_id}",
+            10,
+            60,
+            event_id=message_id,
+        )
 
         def encode_event(event_name: str, event_payload: dict) -> str:
             encoded = json.dumps(event_payload, separators=(",", ":"))
@@ -344,6 +386,12 @@ def get_sessions_router(
             if isinstance(exc, SessionMessageConflictError):
                 return "error", {
                     "code": "message_conflict",
+                    "detail": str(exc),
+                    "fallback_allowed": False,
+                }
+            if isinstance(exc, SessionConcurrencyLimitError):
+                return "error", {
+                    "code": "concurrency_limit",
                     "detail": str(exc),
                     "fallback_allowed": False,
                 }
@@ -378,7 +426,6 @@ def get_sessions_router(
                     session_id=session_id,
                     message_id=message_id,
                     content=payload.content,
-                    current_lesson=lesson,
                 ):
                     if isinstance(event, SessionMessageDelta):
                         await queue.put(("delta", {"content": event.content_delta}))
@@ -406,7 +453,7 @@ def get_sessions_router(
                 await queue.put(None)
 
         async def event_stream():
-            queue: asyncio.Queue[tuple[str, dict] | None] = asyncio.Queue()
+            queue: asyncio.Queue[tuple[str, dict] | None] = asyncio.Queue(maxsize=100)
             producer = asyncio.create_task(produce_events(queue))
             try:
                 while True:
@@ -464,19 +511,15 @@ def get_sessions_router(
             HTTPException: If the caller does not own the session or the
                 session does not exist.
         """
-        try:
-            session = await get_owned_session(session_manager, session_id, identity)
-            check_session_path(session, course_id, lesson_id, lesson_version)
-            session = await refresh_completion_reflections(session)
-            await touch_course_and_lesson(identity, course_id, lesson_id, lesson_version)
+        session = await get_owned_session(
+            session_manager, session_id, identity, course_storage
+        )
+        check_session_path(session, course_id, lesson_id, lesson_version)
 
-            return CreateSessionResponse(
-                session=SessionResponse.from_session(session),
-                messages=session.messages,
-            )
-        
-        finally:
-            pass
+        return CreateSessionResponse(
+            session=SessionResponse.from_session(session),
+            messages=[message for message in session.messages if message.role != "system"],
+        )
 
 
     # Close Session
@@ -509,7 +552,9 @@ def get_sessions_router(
                 session is already closed.
         """
         try:
-            session = await get_owned_session(session_manager, session_id, identity)
+            session = await get_owned_session(
+                session_manager, session_id, identity, course_storage
+            )
             check_session_path(session, course_id, lesson_id, lesson_version)
 
             await session_manager.close_session(session_id)
@@ -532,12 +577,13 @@ def get_sessions_router(
         lesson_version: str,
         identity: UserIdentity = Depends(require_identity),
     ) -> SessionResponse:
-        session = await get_owned_session(session_manager, session_id, identity)
+        session = await get_owned_session(
+            session_manager, session_id, identity, course_storage
+        )
         check_session_path(session, course_id, lesson_id, lesson_version)
 
         try:
-            lesson = await load_lesson_or_404(lesson_id, lesson_version)
-            session = await session_manager.begin_completion(session_id, current_lesson=lesson)
+            session = await session_manager.begin_completion(session_id)
             await touch_course_and_lesson(identity, course_id, lesson_id, lesson_version)
             return SessionResponse.from_session(session)
         except SessionCompletionError as exc:
@@ -555,7 +601,9 @@ def get_sessions_router(
         lesson_version: str,
         identity: UserIdentity = Depends(require_identity),
     ) -> SessionResponse:
-        session = await get_owned_session(session_manager, session_id, identity)
+        session = await get_owned_session(
+            session_manager, session_id, identity, course_storage
+        )
         check_session_path(session, course_id, lesson_id, lesson_version)
 
         try:
@@ -579,7 +627,9 @@ def get_sessions_router(
         request: ReflectionResponseRequest,
         identity: UserIdentity = Depends(require_identity),
     ) -> SessionResponse:
-        session = await get_owned_session(session_manager, session_id, identity)
+        session = await get_owned_session(
+            session_manager, session_id, identity, course_storage
+        )
         check_session_path(session, course_id, lesson_id, lesson_version)
 
         try:
@@ -606,7 +656,9 @@ def get_sessions_router(
         hook_id: str,
         identity: UserIdentity = Depends(require_identity),
     ) -> SessionResponse:
-        session = await get_owned_session(session_manager, session_id, identity)
+        session = await get_owned_session(
+            session_manager, session_id, identity, course_storage
+        )
         check_session_path(session, course_id, lesson_id, lesson_version)
 
         try:
@@ -628,11 +680,12 @@ def get_sessions_router(
         lesson_version: str,
         identity: UserIdentity = Depends(require_identity),
     ) -> SessionResponse:
-        session = await get_owned_session(session_manager, session_id, identity)
+        session = await get_owned_session(
+            session_manager, session_id, identity, course_storage
+        )
         check_session_path(session, course_id, lesson_id, lesson_version)
 
         try:
-            session = await refresh_completion_reflections(session)
             session = await session_manager.turn_in_session(session_id)
             await touch_course_and_lesson(identity, course_id, lesson_id, lesson_version)
             return SessionResponse.from_session(session)
@@ -669,10 +722,15 @@ def get_sessions_router(
             HTTPException: If the caller does not own the session or the
                 session does not exist.
         """
-        session = await get_owned_session(session_manager, session_id, identity)
+        session = await get_owned_session(
+            session_manager, session_id, identity, course_storage
+        )
         check_session_path(session, course_id, lesson_id, lesson_version)
 
-        await session_manager.delete_session(session_id)
+        try:
+            await session_manager.delete_session(session_id)
+        except SessionCompletionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
         return DeleteSessionResponse(
             status="deleted",

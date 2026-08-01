@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useApis } from "../../api"
 import { ApiError, NotFoundError } from "../../api/errors"
 import type { Course, CourseInstructors, CourseLessonWindow, EncryptedLogMetadata, Lesson } from "../../api/interfaces"
 import { instructorPaths, navigate } from "../../app/router"
+import { useAuth } from "../../auth/useAuth"
 import { InstructorBuilderPanel } from "./InstructorBuilderPanel"
 import {
   InstructorAnalyticsPanel,
@@ -24,6 +25,7 @@ export function InstructorCourseScreen({
   logSessionId?: string | null
 }) {
   const { instructorApi } = useApis()
+  const { user } = useAuth()
   const [course, setCourse] = useState<Course | null>(null)
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [instructors, setInstructors] = useState<CourseInstructors | null>(null)
@@ -36,7 +38,7 @@ export function InstructorCourseScreen({
   const [addInstructorUserId, setAddInstructorUserId] = useState("")
   const [mutating, setMutating] = useState(false)
 
-  async function loadWorkspace() {
+  const loadWorkspace = useCallback(async () => {
     setLoading(true)
     setLoadError(null)
 
@@ -73,11 +75,11 @@ export function InstructorCourseScreen({
     } finally {
       setLoading(false)
     }
-  }
+  }, [courseId, instructorApi])
 
   useEffect(() => {
     void loadWorkspace()
-  }, [courseId, instructorApi])
+  }, [loadWorkspace])
 
   useEffect(() => {
     let active = true
@@ -208,9 +210,15 @@ export function InstructorCourseScreen({
         <p className="eyebrow">Instructor Workspace</p>
         <h1 id="instructor-course-title">{course.title}</h1>
         <p className="portal-stage__summary">
-          This course workspace is organized around explicit tools. Use Overview for operational state, Lessons for sequencing context, Builder for lesson authoring, Logs for transcript review, Analytics for aggregate patterns, and Roster for membership control.
+          {course.archived_at
+            ? "This archived course is read-only. Preserved logs and aggregate analytics remain available for authorized instructors."
+            : "This course workspace is organized around explicit tools. Use Overview for operational state, Lessons for sequencing context, Builder for lesson authoring, Logs for transcript review, Analytics for aggregate patterns, and Roster for membership control."}
         </p>
       </header>
+
+      {course.archived_at && !["overview", "logs", "analytics"].includes(mode) ? (
+        <p className="empty-panel">This tool is unavailable because the course is archived.</p>
+      ) : null}
 
       {mode === "overview" ? (
         <InstructorOverviewPanel
@@ -222,7 +230,7 @@ export function InstructorCourseScreen({
         />
       ) : null}
 
-      {mode === "lessons" ? (
+      {mode === "lessons" && !course.archived_at ? (
         <InstructorLessonsPanel
           course={course}
           lessons={lessons}
@@ -231,12 +239,16 @@ export function InstructorCourseScreen({
         />
       ) : null}
 
-      {mode === "builder" ? (
+      {mode === "builder" && !course.archived_at && (course.viewer_is_owner || user?.isAdmin) ? (
         <InstructorBuilderPanel
           courseId={courseId}
           lessons={lessons}
           onLessonBound={loadWorkspace}
         />
+      ) : null}
+
+      {mode === "builder" && !course.archived_at && !course.viewer_is_owner && !user?.isAdmin ? (
+        <p className="empty-panel">Only the course owner or a Plexa administrator can author lessons.</p>
       ) : null}
 
       {mode === "logs" ? (
@@ -257,7 +269,7 @@ export function InstructorCourseScreen({
         <InstructorAnalyticsPanel lessons={lessons} logs={logs} />
       ) : null}
 
-      {mode === "roster" ? (
+      {mode === "roster" && !course.archived_at ? (
         <InstructorRosterPanel
           course={course}
           instructors={instructors}

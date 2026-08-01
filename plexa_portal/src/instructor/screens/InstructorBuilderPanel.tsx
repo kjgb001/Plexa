@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import { useApis } from "../../api"
 import { ApiError } from "../../api/errors"
 import type { Lesson, LessonDocument } from "../../api/interfaces"
@@ -118,6 +118,7 @@ export function InstructorBuilderPanel({
 }) {
   const { adminApi } = useApis()
   const [selectedLessonKey, setSelectedLessonKey] = useState("")
+  const [loadedArtifact, setLoadedArtifact] = useState<{ key: string; revision: number } | null>(null)
   const [draft, setDraft] = useState<LessonDocument>(() => createDefaultLessonDraft(courseId))
   const [tagsText, setTagsText] = useState("")
   const [disciplineText, setDisciplineText] = useState("")
@@ -132,7 +133,10 @@ export function InstructorBuilderPanel({
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-  function applyDocument(next: LessonDocument) {
+  function applyDocument(
+    next: LessonDocument,
+    artifact: { key: string; revision: number } | null = null,
+  ) {
     setDraft(duplicateLessonDraft(next))
     setTagsText(listToCsv(next.identity.tags))
     setDisciplineText(listToMultiline(next.intent.discipline))
@@ -163,6 +167,7 @@ export function InstructorBuilderPanel({
         ? String(next.execution.parameters.seed)
         : "",
     )
+    setLoadedArtifact(artifact)
     setStatusMessage(null)
     setErrorMessage(null)
   }
@@ -229,8 +234,11 @@ export function InstructorBuilderPanel({
     setStatusMessage(null)
 
     try {
-      const result = await adminApi.getLesson(lessonId, version)
-      applyDocument(result)
+      const result = await adminApi.getLesson(courseId, lessonId, version)
+      applyDocument(result.lesson, {
+        key: `${lessonId}:${version}`,
+        revision: result.artifactRevision,
+      })
       setStatusMessage(`Loaded ${lessonId}@${version} into the builder.`)
     } catch (error) {
       setErrorMessage(formatError(error))
@@ -280,7 +288,16 @@ export function InstructorBuilderPanel({
     setStatusMessage(null)
 
     try {
-      const uploaded = await adminApi.uploadLesson(compiled.document)
+      const artifactKey = `${compiled.document.identity.lesson_id}:${compiled.document.identity.version}`
+      const expectedRevision = loadedArtifact?.key === artifactKey
+        ? loadedArtifact.revision
+        : null
+      const uploaded = await adminApi.uploadLesson(
+        courseId,
+        compiled.document,
+        expectedRevision,
+      )
+      setLoadedArtifact({ key: artifactKey, revision: uploaded.artifact_revision })
 
       if (bindAfterSave) {
         await adminApi.bindLessonToCourse(courseId, uploaded.lesson_id, uploaded.version)
@@ -299,18 +316,7 @@ export function InstructorBuilderPanel({
     }
   }
 
-  const preview = useMemo(() => compileDraft(), [
-    draft,
-    tagsText,
-    disciplineText,
-    prerequisitesText,
-    allowedActionsText,
-    temperatureText,
-    topPText,
-    maxTokensText,
-    timeoutSecondsText,
-    seedText,
-  ])
+  const preview = compileDraft()
 
   return (
     <section className="portal-builder">
@@ -375,7 +381,7 @@ export function InstructorBuilderPanel({
             <div className="portal-form-grid">
               <label className="portal-form-grid__span-2"><span>Learning objective</span><textarea value={draft.intent.learning_objective} onChange={(event) => setDraft((current) => ({ ...current, intent: { ...current.intent, learning_objective: event.target.value } }))} rows={4} /></label>
               <label><span>Behavioral focus</span><input value={draft.intent.behavioral_focus} onChange={(event) => setDraft((current) => ({ ...current, intent: { ...current.intent, behavioral_focus: event.target.value } }))} /></label>
-              <label><span>Difficulty</span><select value={draft.intent.difficulty ?? "introductory"} onChange={(event) => setDraft((current) => ({ ...current, intent: { ...current.intent, difficulty: event.target.value } }))}><option value="introductory">Introductory</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select></label>
+              <label><span>Difficulty</span><select value={draft.intent.difficulty ?? ""} onChange={(event) => setDraft((current) => ({ ...current, intent: { ...current.intent, difficulty: event.target.value || undefined } }))}><option value="">Not specified</option><option value="introductory">Introductory</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select></label>
               <label><span>Approximate time</span><input value={draft.intent.approximate_time ?? ""} onChange={(event) => setDraft((current) => ({ ...current, intent: { ...current.intent, approximate_time: event.target.value } }))} /></label>
               <label className="portal-form-grid__span-2"><span>Discipline</span><textarea value={disciplineText} onChange={(event) => setDisciplineText(event.target.value)} rows={3} placeholder="One per line" /></label>
               <label className="portal-form-grid__span-2"><span>Prerequisites</span><textarea value={prerequisitesText} onChange={(event) => setPrerequisitesText(event.target.value)} rows={3} placeholder="One per line" /></label>
@@ -384,6 +390,7 @@ export function InstructorBuilderPanel({
 
           <article className="portal-card">
             <header className="portal-card__header"><h2>Execution</h2></header>
+            <p className="portal-note">Saving an existing lesson version affects new sessions only. Active and submitted sessions keep their private execution snapshot.</p>
             <div className="portal-form-grid">
               <label><span>Profile</span><input value={draft.execution.profile} onChange={(event) => setDraft((current) => ({ ...current, execution: { ...current.execution, profile: event.target.value } }))} /></label>
               <label className="portal-form-grid__span-2"><span>System prompt</span><textarea value={draft.execution.system_prompt} onChange={(event) => setDraft((current) => ({ ...current, execution: { ...current.execution, system_prompt: event.target.value } }))} rows={8} /></label>
@@ -415,7 +422,7 @@ export function InstructorBuilderPanel({
           <article className="portal-card">
             <header className="portal-card__header"><h2>Reflection</h2></header>
             <div className="portal-form-grid">
-              <label><span>Logging policy</span><select value={draft.reflection.logging_policy ?? "default"} onChange={(event) => setDraft((current) => ({ ...current, reflection: { ...current.reflection, logging_policy: event.target.value } }))}><option value="default">Default logging</option><option value="metadata_only">Metadata only</option><option value="disabled">Disabled</option></select></label>
+              <label><span>Logging policy</span><select value={draft.reflection.logging_policy ?? "default"} onChange={(event) => setDraft((current) => ({ ...current, reflection: { ...current.reflection, logging_policy: event.target.value } }))}><option value="default">Durable transcript + instructor log</option><option value="metadata_only">Durable transcript; metadata-only instructor log</option><option value="disabled">No transcript persistence</option></select></label>
             </div>
             <div className="portal-list">
               {draft.reflection.hooks.map((hook, index) => (

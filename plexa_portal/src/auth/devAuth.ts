@@ -1,4 +1,5 @@
 import type { AuthService, AuthUser } from "./types"
+import { fetchServerIdentity } from "./serverIdentity"
 
 export class DevAuthService implements AuthService {
   readonly mode = "dev" as const
@@ -10,7 +11,7 @@ export class DevAuthService implements AuthService {
       return null
     }
 
-    return { userId: user }
+    return fetchServerIdentity({ "X-User-Id": user })
   }
 
   async getAuthHeaders(): Promise<Record<string, string>> {
@@ -30,7 +31,7 @@ export class DevAuthService implements AuthService {
       throw new Error("Dev auth login requires a user id.")
     }
     localStorage.setItem("plexa_user", userId)
-    return { userId }
+    return fetchServerIdentity({ "X-User-Id": userId })
   }
 
   async logout(): Promise<void> {

@@ -3,7 +3,7 @@ from typing import List
 from datetime import datetime
 from plexa_server.models.session import Session
 from plexa_server.models.message import Message
-from plexa_server.models.lesson import Lesson
+from plexa_server.models.lesson import Lesson, LessonIdentity, LessonIntent
 from plexa_server.models.session import SessionReflectionHook
 from plexa_server.models.course import CourseLessonWindow
 
@@ -27,6 +27,8 @@ class SessionResponse(BaseModel):
     is_finalized: bool
     turned_in_at: datetime | None
     logging_policy: str
+    transcript_available: bool
+    transcript_unavailable_reason: str | None
     reflection_hooks: List[SessionReflectionHook]
 
     @classmethod
@@ -56,14 +58,27 @@ class SessionResponse(BaseModel):
             is_finalized=session.is_finalized,
             turned_in_at=session.turned_in_at,
             logging_policy=session.logging_policy,
+            transcript_available=session.transcript_available,
+            transcript_unavailable_reason=session.transcript_unavailable_reason,
             reflection_hooks=session.reflection_hooks,
         )
+
+
+class LessonSummaryResponse(BaseModel):
+    """Student-safe lesson metadata without private execution configuration."""
+
+    identity: LessonIdentity
+    intent: LessonIntent
+
+    @classmethod
+    def from_lesson(cls, lesson: Lesson) -> "LessonSummaryResponse":
+        return cls(identity=lesson.identity, intent=lesson.intent)
 
 
 class CourseLessonsResponse(BaseModel):
     """Response payload returned when listing lessons bound to a course."""
 
-    lessons: List[Lesson]
+    lessons: List[LessonSummaryResponse]
     lesson_timeline: List[CourseLessonWindow]
     pinned_lesson_id: str | None = None
     pinned_lesson_version: str | None = None
@@ -82,6 +97,46 @@ class CourseInstructorsResponse(BaseModel):
 
     owner_id: str
     instructor_ids: List[str]
+
+
+class CourseSummaryResponse(BaseModel):
+    """Course projection safe for discovery and student navigation."""
+
+    course_id: str
+    title: str
+    description: str | None
+    instructor: str | None
+    term: str | None
+    discoverable: bool
+    archived_at: datetime | None
+    created_at: datetime
+    lessons: dict[str, str]
+    lesson_timeline: List[CourseLessonWindow]
+    viewer_is_owner: bool
+    viewer_is_instructor: bool
+    viewer_is_enrolled: bool
+    viewer_has_pending_request: bool
+
+
+class InstructorCourseResponse(CourseSummaryResponse):
+    """Authorized instructor course projection including roster state."""
+
+    owner_id: str
+    instructor_ids: List[str]
+    enrolled_users: List[str]
+    pending_requests: List[str]
+    revision: int
+
+
+class AuthMeResponse(BaseModel):
+    """Server-authoritative identity and portal capabilities."""
+
+    user_id: str
+    roles: List[str]
+    is_admin: bool
+    can_access_instructor_portal: bool
+    owned_course_ids: List[str]
+    instructed_course_ids: List[str]
 
 
 class EncryptedLogMetadataResponse(BaseModel):
@@ -105,6 +160,7 @@ class EncryptedLogMetadataResponse(BaseModel):
     last_event_type: str
     last_event_at: datetime
     key_id: str
+    content_available: bool
 
 
 class EncryptedLogListResponse(BaseModel):

@@ -83,7 +83,7 @@ plexa_portal/
 From the `plexa_portal` directory:
 
 ```bash
-npm install
+npm ci
 ```
 
 ## Development Server
@@ -149,14 +149,16 @@ The portal supports:
 
 Development mode:
 - uses the local dev login screen
-- stores the active user id in `localStorage`
+- keeps the active user id in browser storage for development only
 - sends `X-User-Id`
+- resolves roles and course capabilities from the server's `/api/v1/auth/me` response
 
 OIDC mode:
 - starts an Authorization Code + PKCE flow
-- exchanges the callback code for tokens
-- stores the active bearer token locally
+- validates callback state and nonce through `oidc-client-ts`
+- stores the OIDC session in `sessionStorage`
 - sends `Authorization: Bearer ...`
+- resolves application authorization from the server rather than trusting token claims in the UI
 
 Production deployments should use OIDC mode.
 
@@ -193,7 +195,6 @@ VITE_AUTH_CLIENT_ID=plexa-portal
 VITE_AUTH_SCOPE=openid profile email
 VITE_AUTH_REDIRECT_URI=https://portal.example.com/auth/callback
 VITE_AUTH_LOGOUT_REDIRECT_URI=https://portal.example.com/login
-VITE_AUTH_USER_ID_CLAIM=sub
 ```
 
 In production mode the portal fails fast on missing required API or auth configuration.

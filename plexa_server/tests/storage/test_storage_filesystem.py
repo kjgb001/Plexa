@@ -16,6 +16,7 @@ from plexa_server.models.course import Course
 from plexa_server.models.encrypted_log import EncryptedLogMetadata
 from plexa_server.models.log_access_audit import EncryptedLogAccessAuditEntry
 from plexa_server.inference.base import InferenceConfig
+from plexa_server.storage.storage_interface import SessionRevisionConflictError
 from plexa_server.tests.fixtures import make_valid_lesson_payload
 
 
@@ -53,10 +54,11 @@ def test_artifact_storage_lesson_roundtrip(tmp_path: Path):
 
     lesson = Lesson.model_validate(make_valid_lesson_payload())
 
-    run(storage.save_lesson(lesson))
+    run(storage.save_lesson(lesson, course_id="CS101"))
     loaded = run(storage.load_lesson(
         lesson.identity.lesson_id,
         lesson.identity.version,
+        course_id="CS101",
     ))
 
     assert loaded is not None
@@ -115,6 +117,37 @@ def test_artifact_storage_log_delete(tmp_path: Path):
     assert run(storage.load_encrypted_log_metadata("abc")) is None
 
 
+def test_artifact_storage_log_expiry_retains_metadata(tmp_path: Path):
+    storage = FileSystemArtifactStorage(tmp_path)
+    metadata = EncryptedLogMetadata(
+        instance_id="expired",
+        user_id="tester",
+        course_id="CS101",
+        lesson_id="lesson-1",
+        lesson_version="0.1.0",
+        course_owner_id="owner-1",
+        authorized_instructor_ids=["owner-1"],
+        created_at="2026-01-01T00:00:00Z",
+        artifact_sha256="abc",
+        last_event_type="closed",
+        key_id="server-managed:v1",
+    )
+    run(storage.save_encrypted_log("expired", b"encrypted", metadata=metadata))
+
+    run(storage.expire_encrypted_log_content("expired"))
+
+    assert run(storage.load_encrypted_log("expired")) is None
+    retained = run(storage.load_encrypted_log_metadata("expired"))
+    assert retained is not None
+    assert retained.content_available is False
+
+    run(storage.save_encrypted_log("expired", b"recreated", metadata=metadata))
+    assert run(storage.load_encrypted_log("expired")) is None
+    retained = run(storage.load_encrypted_log_metadata("expired"))
+    assert retained is not None
+    assert retained.content_available is False
+
+
 def test_artifact_storage_log_access_audit_roundtrip(tmp_path: Path):
     storage = FileSystemArtifactStorage(tmp_path)
     entry = EncryptedLogAccessAuditEntry(
@@ -151,6 +184,23 @@ def test_session_storage_roundtrip(tmp_path: Path):
     assert loaded.user_id == session.user_id
     assert loaded.title == session.title
     assert loaded.updated_at == session.updated_at
+
+
+def test_session_storage_rejects_stale_revision(tmp_path: Path):
+    storage = FileSystemSessionStorage(tmp_path)
+    session = make_valid_session()
+    run(storage.save_session(session))
+    stale = run(storage.get_session(session.session_id))
+    current = run(storage.get_session(session.session_id))
+    assert stale is not None
+    assert current is not None
+
+    current.turn_count = 1
+    run(storage.save_session(current))
+
+    stale.turn_count = 2
+    with pytest.raises(SessionRevisionConflictError):
+        run(storage.save_session(stale))
 
 
 def test_session_storage_delete(tmp_path: Path):
@@ -193,13 +243,16 @@ def test_session_storage_list_sessions(tmp_path: Path):
 
 def test_course_storage_roundtrip(tmp_path: Path, valid_course_payload):
     storage = FileSystemCourseStorage(tmp_path)
+    artifact_storage = FileSystemArtifactStorage(tmp_path)
+    lesson = Lesson.model_validate(make_valid_lesson_payload())
+    run(artifact_storage.save_lesson(lesson, course_id=valid_course_payload["course_id"]))
 
     payload = dict(valid_course_payload)
-    payload["lessons"] = {"lesson-1": "0.1.0"}
+    payload["lessons"] = {lesson.identity.lesson_id: lesson.identity.version}
     payload["lesson_timeline"] = [
         {
-            "lesson_id": "lesson-1",
-            "lesson_version": "0.1.0",
+            "lesson_id": lesson.identity.lesson_id,
+            "lesson_version": lesson.identity.version,
             "starts_at": "2026-01-01T00:00:00Z",
         }
     ]
@@ -212,7 +265,7 @@ def test_course_storage_roundtrip(tmp_path: Path, valid_course_payload):
     assert loaded.course_id == course.course_id
     assert loaded.title == course.title
     assert loaded.instructor_ids == [course.owner_id]
-    assert loaded.lesson_timeline[0].lesson_id == "lesson-1"
+    assert loaded.lesson_timeline[0].lesson_id == lesson.identity.lesson_id
 
 
 def test_course_storage_delete(tmp_path: Path, valid_course_payload):

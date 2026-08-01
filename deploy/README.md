@@ -14,6 +14,9 @@ plexa_server -> OpenAI-compatible inference endpoint
 ```
 
 The inference endpoint is server-side only. It can be an institutional GPU host, a GPU VPS, or another OpenAI-compatible runtime reachable from the Plexa server container.
+Use HTTPS across hosts. For a trusted private network that intentionally uses
+HTTP, pass `--allow-insecure-inference`; never use that override for a public
+inference endpoint.
 
 ## Files
 
@@ -26,6 +29,8 @@ The inference endpoint is server-side only. It can be an institutional GPU host,
 - [smoke-local-prod.sh](smoke-local-prod.sh): guided local production-mode smoke-test flow.
 - [seed-local-prod.sh](seed-local-prod.sh): seeds dev course data inside the local production stack.
 - [check-local-inference.sh](check-local-inference.sh): verifies local inference from the container and `/api/ready`.
+- [backup-production.sh](backup-production.sh): creates a checksummed Postgres dump.
+- [restore-production.sh](restore-production.sh): restores a dump with application writers stopped.
 - [production.env.example](production.env.example): copy this to `deploy/production.env`.
 - [local-production.env.example](local-production.env.example): local production-mode smoke-test config.
 - [Caddyfile](Caddyfile): single-domain static portal and `/api` reverse proxy.
@@ -38,7 +43,8 @@ The inference endpoint is server-side only. It can be an institutional GPU host,
 - A DNS record pointing your domain to the deployment host.
 - Ports `80` and `443` reachable from the public internet if using automatic HTTPS.
 - A configured OpenAI-compatible inference endpoint.
-- A long-lived encrypted log key.
+- An institutional OIDC application registration for real student use.
+- An explicit session-content retention period approved by the institution.
 
 For an internal-only institutional domain, adapt [Caddyfile](Caddyfile) to your
 institutional TLS policy instead of relying on public Let's Encrypt issuance.
@@ -74,14 +80,40 @@ deploy/deploy-production.sh \
   --domain plexa.<institution>.edu \
   --email admin@<institution>.edu \
   --inference-url https://inference.<institution>.edu/v1 \
-  --model <model-name>
+  --model <model-name> \
+  --oidc-authority https://login.<institution>.edu \
+  --oidc-client-id plexa \
+  --oidc-audience plexa-api \
+  --admin-user <initial-admin-subject> \
+  --retention-days 365
 ```
 
 This creates `deploy/production.env`, validates the setup, starts the stack, and
 checks `/api/health`, `/api/ready`, Caddy reachability, and inference reachability.
-It also generates a random Postgres password, generates
-`PLEXA_LOG_ENCRYPTION_KEY`, configures Caddy for the domain, sets
-`VITE_API_BASE_URL=/api`, and enables temporary dev login for smoke testing.
+It also generates a random Postgres password and encrypted-log keyring, stores
+inference credentials in Docker secret files, configures Caddy for the domain,
+sets `VITE_API_BASE_URL=/api`, and configures verified OIDC/JWT authentication.
+
+Before running it, register Plexa as a public Authorization Code + PKCE client
+with the identity provider. Configure these exact browser return URLs:
+
+```text
+Redirect URI: https://plexa.<institution>.edu/auth/callback
+Post-logout URI: https://plexa.<institution>.edu/login
+```
+
+The identity provider must issue access tokens whose `iss` matches its discovery
+document, whose `aud` contains the value passed to `--oidc-audience`, and whose
+subject claim identifies one stable institutional user. Use `--user-id-claim`
+only when the institution intentionally uses a claim other than `sub`.
+The scopes passed with `--oidc-scope` must cause the provider to issue an access
+token for the Plexa API. Provider-specific API scopes or resource configuration
+may be required; an ID token is not accepted as an API credential.
+
+`--admin-user` must be the stable value of the configured user-id claim for the
+person who will bootstrap the first courses. Instead of an individual bootstrap
+admin, an institution can pass both `--roles-claim <claim>` and
+`--admin-role <role-value>` to map an institutional role to Plexa administration.
 
 If the inference endpoint requires a bearer token, put the token in a local file
 that is not committed and pass the file path:
@@ -92,8 +124,17 @@ deploy/deploy-production.sh \
   --email admin@<institution>.edu \
   --inference-url https://inference.<institution>.edu/v1 \
   --api-key /secure/path/inference-api-key \
-  --model <model-name>
+  --model <model-name> \
+  --oidc-authority https://login.<institution>.edu \
+  --oidc-client-id plexa \
+  --oidc-audience plexa-api \
+  --admin-user <initial-admin-subject> \
+  --retention-days 365
 ```
+
+For an HTTP inference endpoint reachable only over a protected institutional
+network, add `--allow-insecure-inference`. The generated server configuration
+otherwise rejects non-HTTPS inference before startup.
 
 If DNS or TLS propagation is not ready yet, start without post-start checks and
 run them later:
@@ -128,7 +169,9 @@ Minimum values to replace:
 - `PLEXA_DATABASE_URL`
 - `PLEXA_DATABASE_SYNC_URL`
 - `PLEXA_CORS_ALLOWED_ORIGINS`
-- `PLEXA_LOG_ENCRYPTION_KEY`
+- OIDC issuer, audience, JWKS, and portal client values
+- encrypted-log keyring and inference API-key secret file paths
+- `PLEXA_CONTENT_RETENTION_DAYS`
 - `PLEXA_INFERENCE_BACKENDS`
 - `PLEXA_INFERENCE_PROFILES`
 
@@ -142,7 +185,19 @@ For a managed or institution-owned external Postgres server:
 
 ## Temporary Dev Login
 
-The initial production stack supports temporary username login for smoke testing.
+Domain production defaults to OIDC. Temporary username login must be requested
+explicitly and is only for a private smoke test:
+
+```bash
+deploy/deploy-production.sh \
+  --domain plexa.<institution>.edu \
+  --email admin@<institution>.edu \
+  --inference-url https://inference.<institution>.edu/v1 \
+  --model <model-name> \
+  --retention-days 30 \
+  --temporary-dev-login \
+  --admin-user admin
+```
 
 Server settings:
 
@@ -158,7 +213,8 @@ VITE_AUTH_MODE=dev
 VITE_ENABLE_DEV_LOGIN=true
 ```
 
-This is not institutional auth. Replace it before real student use. Future production deployments should move to institutional OIDC/SAML/LMS-backed identity.
+This trusts a browser-supplied username header. It is not institutional auth and
+must never be exposed to real students.
 
 To disable temporary dev login later:
 
@@ -169,7 +225,9 @@ VITE_AUTH_MODE=oidc
 VITE_ENABLE_DEV_LOGIN=false
 ```
 
-Then configure the corresponding JWT/OIDC values documented in the server and portal READMEs.
+Regenerate the env with the normal OIDC flags rather than hand-switching only
+these four values; issuer, audience, JWKS, redirect, and client settings are all
+required together.
 
 ## Start
 
@@ -308,15 +366,15 @@ Validate the deployment helpers without starting services:
 
 ```bash
 bash -n deploy/*.sh deploy/lib/*.sh
-deploy/create-production-env.sh --domain plexa.example.edu --email admin@example.edu --inference-url https://inference.example.edu/v1 --model llama3.1 --timeout 30 --output /tmp/plexa-production.env --force
+deploy/create-production-env.sh --domain plexa.example.test --email ci@example.org --inference-url https://inference.example.test/v1 --model llama3.1 --timeout 30 --retention-days 30 --temporary-dev-login --admin-user ci-admin --output /tmp/plexa-production.env --force
 deploy/create-production-env.sh --local --model llama3.1 --output /tmp/plexa-local-production.env --force
 deploy/check-production-config.sh /tmp/plexa-production.env
 deploy/check-production-config.sh /tmp/plexa-local-production.env
 ```
 
-`deploy/check-production-config.sh` prints the fully rendered Compose config,
-including resolved environment values. Do not paste real production output in
-public channels.
+`deploy/check-production-config.sh` validates quietly by default. Pass `--show`
+before the env-file argument only when you intentionally need the fully rendered
+Compose config; that output can contain resolved secrets and must not be shared.
 
 Validate the portal build:
 
@@ -363,7 +421,11 @@ docker compose --env-file deploy/production.env -f docker-compose.prod.yml run -
 
 - Do not commit `deploy/production.env`.
 - Keep the Postgres port private unless your institution explicitly manages database networking.
-- Back up the Postgres volume or external database on an institutional schedule.
-- Keep `PLEXA_LOG_ENCRYPTION_KEY` stable and backed up securely. Losing it makes encrypted session logs unreadable.
+- Keep `PLEXA_WEB_CONCURRENCY=1`; process-local session locks, disabled transcripts, and rate limits are not coordinated across workers yet.
+- `logging_policy=disabled` persists session metadata and reflections but no transcript messages. The transcript exists only in web-process memory and is lost on restart.
+- Existing sessions keep a private snapshot of their lesson and inference config. Editing a lesson affects new sessions only.
+- Retention cleanup removes transcript/reflection content and encrypted payloads after `PLEXA_CONTENT_RETENTION_DAYS`, while preserving content-free submission metadata.
+- Run `deploy/backup-production.sh deploy/production.env` on an institutional schedule and test `deploy/restore-production.sh deploy/production.env <dump> --confirm` before release.
+- Back up `deploy/production.env` and the files under `deploy/secrets/` separately from the database. Losing the encrypted-log keyring makes retained logs unreadable.
 - Prefer network paths where only `plexa_server` can reach the inference endpoint.
 - Caddy manages certificates automatically when `PLEXA_SITE_ADDRESS` is a real public domain and ports `80`/`443` are reachable.

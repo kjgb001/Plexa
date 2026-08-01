@@ -26,6 +26,8 @@ class AuthConfig:
     jwks_file: str | None = None
     jwks_url: str | None = None
     jwks_refresh_s: int = 300
+    clock_skew_s: int = 30
+    require_exp: bool = False
     user_header_name: str = "X-User-Id"
     authorization_header_name: str = "Authorization"
 
@@ -85,6 +87,9 @@ def load_auth_config() -> AuthConfig:
         jwks_file=(os.getenv("PLEXA_AUTH_JWKS_FILE") or "").strip() or None,
         jwks_url=(os.getenv("PLEXA_AUTH_JWKS_URL") or "").strip() or None,
         jwks_refresh_s=int(os.getenv("PLEXA_AUTH_JWKS_REFRESH_S", "300")),
+        clock_skew_s=int(os.getenv("PLEXA_AUTH_CLOCK_SKEW_S", "30")),
+        require_exp=os.getenv("PLEXA_AUTH_REQUIRE_EXP", "false").strip().lower()
+        in {"1", "true", "yes", "on"},
         user_header_name=os.getenv("PLEXA_AUTH_USER_HEADER_NAME", "X-User-Id").strip() or "X-User-Id",
         authorization_header_name=(
             os.getenv("PLEXA_AUTH_AUTHORIZATION_HEADER_NAME", "Authorization").strip()

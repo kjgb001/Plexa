@@ -7,6 +7,7 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 from urllib.request import Request as UrlRequest, urlopen
 
 from cryptography.hazmat.primitives import hashes, serialization
@@ -60,23 +61,39 @@ class _JwksResolver:
         self._cached_jwks: dict[str, object] | None = None
         self._cached_at = 0.0
 
-    def _load_jwks(self) -> dict[str, object]:
+    def _load_jwks(self, force_refresh: bool = False) -> dict[str, object]:
         now = time.time()
-        if self._cached_jwks is not None and (now - self._cached_at) < self._config.jwks_refresh_s:
+        if (
+            not force_refresh
+            and self._cached_jwks is not None
+            and (now - self._cached_at) < self._config.jwks_refresh_s
+        ):
             return self._cached_jwks
 
-        if self._config.jwks_json:
-            jwks = json.loads(self._config.jwks_json)
-        elif self._config.jwks_file:
-            jwks = _load_json_file(self._config.jwks_file)
-        elif self._config.jwks_url:
-            request = UrlRequest(self._config.jwks_url, headers={"Accept": "application/json"})
-            with urlopen(request, timeout=5) as response:
-                jwks = json.loads(response.read().decode("utf-8"))
-        else:
-            raise AuthConfigurationError(
-                "Bearer JWT auth requires JWKS, public key PEM, or shared secret configuration."
-            )
+        try:
+            if self._config.jwks_json:
+                jwks = json.loads(self._config.jwks_json)
+            elif self._config.jwks_file:
+                jwks = _load_json_file(self._config.jwks_file)
+            elif self._config.jwks_url:
+                request = UrlRequest(self._config.jwks_url, headers={"Accept": "application/json"})
+                with urlopen(request, timeout=5) as response:
+                    if (
+                        urlsplit(self._config.jwks_url).scheme == "https"
+                        and urlsplit(response.geturl()).scheme != "https"
+                    ):
+                        raise AuthConfigurationError(
+                            "JWKS HTTPS requests may not redirect to an insecure transport."
+                        )
+                    jwks = json.loads(response.read().decode("utf-8"))
+            else:
+                raise AuthConfigurationError(
+                    "Bearer JWT auth requires JWKS, public key PEM, or shared secret configuration."
+                )
+        except AuthConfigurationError:
+            raise
+        except (OSError, ValueError) as exc:
+            raise AuthConfigurationError("Unable to load the configured JWKS document.") from exc
 
         if not isinstance(jwks, dict) or not isinstance(jwks.get("keys"), list):
             raise AuthConfigurationError("Configured JWKS must be a JSON object containing a 'keys' list.")
@@ -100,19 +117,32 @@ class _JwksResolver:
                 candidate = key
                 break
 
+        if candidate is None and self._config.jwks_url:
+            keys = self._load_jwks(force_refresh=True)["keys"]
+            for key in keys:
+                if isinstance(key, dict) and (kid is None or key.get("kid") == kid):
+                    candidate = key
+                    break
         if candidate is None:
             raise AuthVerificationError("No matching JWKS key found for JWT.")
         if candidate.get("kty") != "RSA":
             raise AuthVerificationError("Only RSA JWKS keys are currently supported.")
+        if candidate.get("use") not in {None, "sig"}:
+            raise AuthVerificationError("JWKS key is not authorized for signatures.")
+        if candidate.get("alg") not in {None, "RS256"}:
+            raise AuthVerificationError("JWKS key is not authorized for RS256.")
 
         n = candidate.get("n")
         e = candidate.get("e")
         if not isinstance(n, str) or not isinstance(e, str):
             raise AuthVerificationError("RSA JWKS key must contain 'n' and 'e'.")
 
-        modulus = int.from_bytes(_b64url_decode(n), "big")
-        exponent = int.from_bytes(_b64url_decode(e), "big")
-        return rsa.RSAPublicNumbers(exponent, modulus).public_key()
+        try:
+            modulus = int.from_bytes(_b64url_decode(n), "big")
+            exponent = int.from_bytes(_b64url_decode(e), "big")
+            return rsa.RSAPublicNumbers(exponent, modulus).public_key()
+        except (TypeError, ValueError) as exc:
+            raise AuthConfigurationError("Configured JWKS contains an invalid RSA key.") from exc
 
 
 class BearerJwtAuthenticator(RequestAuthenticator):
@@ -166,6 +196,7 @@ class BearerJwtAuthenticator(RequestAuthenticator):
         try:
             header = json.loads(_b64url_decode(header_segment))
             payload = json.loads(_b64url_decode(payload_segment))
+            signature = _b64url_decode(signature_segment)
         except (ValueError, json.JSONDecodeError) as exc:
             raise AuthVerificationError("JWT header or payload is not valid JSON.") from exc
 
@@ -176,7 +207,7 @@ class BearerJwtAuthenticator(RequestAuthenticator):
             raw_header=header,
             raw_payload=payload,
             signing_input=f"{header_segment}.{payload_segment}".encode("utf-8"),
-            signature=_b64url_decode(signature_segment),
+            signature=signature,
         )
 
     def _verify_hs256(self, parts: _JwtParts) -> None:
@@ -226,13 +257,21 @@ class BearerJwtAuthenticator(RequestAuthenticator):
         now = int(time.time())
 
         exp = payload.get("exp")
+        if exp is None and self._config.require_exp:
+            raise AuthVerificationError("JWT missing required expiration claim.")
         if exp is not None:
-            if not isinstance(exp, (int, float)) or int(exp) <= now:
+            if (
+                not isinstance(exp, (int, float))
+                or int(exp) <= now - self._config.clock_skew_s
+            ):
                 raise AuthVerificationError("JWT is expired.")
 
         nbf = payload.get("nbf")
         if nbf is not None:
-            if not isinstance(nbf, (int, float)) or int(nbf) > now:
+            if (
+                not isinstance(nbf, (int, float))
+                or int(nbf) > now + self._config.clock_skew_s
+            ):
                 raise AuthVerificationError("JWT is not yet valid.")
 
         issuer = self._config.issuer
@@ -253,11 +292,15 @@ class BearerJwtAuthenticator(RequestAuthenticator):
 
     def _build_identity(self, payload: dict[str, object]) -> UserIdentity:
         user_value = payload.get(self._config.user_id_claim)
-        user_id = user_value if isinstance(user_value, str) and user_value.strip() else None
+        user_id = user_value.strip() if isinstance(user_value, str) and user_value.strip() else None
         if user_id is None:
             raise AuthVerificationError(
                 f"JWT payload missing required user id claim '{self._config.user_id_claim}'."
             )
+        if len(user_id) > 255 or any(
+            ord(character) < 32 or ord(character) == 127 for character in user_id
+        ):
+            raise AuthVerificationError("JWT user id claim is not a valid Plexa identifier.")
 
         roles = {"user"}
         if self._config.roles_claim is not None:

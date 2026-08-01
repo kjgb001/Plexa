@@ -13,6 +13,7 @@ from plexa_server.runtime import (
     validate_production_inference_configuration,
     validate_production_runtime_configuration,
 )
+from plexa_server.observability import configure_json_logging
 
 
 def _load_json_env(name: str):
@@ -38,7 +39,17 @@ def _build_backend_from_spec(spec: dict) -> object:
         if not isinstance(base_url, str) or not base_url.strip():
             raise ValueError("OpenAI-compatible backend spec requires a non-empty base_url.")
         timeout_s = float(spec.get("timeout_s", 30.0))
+        if timeout_s <= 0:
+            raise ValueError("OpenAI-compatible backend timeout_s must be greater than zero.")
         api_key = spec.get("api_key")
+        api_key_file = spec.get("api_key_file")
+        if api_key is not None and api_key_file is not None:
+            raise ValueError("Inference backend may set api_key or api_key_file, not both.")
+        if api_key_file is not None:
+            if not isinstance(api_key_file, str) or not api_key_file.strip():
+                raise ValueError("Inference backend api_key_file must be a non-empty path.")
+            raw_key = __import__("pathlib").Path(api_key_file).read_text(encoding="utf-8").strip()
+            api_key = raw_key or None
         if api_key is not None and not isinstance(api_key, str):
             raise ValueError("OpenAI-compatible backend api_key must be a string when provided.")
         return OpenAICompatibleInference(
@@ -180,6 +191,8 @@ def create_required_backend_ids() -> set[str] | None:
 def create_app():
     """Create the default application instance backed by the configured inference router."""
     load_server_env_file()
+    if os.getenv("PLEXA_LOG_FORMAT", "json").strip().lower() == "json":
+        configure_json_logging()
     validate_production_runtime_configuration()
     validate_production_inference_configuration()
     return build_app(

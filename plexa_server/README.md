@@ -83,6 +83,10 @@ Important variables:
 - `PLEXA_AUTH_MODE`
 - `PLEXA_ADMIN_USER_IDS`
 - `PLEXA_CORS_ALLOWED_ORIGINS`
+- `PLEXA_LOG_ENCRYPTION_KEYS_FILE`
+- `PLEXA_LOG_ENCRYPTION_ACTIVE_KEY_ID`
+- `PLEXA_CONTENT_RETENTION_DAYS`
+- `PLEXA_WEB_CONCURRENCY`
 - `PLEXA_INFERENCE_BACKENDS`
 - `PLEXA_INFERENCE_PROFILES`
 - `PLEXA_INFERENCE_REQUIRED_BACKENDS`
@@ -220,7 +224,10 @@ In production, startup fails closed when critical configuration is missing or un
 - `PLEXA_AUTH_MODE`
   - `dev-header` is rejected unless `PLEXA_ENABLE_DEV_LOGIN=true`
 - `PLEXA_CORS_ALLOWED_ORIGINS`
-- `PLEXA_LOG_ENCRYPTION_KEY`
+- an encrypted-log keyring file and active key id
+- a positive `PLEXA_CONTENT_RETENTION_DAYS`
+- verified JWT issuer, audience, JWKS URL, RS256, and expiration enforcement for bearer auth
+- `PLEXA_WEB_CONCURRENCY=1`
 - real inference configuration
   - production cannot fall back to stub inference
 
@@ -236,7 +243,18 @@ Reload is disabled by default. Only enable it intentionally with:
 PLEXA_UVICORN_RELOAD=true
 ```
 
-The repository does not currently prescribe one deployment stack or process manager beyond that. The important requirement is that production config be injected explicitly rather than relying on bootstrap-generated local defaults.
+The supported initial release stack is documented in [../deploy/README.md](../deploy/README.md).
+It intentionally runs one web worker because session locks, in-memory disabled
+transcripts, rate limits, and inference concurrency counters are process-local.
+
+### Data Boundaries
+
+- Student lesson APIs expose lesson identity and intent, not execution/system prompts.
+- Course owners and global admins can author or bind course-scoped lessons; co-instructors cannot.
+- Lesson artifacts are mutable, but each session freezes a private lesson and inference snapshot at creation.
+- Removing a learner from a course revokes access to that learner's existing sessions immediately.
+- `logging_policy=disabled` persists metadata and reflection state only. Transcript messages are held in the single web process and disappear on restart.
+- Retention cleanup removes transcript/reflection content and encrypted payloads while retaining content-free session/log metadata.
 
 ### Production Database Configuration
 

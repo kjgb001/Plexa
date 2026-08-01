@@ -4,8 +4,10 @@ from datetime import UTC, datetime
 from typing import Any, Iterable, Optional
 
 from sqlalchemy import delete, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from plexa_server.db.models import (
     CourseEnrollmentRecord,
@@ -30,7 +32,15 @@ from plexa_server.models.lesson import Lesson
 from plexa_server.models.message import Message
 from plexa_server.models.session import Session
 from plexa_server.models.workspace_state import UserCourseState, UserLessonState
-from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage, SessionStorage, WorkspaceStateStorage
+from plexa_server.storage.storage_interface import (
+    ArtifactStorage,
+    CourseRevisionConflictError,
+    CourseStorage,
+    LessonRevisionConflictError,
+    SessionRevisionConflictError,
+    SessionStorage,
+    WorkspaceStateStorage,
+)
 
 
 def _lesson_to_record_payload(lesson: Lesson) -> dict[str, Any]:
@@ -93,6 +103,19 @@ def _session_from_record(record: SessionRecord) -> Session:
         is_finalized=record.is_finalized,
         turned_in_at=record.turned_in_at,
         logging_policy=record.logging_policy,
+        lesson_snapshot=(
+            None if record.lesson_snapshot is None else Lesson.model_validate(record.lesson_snapshot)
+        ),
+        lesson_artifact_revision=record.lesson_artifact_revision,
+        lesson_content_sha256=record.lesson_content_sha256,
+        frozen_inference_config=(
+            None
+            if record.frozen_inference_config is None
+            else InferenceConfig.model_validate(record.frozen_inference_config)
+        ),
+        transcript_available=record.transcript_available,
+        transcript_unavailable_reason=record.transcript_unavailable_reason,
+        persistence_revision=record.persistence_revision,
         reflection_hooks=record.reflection_hooks,
     )
 
@@ -119,6 +142,8 @@ def _course_from_record(record: CourseRecord) -> Course:
         owner_id=record.owner.external_user_id,
         instructor_ids=[instructor.user.external_user_id for instructor in record.instructors],
         discoverable=record.discoverable,
+        revision=record.revision,
+        archived_at=record.archived_at,
         enrolled_users=[enrollment.user.external_user_id for enrollment in record.enrollments],
         pending_requests=[request.user.external_user_id for request in record.pending_requests],
         created_at=record.created_at,
@@ -152,15 +177,15 @@ class PostgresStorageMixin:
         Returns:
             UserRecord: Existing or newly created user row.
         """
+        await session.execute(
+            pg_insert(UserRecord)
+            .values(external_user_id=external_user_id, created_at=datetime.now(UTC))
+            .on_conflict_do_nothing(index_elements=[UserRecord.external_user_id])
+        )
         result = await session.execute(
             select(UserRecord).where(UserRecord.external_user_id == external_user_id)
         )
-        user = result.scalar_one_or_none()
-        if user is None:
-            user = UserRecord(external_user_id=external_user_id)
-            session.add(user)
-            await session.flush()
-        return user
+        return result.scalar_one()
 
     async def _get_or_create_course(
         self,
@@ -217,28 +242,54 @@ class PostgresStorageMixin:
 class PostgresArtifactStorage(PostgresStorageMixin, ArtifactStorage):
     """Postgres-backed storage for lessons and encrypted logs."""
 
-    async def save_lesson(self, lesson: Lesson) -> None:
+    async def save_lesson(
+        self,
+        lesson: Lesson,
+        course_id: str,
+        expected_revision: int | None = None,
+    ) -> int:
         """Persist a lesson artifact.
 
         Args:
             lesson: Lesson document to store.
+            course_id: Course that owns the mutable artifact.
         """
         async with self._session_factory() as session:
-            result = await session.execute(
-                select(LessonRecord).where(
-                    LessonRecord.lesson_id == lesson.identity.lesson_id,
-                    LessonRecord.version == lesson.identity.version,
-                )
+            owner_result = await session.execute(
+                select(CourseRecord).where(CourseRecord.course_id == course_id)
             )
+            owner_record = owner_result.scalar_one_or_none()
+            if owner_record is None:
+                raise ValueError(f"Course {course_id} does not exist.")
+            statement = select(LessonRecord).where(
+                LessonRecord.lesson_id == lesson.identity.lesson_id,
+                LessonRecord.version == lesson.identity.version,
+            )
+            statement = statement.where(LessonRecord.owning_course_id == owner_record.id)
+            result = await session.execute(statement.with_for_update())
             record = result.scalar_one_or_none()
             payload = _lesson_to_record_payload(lesson)
 
             if record is None:
+                if expected_revision is not None:
+                    raise LessonRevisionConflictError(
+                        "Lesson no longer exists; reload before saving."
+                    )
                 record = LessonRecord(
                     lesson_id=lesson.identity.lesson_id,
                     version=lesson.identity.version,
+                    owning_course_id=owner_record.id,
                 )
                 session.add(record)
+            else:
+                if (
+                    expected_revision is not None
+                    and record.artifact_revision != expected_revision
+                ):
+                    raise LessonRevisionConflictError(
+                        f"Lesson changed since revision {expected_revision}; reload and retry."
+                    )
+                record.artifact_revision += 1
 
             record.title = lesson.identity.title
             record.author = lesson.identity.author
@@ -252,10 +303,23 @@ class PostgresArtifactStorage(PostgresStorageMixin, ArtifactStorage):
             record.approximate_time = lesson.intent.approximate_time
             record.schema_version = lesson.schema_version
             record.payload = payload
+            record.updated_at = datetime.now(UTC)
 
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                raise LessonRevisionConflictError(
+                    "Lesson was created concurrently; reload before saving."
+                ) from exc
+            return record.artifact_revision
 
-    async def load_lesson(self, lesson_id: str, version: str) -> Optional[Lesson]:
+    async def load_lesson(
+        self,
+        lesson_id: str,
+        version: str,
+        course_id: str,
+    ) -> Optional[Lesson]:
         """Load a lesson artifact by identifier and version.
 
         Args:
@@ -266,16 +330,35 @@ class PostgresArtifactStorage(PostgresStorageMixin, ArtifactStorage):
             Optional[Lesson]: Stored lesson document, or `None` if absent.
         """
         async with self._session_factory() as session:
-            result = await session.execute(
-                select(LessonRecord).where(
-                    LessonRecord.lesson_id == lesson_id,
-                    LessonRecord.version == version,
-                )
+            statement = select(LessonRecord).where(
+                LessonRecord.lesson_id == lesson_id,
+                LessonRecord.version == version,
             )
+            statement = statement.join(
+                CourseRecord, CourseRecord.id == LessonRecord.owning_course_id
+            ).where(CourseRecord.course_id == course_id)
+            result = await session.execute(statement.order_by(LessonRecord.id).limit(1))
             record = result.scalar_one_or_none()
             if record is None:
                 return None
             return Lesson.model_validate(record.payload)
+
+    async def get_lesson_revision(
+        self,
+        lesson_id: str,
+        version: str,
+        course_id: str,
+    ) -> int | None:
+        async with self._session_factory() as session:
+            statement = select(LessonRecord.artifact_revision).where(
+                LessonRecord.lesson_id == lesson_id,
+                LessonRecord.version == version,
+            )
+            statement = statement.join(
+                CourseRecord, CourseRecord.id == LessonRecord.owning_course_id
+            ).where(CourseRecord.course_id == course_id)
+            result = await session.execute(statement.order_by(LessonRecord.id).limit(1))
+            return result.scalar_one_or_none()
 
     async def save_encrypted_log(
         self,
@@ -299,7 +382,10 @@ class PostgresArtifactStorage(PostgresStorageMixin, ArtifactStorage):
                 record = EncryptedLogRecord(instance_id=instance_id, encrypted_blob=encrypted_blob)
                 session.add(record)
             else:
+                if not record.content_available:
+                    return
                 record.encrypted_blob = encrypted_blob
+            record.content_available = True
             if metadata is not None:
                 record.user_id = metadata.user_id
                 record.course_id = metadata.course_id
@@ -371,6 +457,7 @@ class PostgresArtifactStorage(PostgresStorageMixin, ArtifactStorage):
                 last_event_type=record.last_event_type,
                 last_event_at=record.last_event_at,
                 key_id=record.key_id,
+                content_available=record.content_available,
             )
 
     async def list_encrypted_log_metadata(
@@ -436,6 +523,7 @@ class PostgresArtifactStorage(PostgresStorageMixin, ArtifactStorage):
                         last_event_type=record.last_event_type,
                         last_event_at=record.last_event_at,
                         key_id=record.key_id,
+                        content_available=record.content_available,
                     )
                 )
             return metadata
@@ -451,6 +539,18 @@ class PostgresArtifactStorage(PostgresStorageMixin, ArtifactStorage):
                 delete(EncryptedLogRecord).where(EncryptedLogRecord.instance_id == instance_id)
             )
             await session.commit()
+
+    async def expire_encrypted_log_content(self, instance_id: str) -> None:
+        """Delete encrypted content while retaining its lookup metadata."""
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(EncryptedLogRecord).where(EncryptedLogRecord.instance_id == instance_id)
+            )
+            record = result.scalar_one_or_none()
+            if record is not None:
+                record.encrypted_blob = None
+                record.content_available = False
+                await session.commit()
 
     async def save_encrypted_log_access_audit(
         self,
@@ -570,6 +670,18 @@ class PostgresCourseStorage(PostgresStorageMixin, CourseStorage):
                     lesson_bindings=[],
                 )
                 session.add(record)
+                record.revision = 0
+            else:
+                locked_revision = await session.scalar(
+                    select(CourseRecord.revision)
+                    .where(CourseRecord.id == record.id)
+                    .with_for_update()
+                )
+                if locked_revision != course.revision:
+                    raise CourseRevisionConflictError(
+                        f"Course changed since revision {course.revision}; reload and retry."
+                    )
+                record.revision = course.revision + 1
 
             record.title = course.title
             record.description = course.description
@@ -577,10 +689,17 @@ class PostgresCourseStorage(PostgresStorageMixin, CourseStorage):
             record.term = course.term
             record.owner = owner
             record.discoverable = course.discoverable
+            record.archived_at = course.archived_at
             record.lesson_timeline = [window.model_dump(mode="json") for window in course.lesson_timeline]
             record.created_at = course.created_at
 
-            await session.flush()
+            try:
+                await session.flush()
+            except IntegrityError as exc:
+                await session.rollback()
+                raise CourseRevisionConflictError(
+                    "Course was created concurrently; reload before saving."
+                ) from exc
 
             if not is_new:
                 await session.execute(
@@ -624,15 +743,26 @@ class PostgresCourseStorage(PostgresStorageMixin, CourseStorage):
             for lesson_id, version in course.lessons.items():
                 lesson_result = await session.execute(
                     select(LessonRecord).where(
+                        LessonRecord.owning_course_id == record.id,
                         LessonRecord.lesson_id == lesson_id,
                         LessonRecord.version == version,
                     )
                 )
                 lesson = lesson_result.scalar_one_or_none()
-                if lesson is not None:
-                    record.lesson_bindings.append(CourseLessonRecord(lesson=lesson))
+                if lesson is None:
+                    raise ValueError(
+                        f"Lesson {lesson_id}@{version} does not exist for course {course.course_id}."
+                    )
+                record.lesson_bindings.append(CourseLessonRecord(lesson=lesson))
 
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                raise CourseRevisionConflictError(
+                    "Course changed concurrently; reload before saving."
+                ) from exc
+            course.revision = record.revision
 
     async def get_course(self, course_id: str) -> Optional[Course]:
         """Load a course by id.
@@ -676,46 +806,6 @@ class PostgresCourseStorage(PostgresStorageMixin, CourseStorage):
             records = result.scalars().all()
             return [_course_from_record(record) for record in records]
 
-    async def bind_lesson_to_course(self, course_id: str, lesson_id: str, version: str) -> None:
-        """Bind a lesson version into a course document.
-
-        Args:
-            course_id: Identifier of the course to update.
-            lesson_id: Lesson identifier to bind.
-            version: Lesson version to store.
-        """
-        async with self._session_factory() as session:
-            course = await self._get_course_record(session, course_id)
-            if course is None:
-                return
-
-            lesson_result = await session.execute(
-                select(LessonRecord).where(
-                    LessonRecord.lesson_id == lesson_id,
-                    LessonRecord.version == version,
-                )
-            )
-            lesson = lesson_result.scalar_one_or_none()
-            if lesson is None:
-                return
-
-            existing = next(
-                (binding for binding in course.lesson_bindings if binding.lesson.lesson_id == lesson_id),
-                None,
-            )
-            if existing is not None:
-                existing.lesson = lesson
-            else:
-                course.lesson_bindings.append(CourseLessonRecord(lesson=lesson))
-
-            course.lesson_timeline = [
-                window
-                for window in course.lesson_timeline
-                if window["lesson_id"] != lesson_id
-            ]
-
-            await session.commit()
-
     async def health_check(self) -> bool:
         """Report whether course storage is reachable.
 
@@ -732,6 +822,7 @@ class PostgresSessionStorage(PostgresStorageMixin, SessionStorage):
         self,
         session: AsyncSession,
         session_id: str,
+        for_update: bool = False,
     ) -> SessionRecord | None:
         """Load a session row with related data.
 
@@ -742,7 +833,7 @@ class PostgresSessionStorage(PostgresStorageMixin, SessionStorage):
         Returns:
             SessionRecord | None: Loaded session row, or `None` if absent.
         """
-        result = await session.execute(
+        statement = (
             select(SessionRecord)
             .options(
                 selectinload(SessionRecord.user),
@@ -752,6 +843,9 @@ class PostgresSessionStorage(PostgresStorageMixin, SessionStorage):
             )
             .where(SessionRecord.session_id == session_id)
         )
+        if for_update:
+            statement = statement.with_for_update()
+        result = await session.execute(statement)
         return result.scalar_one_or_none()
 
     async def save_session(self, session_model: Session) -> None:
@@ -766,6 +860,7 @@ class PostgresSessionStorage(PostgresStorageMixin, SessionStorage):
 
             lesson_result = await session.execute(
                 select(LessonRecord).where(
+                    LessonRecord.owning_course_id == course.id,
                     LessonRecord.lesson_id == session_model.lesson_id,
                     LessonRecord.version == session_model.lesson_version,
                 )
@@ -776,14 +871,34 @@ class PostgresSessionStorage(PostgresStorageMixin, SessionStorage):
                     f"Lesson {session_model.lesson_id}@{session_model.lesson_version} does not exist."
                 )
 
-            record = await self._get_session_record(session, session_model.session_id)
+            record = await self._get_session_record(
+                session, session_model.session_id, for_update=True
+            )
             is_new = record is None
             if is_new:
+                binding_result = await session.execute(
+                    select(CourseLessonRecord).where(
+                        CourseLessonRecord.course_id == course.id,
+                        CourseLessonRecord.lesson_id == lesson.id,
+                    )
+                )
+                if binding_result.scalar_one_or_none() is None:
+                    raise ValueError(
+                        f"Lesson {session_model.lesson_id}@{session_model.lesson_version} "
+                        f"is not bound to course {session_model.course_id}."
+                    )
                 record = SessionRecord(
                     session_id=session_model.session_id,
                     messages=[],
                 )
                 session.add(record)
+                record.persistence_revision = 0
+            elif record.persistence_revision != session_model.persistence_revision:
+                raise SessionRevisionConflictError(
+                    "Session changed concurrently; reload and retry."
+                )
+            else:
+                record.persistence_revision += 1
 
             record.user = user
             record.course = course
@@ -801,6 +916,17 @@ class PostgresSessionStorage(PostgresStorageMixin, SessionStorage):
             record.turned_in_at = session_model.turned_in_at
             record.logging_policy = session_model.logging_policy
             record.reflection_hooks = [hook.model_dump(mode="json") for hook in session_model.reflection_hooks]
+            record.lesson_snapshot = (
+                None
+                if session_model.lesson_snapshot is None
+                else session_model.lesson_snapshot.model_dump(mode="json")
+            )
+            record.lesson_artifact_revision = session_model.lesson_artifact_revision
+            record.lesson_content_sha256 = session_model.lesson_content_sha256
+            record.transcript_available = session_model.transcript_available
+            record.transcript_unavailable_reason = session_model.transcript_unavailable_reason
+            if session_model.frozen_inference_config is not None:
+                record.frozen_inference_config = session_model.frozen_inference_config.model_dump(mode="json")
 
             await session.flush()
 
@@ -812,7 +938,10 @@ class PostgresSessionStorage(PostgresStorageMixin, SessionStorage):
                 )
                 await session.flush()
                 record.messages = []
-            for index, message in enumerate(session_model.messages):
+            persisted_messages = [] if session_model.logging_policy == "disabled" else [
+                message for message in session_model.messages if message.role != "system"
+            ]
+            for index, message in enumerate(persisted_messages):
                 record.messages.append(
                     MessageRecord(
                         message_id=message.message_id,
@@ -825,6 +954,7 @@ class PostgresSessionStorage(PostgresStorageMixin, SessionStorage):
                 )
 
             await session.commit()
+            session_model.persistence_revision = record.persistence_revision
 
     async def get_session(self, session_id: str) -> Optional[Session]:
         """Load a session by id.

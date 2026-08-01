@@ -54,6 +54,7 @@ async def seed_course(
     lesson_timeline: list[dict],
     owner_id: str | None,
     instructor_name: str | None,
+    artifact_storage: ArtifactStorage,
     course_storage: CourseStorage,
 ) -> None:
     """Create a development course and bind the supplied lesson versions."""
@@ -68,20 +69,36 @@ async def seed_course(
     if instructor_name:
         payload["instructor"] = instructor_name
 
-    for lesson in lessons:
-        payload["lessons"][lesson.identity.lesson_id] = lesson.identity.version
-    payload["lesson_timeline"] = lesson_timeline
+    existing = await course_storage.get_course(payload["course_id"])
+    if existing is not None:
+        payload["revision"] = existing.revision
+        payload["created_at"] = existing.created_at
+    shell = Course.model_validate(payload)
+    await course_storage.save_course(shell)
 
-    course = Course.model_validate(payload)
+    for lesson in lessons:
+        await artifact_storage.save_lesson(lesson, course_id=shell.course_id)
+
+    course = await course_storage.get_course(shell.course_id)
+    if course is None:
+        raise RuntimeError(f"Failed to create seed course {shell.course_id}.")
+    course = Course.model_validate(
+        {
+            **course.model_dump(),
+            "lessons": {
+                lesson.identity.lesson_id: lesson.identity.version for lesson in lessons
+            },
+            "lesson_timeline": lesson_timeline,
+        }
+    )
     await course_storage.save_course(course)
 
 
 async def seed_lesson(
     lesson_id: str,
     lesson_version: str,
-    artifact_storage: ArtifactStorage,
 ) -> Lesson:
-    """Create and persist a seeded lesson with an explicit inference profile."""
+    """Create a seeded lesson with an explicit inference profile."""
     expected_version = SEEDED_LESSON_SPECS.get(lesson_id, {}).get("version", lesson_version)
     if lesson_version != expected_version:
         raise ValueError(
@@ -90,7 +107,6 @@ async def seed_lesson(
         )
 
     lesson = Lesson.model_validate(make_seeded_lesson_payload(lesson_id, lesson_version))
-    await artifact_storage.save_lesson(lesson)
     return lesson
 
 
@@ -113,7 +129,7 @@ async def seed_storages(
         lessons: list[Lesson] = []
         for lesson_id in course_spec["lesson_ids"]:
             lesson_version = SEEDED_LESSON_SPECS[lesson_id]["version"]
-            lessons.append(await seed_lesson(lesson_id, lesson_version, artifact_storage))
+            lessons.append(await seed_lesson(lesson_id, lesson_version))
         await seed_course(
             lessons=lessons,
             course_title=course_spec["course_title"],
@@ -121,6 +137,7 @@ async def seed_storages(
             lesson_timeline=course_spec.get("lesson_timeline", []),
             owner_id=course_spec.get("owner_id"),
             instructor_name=course_spec.get("instructor"),
+            artifact_storage=artifact_storage,
             course_storage=course_storage,
         )
 

@@ -1,7 +1,11 @@
 import json
 import os
+import logging
+from time import monotonic
+from uuid import uuid4
 from pathlib import Path
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from plexa_server.core.sessions import SessionManager
@@ -22,6 +26,7 @@ from plexa_server.api.routes.sessions import get_sessions_router
 from plexa_server.api.routes.health import get_health_router
 from plexa_server.api.routes.admin import get_admin_router
 from plexa_server.api.routes.courses import get_course_router
+from plexa_server.api.routes.auth import get_auth_router
 from plexa_server.auth.factory import create_request_authenticator
 from plexa_server.auth.middleware import create_auth_identity_middleware
 from plexa_server.core.encrypted_logs import EncryptedLogService
@@ -33,6 +38,7 @@ from plexa_server.utils.filesystem_data_dir import get_data_dir_path
 DATA_PATH = get_data_dir_path()
 APP_VERSION = "0.1.0"
 API_VERSION = "v1"
+logger = logging.getLogger(__name__)
 
 
 def _load_cors_allowed_origins() -> list[str]:
@@ -128,10 +134,51 @@ def build_app(
 
     # FastAPI app
     app = FastAPI(title="Plexa Server", version=APP_VERSION)
+
+    @app.middleware("http")
+    async def request_limits_and_logging(request: Request, call_next):
+        request_id = request.headers.get("X-Request-Id") or uuid4().hex
+        request.state.request_id = request_id
+        content_length = request.headers.get("content-length")
+        if content_length and content_length.isdigit() and int(content_length) > 1024 * 1024:
+            return JSONResponse(
+                status_code=413,
+                content={"detail": "Request body exceeds the 1 MiB limit."},
+                headers={"X-Request-Id": request_id},
+            )
+        started = monotonic()
+        try:
+            response = await call_next(request)
+        except Exception:
+            logger.exception(
+                "request_failed",
+                extra={
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "duration_ms": round((monotonic() - started) * 1000, 2),
+                },
+            )
+            raise
+        response.headers["X-Request-Id"] = request_id
+        logger.info(
+            "request_completed",
+            extra={
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "duration_ms": round((monotonic() - started) * 1000, 2),
+            },
+        )
+        return response
     request_authenticator = create_request_authenticator()
     app.middleware("http")(create_auth_identity_middleware(request_authenticator))
     api_router = APIRouter(prefix=f"/api/{API_VERSION}")
 
+    api_router.include_router(
+        get_auth_router(course_storage=course_storage)
+    )
     api_router.include_router(
         get_sessions_router(
             session_manager=session_manager,

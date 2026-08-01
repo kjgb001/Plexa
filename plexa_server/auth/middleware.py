@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from fastapi import Request
+from fastapi.responses import JSONResponse
 
-from plexa_server.auth.base import RequestAuthenticator
+from plexa_server.auth.base import AuthConfigurationError, RequestAuthenticator
 from plexa_server.auth.factory import get_request_authenticator
 from plexa_server.auth.identity import UserIdentity
+
+
+logger = logging.getLogger(__name__)
 
 
 def build_request_identity(request: Request) -> UserIdentity:
@@ -37,7 +43,17 @@ def create_auth_identity_middleware(authenticator: RequestAuthenticator):
     """Create middleware bound to a specific authenticator instance."""
 
     async def _middleware(request: Request, call_next):
-        request.state.identity = authenticator.authenticate_request(request)
+        try:
+            request.state.identity = await asyncio.to_thread(
+                authenticator.authenticate_request,
+                request,
+            )
+        except AuthConfigurationError:
+            logger.exception("authentication_provider_unavailable")
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Authentication provider unavailable"},
+            )
         return await call_next(request)
 
     return _middleware

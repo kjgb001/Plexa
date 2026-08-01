@@ -8,12 +8,20 @@ from plexa_server.storage.filesystem import (
     FileSystemCourseStorage,
     FileSystemSessionStorage,
 )
-from plexa_server.utils.dev_seed_data import SEEDED_LESSON_SPECS
+from plexa_server.utils.dev_seed_data import SEEDED_COURSE_SPECS, SEEDED_LESSON_SPECS
 from plexa_server.utils.seed_dev_data import seed_storages
 
 
 def run(coro):
     return asyncio.run(coro)
+
+
+def seeded_lesson_course_id(lesson_id: str) -> str:
+    for course_spec in SEEDED_COURSE_SPECS:
+        if lesson_id in course_spec["lesson_ids"]:
+            title = course_spec["course_title"]
+            return "CS101" if title == "default" else title
+    raise AssertionError(f"No seeded course owns {lesson_id}.")
 
 
 def test_seeded_lessons_have_distinct_goal_oriented_content(tmp_path: Path):
@@ -23,7 +31,13 @@ def test_seeded_lessons_have_distinct_goal_oriented_content(tmp_path: Path):
     run(seed_storages(artifact_storage, course_storage))
 
     lessons = {
-        lesson_id: run(artifact_storage.load_lesson(lesson_id, spec["version"]))
+        lesson_id: run(
+            artifact_storage.load_lesson(
+                lesson_id,
+                spec["version"],
+                course_id=seeded_lesson_course_id(lesson_id),
+            )
+        )
         for lesson_id, spec in SEEDED_LESSON_SPECS.items()
     }
     assert all(lesson is not None for lesson in lessons.values())
@@ -103,7 +117,7 @@ def test_seeded_cs101_lessons_cover_user_reflection_states(tmp_path: Path):
     assert course is not None
 
     lessons = {
-        lesson_id: run(artifact_storage.load_lesson(lesson_id, version))
+        lesson_id: run(artifact_storage.load_lesson(lesson_id, version, course_id="CS101"))
         for lesson_id, version in course.lessons.items()
     }
     expected_cs101_lessons = {

@@ -8,7 +8,13 @@ from plexa_server.models.course import Course
 from plexa_server.models.lesson import Lesson
 from plexa_server.models.message import Message
 from plexa_server.models.session import Session
-from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage, SessionStorage, WorkspaceStateStorage
+from plexa_server.storage.storage_interface import (
+    ArtifactStorage,
+    CourseStorage,
+    SessionRevisionConflictError,
+    SessionStorage,
+    WorkspaceStateStorage,
+)
 from plexa_server.tests.fixtures import make_valid_lesson_payload
 
 pytestmark = pytest.mark.postgres_only
@@ -52,24 +58,36 @@ def test_postgres_roundtrip_for_core_models(
     storage_backend,
 ):
     lesson = Lesson.model_validate(make_valid_lesson_payload())
-    run(artifact_storage.save_lesson(lesson))
+    course_payload = dict(valid_course_payload)
+    course_payload["lessons"] = {}
+    course_payload["lesson_timeline"] = []
+    course = Course.model_validate(course_payload)
+    run(course_storage.save_course(course))
+    run(artifact_storage.save_lesson(lesson, course_id=course.course_id))
 
-    loaded_lesson = run(artifact_storage.load_lesson(lesson.identity.lesson_id, lesson.identity.version))
+    loaded_lesson = run(
+        artifact_storage.load_lesson(
+            lesson.identity.lesson_id,
+            lesson.identity.version,
+            course_id=course.course_id,
+        )
+    )
     assert loaded_lesson is not None
     assert loaded_lesson.identity.lesson_id == lesson.identity.lesson_id
 
-    course_payload = dict(valid_course_payload)
-    course_payload["lessons"] = {
-        lesson.identity.lesson_id: lesson.identity.version,
-    }
-    course_payload["lesson_timeline"] = [
+    course = Course.model_validate(
         {
-            "lesson_id": lesson.identity.lesson_id,
-            "lesson_version": lesson.identity.version,
-            "starts_at": "2026-01-01T00:00:00Z",
+            **course.model_dump(),
+            "lessons": {lesson.identity.lesson_id: lesson.identity.version},
+            "lesson_timeline": [
+                {
+                    "lesson_id": lesson.identity.lesson_id,
+                    "lesson_version": lesson.identity.version,
+                    "starts_at": "2026-01-01T00:00:00Z",
+                }
+            ],
         }
-    ]
-    course = Course.model_validate(course_payload)
+    )
     run(course_storage.save_course(course))
 
     loaded_course = run(course_storage.get_course(course.course_id))
@@ -109,9 +127,29 @@ def test_postgres_roundtrip_for_core_models(
     assert loaded_session.course_id == course.course_id
     assert loaded_session.lesson_id == lesson.identity.lesson_id
     assert loaded_session.updated_at >= session.updated_at
-    assert loaded_session.messages[0].content == "Hello from postgres test."
+    assert loaded_session.messages == []
     assert loaded_config is not None
     assert loaded_config.model == "stub-model"
+
+    replacement_payload = lesson.model_dump(mode="json")
+    replacement_payload["identity"]["version"] = "0.2.0"
+    replacement = Lesson.model_validate(replacement_payload)
+    run(artifact_storage.save_lesson(replacement, course_id=course.course_id))
+    loaded_course.lessons[lesson.identity.lesson_id] = replacement.identity.version
+    loaded_course.lesson_timeline = []
+    run(course_storage.save_course(loaded_course))
+
+    session.turn_count = 1
+    stale_session = session.model_copy(deep=True)
+    run(session_storage.save_session(session))
+    persisted_after_rebind = run(session_storage.get_session(session.session_id))
+    assert persisted_after_rebind is not None
+    assert persisted_after_rebind.lesson_version == lesson.identity.version
+    assert persisted_after_rebind.turn_count == 1
+
+    stale_session.turn_count = 2
+    with pytest.raises(SessionRevisionConflictError):
+        run(session_storage.save_session(stale_session))
 
 
 def test_postgres_encrypted_log_roundtrip(
@@ -157,6 +195,51 @@ def test_postgres_encrypted_log_roundtrip(
     assert run(artifact_storage.load_encrypted_log_metadata("postgres-log-1")) is None
 
 
+def test_postgres_encrypted_log_expiry_retains_metadata(
+    artifact_storage,
+    storage_backend,
+):
+    metadata = EncryptedLogMetadata(
+        instance_id="postgres-expired",
+        user_id="tester",
+        course_id="CS101",
+        lesson_id="lesson-1",
+        lesson_version="0.1.0",
+        course_owner_id="owner-1",
+        authorized_instructor_ids=["owner-1"],
+        created_at="2026-01-01T00:00:00Z",
+        artifact_sha256="abc",
+        last_event_type="closed",
+        key_id="server-managed:v1",
+    )
+    run(
+        artifact_storage.save_encrypted_log(
+            "postgres-expired",
+            b"encrypted",
+            metadata=metadata,
+        )
+    )
+
+    run(artifact_storage.expire_encrypted_log_content("postgres-expired"))
+
+    assert run(artifact_storage.load_encrypted_log("postgres-expired")) is None
+    retained = run(artifact_storage.load_encrypted_log_metadata("postgres-expired"))
+    assert retained is not None
+    assert retained.content_available is False
+
+    run(
+        artifact_storage.save_encrypted_log(
+            "postgres-expired",
+            b"recreated",
+            metadata=metadata,
+        )
+    )
+    assert run(artifact_storage.load_encrypted_log("postgres-expired")) is None
+    retained = run(artifact_storage.load_encrypted_log_metadata("postgres-expired"))
+    assert retained is not None
+    assert retained.content_available is False
+
+
 def test_postgres_workspace_state_roundtrip(
     artifact_storage,
     course_storage,
@@ -165,13 +248,12 @@ def test_postgres_workspace_state_roundtrip(
     storage_backend,
 ):
     lesson = Lesson.model_validate(make_valid_lesson_payload())
-    run(artifact_storage.save_lesson(lesson))
-
     course_payload = dict(valid_course_payload)
-    course_payload["lessons"] = {
-        lesson.identity.lesson_id: lesson.identity.version,
-    }
+    course_payload["lessons"] = {}
     course = Course.model_validate(course_payload)
+    run(course_storage.save_course(course))
+    run(artifact_storage.save_lesson(lesson, course_id=course.course_id))
+    course.lessons = {lesson.identity.lesson_id: lesson.identity.version}
     run(course_storage.save_course(course))
 
     course_state = run(workspace_state_storage.touch_course("tester", course.course_id))

@@ -138,6 +138,12 @@ def test_identity_dependency_accepts_dev_user(dev_auth_client: TestClient):
     }
 
 
+def test_identity_dependency_rejects_oversized_dev_user(dev_auth_client: TestClient):
+    response = dev_auth_client.get("/identity", headers={"X-User-Id": "x" * 256})
+
+    assert response.status_code == 401
+
+
 def test_admin_dependency_accepts_allowlisted_dev_admin(dev_auth_client: TestClient):
     response = dev_auth_client.get("/admin", headers={"X-User-Id": "admin-user"})
 
@@ -209,6 +215,48 @@ def test_bearer_dependency_rejects_invalid_token(bearer_auth_client: TestClient)
     assert response.json()["detail"] == "Invalid bearer token"
 
 
+def test_bearer_dependency_rejects_malformed_signature_encoding(
+    bearer_auth_client: TestClient,
+):
+    token = make_hs256_jwt(
+        "super-secret",
+        {
+            "sub": "student-1",
+            "iss": "https://issuer.example",
+            "aud": "plexa-api",
+            "exp": int(time.time()) + 3600,
+        },
+    )
+    malformed = f"{token.rsplit('.', 1)[0]}.%not-base64%"
+
+    response = bearer_auth_client.get(
+        "/identity",
+        headers={"Authorization": f"Bearer {malformed}"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid bearer token"
+
+
+def test_bearer_dependency_rejects_oversized_subject(bearer_auth_client: TestClient):
+    token = make_hs256_jwt(
+        "super-secret",
+        {
+            "sub": "x" * 256,
+            "iss": "https://issuer.example",
+            "aud": "plexa-api",
+            "exp": int(time.time()) + 3600,
+        },
+    )
+
+    response = bearer_auth_client.get(
+        "/identity",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 401
+
+
 def test_bearer_dependency_rejects_wrong_audience(bearer_auth_client: TestClient):
     token = make_hs256_jwt(
         "super-secret",
@@ -228,6 +276,12 @@ def test_bearer_dependency_rejects_wrong_audience(bearer_auth_client: TestClient
 
 def test_ensure_course_owner_allows_owner():
     identity = UserIdentity(user_id="owner-1", roles={"user"}, auth_type="dev_header")
+
+    ensure_course_owner("owner-1", identity)
+
+
+def test_ensure_course_owner_allows_plexa_admin():
+    identity = UserIdentity(user_id="admin-1", roles={"admin"}, auth_type="dev_header")
 
     ensure_course_owner("owner-1", identity)
 

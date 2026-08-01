@@ -1,4 +1,5 @@
 from plexa_server.api import main
+from plexa_server.auth import config as auth_config
 from plexa_server.db import config as db_config
 from plexa_server.inference.base import InferenceConfig
 from plexa_server.inference.routing import InferenceRouter
@@ -12,7 +13,40 @@ def _disable_env_file_loading(monkeypatch):
     """Keep tests focused on explicit env mutations, not ambient `.env` state."""
     monkeypatch.setattr(main, "load_server_env_file", lambda: None)
     monkeypatch.setattr(runtime, "load_server_env_file", lambda: None)
+    monkeypatch.setattr(auth_config, "load_server_env_file", lambda: None)
     monkeypatch.setattr(db_config, "_load_env_file", lambda: None)
+
+
+def _set_valid_production_runtime(monkeypatch):
+    _disable_env_file_loading(monkeypatch)
+    values = {
+        "PLEXA_ENV": "production",
+        "PLEXA_DATABASE_URL": "postgresql+asyncpg://plexa:pw@db/plexa",
+        "PLEXA_DATABASE_SYNC_URL": "postgresql://plexa:pw@db/plexa",
+        "PLEXA_AUTH_MODE": "bearer-jwt",
+        "PLEXA_ENABLE_DEV_LOGIN": "false",
+        "PLEXA_AUTH_ISSUER": "https://issuer.example",
+        "PLEXA_AUTH_AUDIENCE": "plexa-api",
+        "PLEXA_AUTH_JWKS_URL": "https://issuer.example/jwks",
+        "PLEXA_AUTH_ALLOWED_ALGORITHMS": "RS256",
+        "PLEXA_AUTH_REQUIRE_EXP": "true",
+        "PLEXA_ADMIN_USER_IDS": '["admin"]',
+        "PLEXA_CORS_ALLOWED_ORIGINS": '["https://client.example"]',
+        "PLEXA_LOG_ENCRYPTION_KEY": "test-key",
+        "PLEXA_CONTENT_RETENTION_DAYS": "30",
+        "PLEXA_WEB_CONCURRENCY": "1",
+        "PLEXA_ALLOW_INSECURE_INFERENCE": "false",
+        "PLEXA_INFERENCE_BACKENDS": (
+            '{"real-a":{"type":"openai-compatible",'
+            '"base_url":"https://inference.example/v1","timeout_s":30}}'
+        ),
+        "PLEXA_INFERENCE_PROFILES": (
+            '{"default":{"backend_id":"real-a","model":"model-a"}}'
+        ),
+    }
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.delenv("PLEXA_INFERENCE_BACKEND", raising=False)
 
 
 def test_create_inference_registry_defaults_to_stub(monkeypatch):
@@ -114,13 +148,8 @@ def test_create_inference_registry_rejects_unknown_backend(monkeypatch):
 
 
 def test_create_app_rejects_production_dev_auth(monkeypatch):
-    _disable_env_file_loading(monkeypatch)
-    monkeypatch.setenv("PLEXA_ENV", "production")
-    monkeypatch.setenv("PLEXA_DATABASE_URL", "postgresql+asyncpg://plexa:pw@db/plexa")
-    monkeypatch.setenv("PLEXA_DATABASE_SYNC_URL", "postgresql://plexa:pw@db/plexa")
+    _set_valid_production_runtime(monkeypatch)
     monkeypatch.setenv("PLEXA_AUTH_MODE", "dev-header")
-    monkeypatch.setenv("PLEXA_CORS_ALLOWED_ORIGINS", '["https://client.example"]')
-    monkeypatch.setenv("PLEXA_LOG_ENCRYPTION_KEY", "test-key")
 
     try:
         main.create_app()
@@ -131,35 +160,29 @@ def test_create_app_rejects_production_dev_auth(monkeypatch):
 
 
 def test_production_dev_auth_requires_explicit_smoke_test_flag(monkeypatch):
-    _disable_env_file_loading(monkeypatch)
-    monkeypatch.setenv("PLEXA_ENV", "production")
-    monkeypatch.setenv("PLEXA_DATABASE_URL", "postgresql+asyncpg://plexa:pw@db/plexa")
-    monkeypatch.setenv("PLEXA_DATABASE_SYNC_URL", "postgresql://plexa:pw@db/plexa")
+    _set_valid_production_runtime(monkeypatch)
     monkeypatch.setenv("PLEXA_AUTH_MODE", "dev-header")
     monkeypatch.setenv("PLEXA_ENABLE_DEV_LOGIN", "true")
-    monkeypatch.setenv("PLEXA_CORS_ALLOWED_ORIGINS", '["https://client.example"]')
-    monkeypatch.setenv("PLEXA_LOG_ENCRYPTION_KEY", "test-key")
 
     runtime.validate_production_runtime_configuration()
 
 
+def test_production_bearer_auth_requires_admin_bootstrap(monkeypatch):
+    _set_valid_production_runtime(monkeypatch)
+    monkeypatch.setenv("PLEXA_ADMIN_USER_IDS", "[]")
+    monkeypatch.delenv("PLEXA_AUTH_ROLES_CLAIM", raising=False)
+    monkeypatch.delenv("PLEXA_AUTH_ADMIN_ROLE_NAME", raising=False)
+
+    try:
+        runtime.validate_production_runtime_configuration()
+    except RuntimeConfigurationError as exc:
+        assert "initial admin user id" in str(exc)
+    else:
+        raise AssertionError("Expected production startup to require an admin bootstrap path.")
+
+
 def test_create_app_rejects_missing_production_log_key(monkeypatch):
-    _disable_env_file_loading(monkeypatch)
-    monkeypatch.setenv("PLEXA_ENV", "production")
-    monkeypatch.setenv("PLEXA_DATABASE_URL", "postgresql+asyncpg://plexa:pw@db/plexa")
-    monkeypatch.setenv("PLEXA_DATABASE_SYNC_URL", "postgresql://plexa:pw@db/plexa")
-    monkeypatch.setenv("PLEXA_AUTH_MODE", "bearer-jwt")
-    monkeypatch.setenv("PLEXA_AUTH_SHARED_SECRET", "secret")
-    monkeypatch.setenv("PLEXA_AUTH_ALLOWED_ALGORITHMS", "HS256")
-    monkeypatch.setenv("PLEXA_CORS_ALLOWED_ORIGINS", '["https://client.example"]')
-    monkeypatch.setenv(
-        "PLEXA_INFERENCE_BACKENDS",
-        '{"real-a":{"type":"openai-compatible","base_url":"http://inference/v1"}}',
-    )
-    monkeypatch.setenv(
-        "PLEXA_INFERENCE_PROFILES",
-        '{"default":{"backend_id":"real-a","model":"model-a"}}',
-    )
+    _set_valid_production_runtime(monkeypatch)
     monkeypatch.delenv("PLEXA_LOG_ENCRYPTION_KEY", raising=False)
 
     try:
@@ -171,15 +194,7 @@ def test_create_app_rejects_missing_production_log_key(monkeypatch):
 
 
 def test_create_app_rejects_production_stub_inference_fallback(monkeypatch):
-    _disable_env_file_loading(monkeypatch)
-    monkeypatch.setenv("PLEXA_ENV", "production")
-    monkeypatch.setenv("PLEXA_DATABASE_URL", "postgresql+asyncpg://plexa:pw@db/plexa")
-    monkeypatch.setenv("PLEXA_DATABASE_SYNC_URL", "postgresql://plexa:pw@db/plexa")
-    monkeypatch.setenv("PLEXA_AUTH_MODE", "bearer-jwt")
-    monkeypatch.setenv("PLEXA_AUTH_SHARED_SECRET", "secret")
-    monkeypatch.setenv("PLEXA_AUTH_ALLOWED_ALGORITHMS", "HS256")
-    monkeypatch.setenv("PLEXA_CORS_ALLOWED_ORIGINS", '["https://client.example"]')
-    monkeypatch.setenv("PLEXA_LOG_ENCRYPTION_KEY", "test-key")
+    _set_valid_production_runtime(monkeypatch)
     monkeypatch.delenv("PLEXA_INFERENCE_BACKEND", raising=False)
     monkeypatch.delenv("PLEXA_INFERENCE_BACKENDS", raising=False)
     monkeypatch.delenv("PLEXA_INFERENCE_PROFILES", raising=False)
@@ -193,18 +208,10 @@ def test_create_app_rejects_production_stub_inference_fallback(monkeypatch):
 
 
 def test_create_app_rejects_production_stub_backend_in_multi_backend_config(monkeypatch):
-    _disable_env_file_loading(monkeypatch)
-    monkeypatch.setenv("PLEXA_ENV", "production")
-    monkeypatch.setenv("PLEXA_DATABASE_URL", "postgresql+asyncpg://plexa:pw@db/plexa")
-    monkeypatch.setenv("PLEXA_DATABASE_SYNC_URL", "postgresql://plexa:pw@db/plexa")
-    monkeypatch.setenv("PLEXA_AUTH_MODE", "bearer-jwt")
-    monkeypatch.setenv("PLEXA_AUTH_SHARED_SECRET", "secret")
-    monkeypatch.setenv("PLEXA_AUTH_ALLOWED_ALGORITHMS", "HS256")
-    monkeypatch.setenv("PLEXA_CORS_ALLOWED_ORIGINS", '["https://client.example"]')
-    monkeypatch.setenv("PLEXA_LOG_ENCRYPTION_KEY", "test-key")
+    _set_valid_production_runtime(monkeypatch)
     monkeypatch.setenv(
         "PLEXA_INFERENCE_BACKENDS",
-        '{"stub-a":{"type":"stub"},"real-a":{"type":"openai-compatible","base_url":"http://inference/v1"}}',
+        '{"stub-a":{"type":"stub"},"real-a":{"type":"openai-compatible","base_url":"https://inference.example/v1"}}',
     )
     monkeypatch.setenv(
         "PLEXA_INFERENCE_PROFILES",
@@ -220,8 +227,7 @@ def test_create_app_rejects_production_stub_backend_in_multi_backend_config(monk
 
 
 def test_create_app_rejects_production_dev_database_password(monkeypatch):
-    _disable_env_file_loading(monkeypatch)
-    monkeypatch.setenv("PLEXA_ENV", "production")
+    _set_valid_production_runtime(monkeypatch)
     monkeypatch.setenv(
         "PLEXA_DATABASE_URL",
         "postgresql+asyncpg://plexa:plexa_dev_password@db/plexa",
@@ -230,20 +236,6 @@ def test_create_app_rejects_production_dev_database_password(monkeypatch):
         "PLEXA_DATABASE_SYNC_URL",
         "postgresql://plexa:plexa_dev_password@db/plexa",
     )
-    monkeypatch.setenv("PLEXA_AUTH_MODE", "bearer-jwt")
-    monkeypatch.setenv("PLEXA_AUTH_SHARED_SECRET", "secret")
-    monkeypatch.setenv("PLEXA_AUTH_ALLOWED_ALGORITHMS", "HS256")
-    monkeypatch.setenv("PLEXA_CORS_ALLOWED_ORIGINS", '["https://client.example"]')
-    monkeypatch.setenv("PLEXA_LOG_ENCRYPTION_KEY", "test-key")
-    monkeypatch.setenv(
-        "PLEXA_INFERENCE_BACKENDS",
-        '{"real-a":{"type":"openai-compatible","base_url":"http://inference/v1"}}',
-    )
-    monkeypatch.setenv(
-        "PLEXA_INFERENCE_PROFILES",
-        '{"default":{"backend_id":"real-a","model":"model-a"}}',
-    )
-
     try:
         main.create_app()
     except RuntimeConfigurationError as exc:
@@ -253,8 +245,7 @@ def test_create_app_rejects_production_dev_database_password(monkeypatch):
 
 
 def test_create_app_rejects_production_test_database_name(monkeypatch):
-    _disable_env_file_loading(monkeypatch)
-    monkeypatch.setenv("PLEXA_ENV", "production")
+    _set_valid_production_runtime(monkeypatch)
     monkeypatch.setenv(
         "PLEXA_DATABASE_URL",
         "postgresql+asyncpg://plexa:secure-password@db/plexa_test",
@@ -263,23 +254,33 @@ def test_create_app_rejects_production_test_database_name(monkeypatch):
         "PLEXA_DATABASE_SYNC_URL",
         "postgresql://plexa:secure-password@db/plexa_test",
     )
-    monkeypatch.setenv("PLEXA_AUTH_MODE", "bearer-jwt")
-    monkeypatch.setenv("PLEXA_AUTH_SHARED_SECRET", "secret")
-    monkeypatch.setenv("PLEXA_AUTH_ALLOWED_ALGORITHMS", "HS256")
-    monkeypatch.setenv("PLEXA_CORS_ALLOWED_ORIGINS", '["https://client.example"]')
-    monkeypatch.setenv("PLEXA_LOG_ENCRYPTION_KEY", "test-key")
-    monkeypatch.setenv(
-        "PLEXA_INFERENCE_BACKENDS",
-        '{"real-a":{"type":"openai-compatible","base_url":"http://inference/v1"}}',
-    )
-    monkeypatch.setenv(
-        "PLEXA_INFERENCE_PROFILES",
-        '{"default":{"backend_id":"real-a","model":"model-a"}}',
-    )
-
     try:
         main.create_app()
     except RuntimeConfigurationError as exc:
         assert "development-only database value" in str(exc)
     else:
         raise AssertionError("Expected production startup to reject test database name.")
+
+
+def test_production_runtime_rejects_insecure_jwks_transport(monkeypatch):
+    _set_valid_production_runtime(monkeypatch)
+    monkeypatch.setenv("PLEXA_AUTH_JWKS_URL", "http://issuer.example/jwks")
+
+    try:
+        runtime.validate_production_runtime_configuration()
+    except RuntimeConfigurationError as exc:
+        assert "PLEXA_AUTH_JWKS_URL" in str(exc)
+    else:
+        raise AssertionError("Expected production startup to reject HTTP JWKS.")
+
+
+def test_production_runtime_rejects_wildcard_cors(monkeypatch):
+    _set_valid_production_runtime(monkeypatch)
+    monkeypatch.setenv("PLEXA_CORS_ALLOWED_ORIGINS", '["*"]')
+
+    try:
+        runtime.validate_production_runtime_configuration()
+    except RuntimeConfigurationError as exc:
+        assert "CORS" in str(exc)
+    else:
+        raise AssertionError("Expected production startup to reject wildcard CORS.")

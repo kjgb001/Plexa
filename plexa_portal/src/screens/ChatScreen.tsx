@@ -55,6 +55,7 @@ export default function ChatScreen({
   const keepComposerFocusRef = useRef(true)
   const suppressComposerBlurRef = useRef(false)
   const activeMessageRequestRef = useRef<AbortController | null>(null)
+  const messageRetryRef = useRef<{ content: string; messageId: string } | null>(null)
   const streamFrameRef = useRef<number | null>(null)
   const autoFollowTranscriptRef = useRef(true)
   const [session, setSession] = useState<Session | null>(null)
@@ -91,7 +92,10 @@ export default function ChatScreen({
   const triggeredReflectionKey = triggeredReflectionHooks
     .map((hook) => `${hook.hook_id}:${hook.triggered_at ?? ""}`)
     .join("|")
-  const savedReflectionHooks = session?.reflection_hooks ?? []
+  const savedReflectionHooks = useMemo(
+    () => session?.reflection_hooks ?? [],
+    [session?.reflection_hooks],
+  )
   const reflectionNumbers = useMemo(() => {
     const entries = [...savedReflectionHooks]
       .sort((left, right) => left.order_index - right.order_index)
@@ -135,6 +139,7 @@ export default function ChatScreen({
     return () => {
       activeMessageRequestRef.current?.abort()
       activeMessageRequestRef.current = null
+      messageRetryRef.current = null
       if (streamFrameRef.current !== null) {
         cancelAnimationFrame(streamFrameRef.current)
         streamFrameRef.current = null
@@ -520,7 +525,8 @@ export default function ChatScreen({
     }
 
     const content = input.trim()
-    const messageId = crypto.randomUUID()
+    const retry = messageRetryRef.current
+    const messageId = retry?.content === content ? retry.messageId : crypto.randomUUID()
     const abortController = new AbortController()
     const userMessage: Message = {
       role: "user",
@@ -589,6 +595,7 @@ export default function ChatScreen({
 
       setMessages((previous) => [...previous, result.assistantMessage])
       setSession(result.session)
+      messageRetryRef.current = null
       dispatchSessionChanged(courseId, lessonId, lessonVersion, {
         type: "upsert",
         session: result.session,
@@ -598,6 +605,7 @@ export default function ChatScreen({
         return
       }
       console.error("Failed to send message", error)
+      messageRetryRef.current = { content, messageId }
       setMessages((previous) => previous.slice(0, -1))
       setInput(content)
       setInteractionError("Message delivery failed. Try again.")
@@ -900,6 +908,18 @@ export default function ChatScreen({
               autoFollowTranscriptRef.current = distanceFromBottom <= AUTO_FOLLOW_THRESHOLD_PX
             }}
           >
+            {!session.transcript_available ? (
+              <li>
+                <p className="empty-panel">
+                  {session.transcript_unavailable_reason === "content_expired"
+                    ? "This transcript has expired under the institution's retention policy."
+                    : session.transcript_unavailable_reason === "server_restart"
+                      ? "This no-persistence transcript became unavailable when the server process restarted."
+                      : "This lesson is configured not to persist conversation transcripts."}
+                </p>
+              </li>
+            ) : null}
+
             {session.is_active === false && session.is_finalized === false ? (
               <li>
                 <p className="empty-panel">

@@ -46,21 +46,12 @@ def build_initial_messages(
         session_id: Session identifier to assign to the generated messages.
 
     Returns:
-        List[Message]: Ordered starting transcript containing the system message
-        and any optional initial assistant message.
+        List[Message]: Ordered starting transcript containing the optional
+        initial assistant message. The private system prompt is injected only
+        when building server-side inference context.
     """
 
     messages: List[Message] = []
-
-    system_message = Message(
-        message_id="system-0",
-        session_id=session_id,
-        role="system",
-        content=lesson.execution.system_prompt,
-        created_at=datetime.now(UTC),
-    )
-
-    messages.append(system_message)
 
     if lesson.execution.initial_assistant_message:
         assistant_message = Message(
@@ -93,6 +84,6 @@ def freeze_inference_config(lesson: Lesson) -> InferenceConfig:
         top_p=params.get("top_p"),
         max_tokens=params.get("max_tokens"),
         stop=params.get("stop"),
-        timeout_s=params.get("timeout_s", 30.0),
+        timeout_s=params.get("timeout_s"),
         seed=params.get("seed"),
     )

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing import Dict, Optional, List
 from datetime import datetime, UTC
 from uuid import uuid4
@@ -6,6 +6,8 @@ from uuid import uuid4
 
 class CourseLessonWindow(BaseModel):
     """Time window during which a lesson is pinned for a course."""
+
+    model_config = ConfigDict(extra="forbid")
 
     lesson_id: str
     lesson_version: str
@@ -15,6 +17,13 @@ class CourseLessonWindow(BaseModel):
     @model_validator(mode="after")
     def _validate_bounds(self) -> "CourseLessonWindow":
         """Ensure that a bounded window ends after it begins."""
+        if self.starts_at.tzinfo is None:
+            raise ValueError("Course lesson timeline timestamps must include a timezone.")
+        if self.ends_at is not None and self.ends_at.tzinfo is None:
+            raise ValueError("Course lesson timeline timestamps must include a timezone.")
+        self.starts_at = self.starts_at.astimezone(UTC)
+        if self.ends_at is not None:
+            self.ends_at = self.ends_at.astimezone(UTC)
         if self.ends_at is not None and self.ends_at <= self.starts_at:
             raise ValueError("Course lesson timeline windows must end after they begin.")
         return self
@@ -22,6 +31,8 @@ class CourseLessonWindow(BaseModel):
 
 class Course(BaseModel):
     """Course metadata, enrollment state, and lesson-version bindings."""
+
+    model_config = ConfigDict(extra="forbid")
 
     course_id: str = Field(default_factory=lambda: str(uuid4()))
     title: str
@@ -32,6 +43,8 @@ class Course(BaseModel):
     owner_id: str
     instructor_ids: List[str] = Field(default_factory=list)
     discoverable: bool = True
+    revision: int = 0
+    archived_at: datetime | None = None
 
     enrolled_users: List[str] = Field(default_factory=list)
     pending_requests: List[str] = Field(default_factory=list)
@@ -53,6 +66,8 @@ class Course(BaseModel):
                 normalized.append(user_id)
                 seen.add(user_id)
         self.instructor_ids = normalized
+        self.enrolled_users = list(dict.fromkeys(self.enrolled_users))
+        self.pending_requests = list(dict.fromkeys(self.pending_requests))
         return self
 
     @model_validator(mode="after")

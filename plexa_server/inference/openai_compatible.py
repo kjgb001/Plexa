@@ -24,6 +24,13 @@ from plexa_server.inference.base import (
 )
 
 
+class _NoRedirectHandler(request.HTTPRedirectHandler):
+    """Prevent inference credentials from following redirects to another URL."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 class OpenAICompatibleInference(InferenceBackend):
     """Inference adapter for OpenAI-compatible chat completion servers.
 
@@ -45,6 +52,8 @@ class OpenAICompatibleInference(InferenceBackend):
             api_key: Optional bearer token for the backend.
             timeout_s: Default network timeout in seconds.
         """
+        if timeout_s <= 0:
+            raise ValueError("Inference timeout must be greater than zero.")
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._timeout_s = timeout_s
@@ -151,7 +160,8 @@ class OpenAICompatibleInference(InferenceBackend):
         )
 
         try:
-            with request.urlopen(http_request, timeout=timeout_s) as response:
+            opener = request.build_opener(_NoRedirectHandler())
+            with opener.open(http_request, timeout=timeout_s) as response:
                 raw = response.read().decode("utf-8")
         except error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")

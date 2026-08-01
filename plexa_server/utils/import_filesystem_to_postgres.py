@@ -41,15 +41,32 @@ async def import_filesystem_to_postgres(data_dir: Path, target: str = "dev") -> 
     target_courses = PostgresCourseStorage(session_factory)
     target_sessions = PostgresSessionStorage(session_factory)
 
-    for lesson_path in sorted(source_artifacts.lessons_path.glob("*.json")):
-        stem = lesson_path.stem
-        lesson_id, version = stem.rsplit("_", 1)
-        lesson = await source_artifacts.load_lesson(lesson_id, version)
-        if lesson is not None:
-            await target_artifacts.save_lesson(lesson)
+    courses = await source_courses.list_courses()
+    for course in courses:
+        shell = course.model_copy(update={"lessons": {}, "lesson_timeline": []})
+        await target_courses.save_course(shell)
 
-    for course in await source_courses.list_courses():
-        await target_courses.save_course(course)
+    for source_course in courses:
+        for lesson_id, version in source_course.lessons.items():
+            lesson = await source_artifacts.load_lesson(
+                lesson_id,
+                version,
+                course_id=source_course.course_id,
+            )
+            if lesson is None:
+                lesson = await source_artifacts.load_lesson(
+                    lesson_id,
+                    version,
+                    course_id=None,
+                )
+            if lesson is not None:
+                await target_artifacts.save_lesson(lesson, course_id=source_course.course_id)
+        target_course = await target_courses.get_course(source_course.course_id)
+        if target_course is None:
+            raise RuntimeError(f"Failed to import course {source_course.course_id}.")
+        target_course.lessons = dict(source_course.lessons)
+        target_course.lesson_timeline = list(source_course.lesson_timeline)
+        await target_courses.save_course(target_course)
 
     for session in await source_sessions.list_sessions():
         await target_sessions.save_session(session)

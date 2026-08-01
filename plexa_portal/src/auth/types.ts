@@ -11,6 +11,11 @@ export type AuthStatus =
 export interface AuthUser {
   userId: string
   displayName?: string | null
+  roles: string[]
+  isAdmin: boolean
+  canAccessInstructorPortal: boolean
+  ownedCourseIds: string[]
+  instructedCourseIds: string[]
 }
 
 export interface AuthService {

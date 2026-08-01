@@ -41,7 +41,7 @@ def test_encrypt_json_roundtrip():
     assert loaded == payload
 
 
-def test_default_session_log_payload_includes_transcript_and_reflections():
+def test_default_session_log_payload_excludes_private_system_messages():
     session = Session(
         session_id="s1",
         user_id="tester",
@@ -71,9 +71,11 @@ def test_default_session_log_payload_includes_transcript_and_reflections():
     assert payload["session"]["session_id"] == "s1"
     assert "messages" not in payload["session"]
     assert "reflection_hooks" not in payload["session"]
-    assert payload["transcript"][0]["role"] == "system"
+    assert payload["transcript"] == []
     assert payload["reflections"][0]["hook_id"] == "post-summary"
     assert payload["inference_config"]["profile"] == "kl3m_safe"
+    assert "lesson_snapshot" not in payload["session"]
+    assert "frozen_inference_config" not in payload["session"]
 
 
 def test_metadata_only_session_log_payload_excludes_transcript_and_reflections():
@@ -260,13 +262,13 @@ def test_session_manager_persists_and_deletes_encrypted_logs(
             "instructor_ids": ["test-owner", "assistant-owner"],
             "enrolled_users": ["user-1"],
             "discoverable": True,
-            "lessons": {
-                lesson.identity.lesson_id: lesson.identity.version,
-            },
+            "lessons": {},
         }
     )
 
-    run(artifact_storage.save_lesson(lesson))
+    run(course_storage.save_course(course))
+    run(artifact_storage.save_lesson(lesson, course_id=course.course_id))
+    course.lessons = {lesson.identity.lesson_id: lesson.identity.version}
     run(course_storage.save_course(course))
 
     manager = SessionManager(
@@ -287,7 +289,7 @@ def test_session_manager_persists_and_deletes_encrypted_logs(
     created_log = run(service.load_session_log_for_requester("session-log-1", "test-owner"))
     assert created_log is not None
     assert created_log["session"]["session_id"] == created.session_id
-    assert created_log["transcript"][0]["role"] == "system"
+    assert created_log["transcript"] == []
     assert created_log["inference_config"]["profile"] == lesson.execution.profile
 
     created_metadata = run(artifact_storage.load_encrypted_log_metadata("session-log-1"))
@@ -302,7 +304,7 @@ def test_session_manager_persists_and_deletes_encrypted_logs(
     updated_log = run(service.load_session_log_for_requester("session-log-1", "test-owner"))
     assert updated_log is not None
     assert updated_log["session"]["turn_count"] == 1
-    assert len(updated_log["transcript"]) == 3
+    assert len(updated_log["transcript"]) == 2
     assert updated_log["transcript"][-1]["role"] == "assistant"
     updated_metadata = run(artifact_storage.load_encrypted_log_metadata("session-log-1"))
     assert updated_metadata is not None

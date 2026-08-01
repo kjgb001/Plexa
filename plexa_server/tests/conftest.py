@@ -264,11 +264,13 @@ def setup_manager(session_storage, artifact_storage, course_storage):
             "instructor_ids": ["test-owner"],
             "enrolled_users": ["user-1"],
             "discoverable": True,
-            "lessons": {
-                default_lesson.identity.lesson_id: default_lesson.identity.version,
-            },
+            "lessons": {},
         })
-        run(artifact_storage.save_lesson(default_lesson))
+        run(course_storage.save_course(default_course))
+        run(artifact_storage.save_lesson(default_lesson, course_id=default_course.course_id))
+        default_course.lessons = {
+            default_lesson.identity.lesson_id: default_lesson.identity.version,
+        }
         run(course_storage.save_course(default_course))
 
         backend = inference_backend or StubInference()
@@ -321,21 +323,16 @@ def client(app) -> TestClient:
 
 
 @pytest.fixture
-def lesson_factory(artifact_storage):
-    """Return a helper that persists a valid lesson for the current backend.
-
-    Args:
-        artifact_storage: Selected artifact storage implementation.
+def lesson_factory():
+    """Return a helper that builds a valid lesson for API tests.
 
     Returns:
-        callable: Helper returning the persisted `Lesson`.
+        callable: Helper returning a valid `Lesson`.
     """
     def _create():
         from plexa_server.models.lesson import Lesson
 
-        lesson = Lesson.model_validate(make_valid_lesson_payload())
-        run(artifact_storage.save_lesson(lesson))
-        return lesson
+        return Lesson.model_validate(make_valid_lesson_payload())
 
     return _create
 
@@ -354,11 +351,35 @@ def session_factory(client, lesson_factory, course_factory, api_prefix):
         callable: Helper returning `(session_id, lesson_id, lesson_version)`.
     """
     def _create(lesson_id="test", version="0.1.0", user_id="tester", course_id="CS101"):
-        lesson_factory()
-        try:
+        existing_course = client.get(
+            f"{api_prefix}/courses/{course_id}",
+            headers={"X-User-Id": "admin-user"},
+        )
+        if existing_course.status_code == 404:
             course_id = course_factory()
-        except Exception:
-            pass
+        else:
+            assert existing_course.status_code == 200
+
+        lesson = lesson_factory()
+        lesson.identity.lesson_id = lesson_id
+        lesson.identity.version = version
+        artifact_path = f"{api_prefix}/courses/{course_id}/lesson-artifacts/{lesson_id}/{version}"
+        current = client.get(artifact_path, headers={"X-User-Id": "admin-user"})
+        revision_query = ""
+        if current.status_code == 200:
+            revision_query = f"?expected_revision={current.json()['artifact_revision']}"
+        upload = client.post(
+            f"{api_prefix}/courses/{course_id}/lesson-artifacts{revision_query}",
+            json=lesson.model_dump(mode="json"),
+            headers={"X-User-Id": "admin-user"},
+        )
+        assert upload.status_code == 200
+        binding = client.post(
+            f"{api_prefix}/courses/{course_id}/lessons",
+            json={"lesson_id": lesson_id, "version": version},
+            headers={"X-User-Id": "admin-user"},
+        )
+        assert binding.status_code == 200
 
         response = client.post(
             f"{api_prefix}/courses/{course_id}/lessons/{lesson_id}/{version}/sessions",
