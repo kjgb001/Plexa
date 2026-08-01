@@ -1,0 +1,7 @@
+/.github/ @kjgb001
+/deploy/ @kjgb001
+/docker-compose.prod.yml @kjgb001
+/plexa_portal/package.json @kjgb001
+/plexa_portal/package-lock.json @kjgb001
+/pyproject.toml @kjgb001
+/uv.lock @kjgb001
