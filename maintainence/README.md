@@ -41,10 +41,12 @@ proposed manifest is not a supported dependency combination.
 6. Merge only after the protected GitHub checks pass. Do not enable unattended auto-merge for major updates.
 
 Dependabot intentionally groups compatible minor and patch updates for the
-ESLint and Vite toolchains. ESLint 10 is blocked until `eslint`, `@eslint/js`,
-and the plugin set are upgraded and tested together. Vite 8 is blocked because
-the current Vite React plugin does not declare support for it. Security alerts
-for those ecosystems must still be reviewed immediately; use a manual
+ESLint, Vite, and TypeScript documentation toolchains. ESLint 10 is blocked
+until `eslint`, `@eslint/js`, and the plugin set are upgraded and tested
+together. Vite and its React plugin are both major-gated so neither side of
+their peer contract can advance alone. TypeScript 7 is blocked until TypeDoc,
+TypeScript ESLint, and the remaining tooling declare support. Security alerts
+for these ecosystems must still be reviewed immediately; use a manual
 compatibility upgrade if a fix requires a blocked major.
 
 ### Monthly
@@ -180,7 +182,9 @@ After this maintenance change reaches `main`:
 1. Close the standalone ESLint 10 PR because it was generated against the old React Hooks peer tree and does not coordinate the `@eslint/js` major upgrade.
 2. Close the standalone Vite 8 PR because `@vitejs/plugin-react` 5.1.4 supports Vite only through 7.x.
 3. Close the React Hooks 7.1.1 PR after this change reaches `main`; the compatible dependency update and required source fixes are included here.
-4. Remove either major-version gate only in a dedicated compatibility PR that passes `npm ci --ignore-scripts`, lint, build, and protected CI checks.
+4. Close the standalone TypeScript 7 PR because TypeDoc 0.28 and TypeScript ESLint 8 do not support it.
+5. Close the standalone `@vitejs/plugin-react` 6 PR because it requires the currently gated Vite 8 major.
+6. Remove a major-version gate only in a dedicated compatibility PR that updates every peer-coupled package and passes `npm ci --ignore-scripts`, lint, build, and protected CI checks.
 
 These GitHub PR operations are manual because repository scripts must not close
 or merge remote pull requests without an explicit operator decision.

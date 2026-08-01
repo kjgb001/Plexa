@@ -73,6 +73,14 @@ for ecosystem in ("github-actions", "npm", "uv"):
     if f"package-ecosystem: {ecosystem}" not in dependabot:
         errors.append(f".github/dependabot.yml: missing {ecosystem} updates")
 
+for dependency in ("eslint", "@eslint/js", "vite", "@vitejs/plugin-react", "typescript"):
+    gate_pattern = re.compile(
+        rf'- dependency-name: ["\']?{re.escape(dependency)}["\']?\n'
+        rf'\s+update-types:\n\s+- version-update:semver-major'
+    )
+    if not gate_pattern.search(dependabot):
+        errors.append(f".github/dependabot.yml: missing major-version gate for {dependency}")
+
 codeowners = (root / ".github" / "CODEOWNERS").read_text(encoding="utf-8")
 for protected_path in ("/.github/", "/maintainence/"):
     if protected_path not in codeowners:
