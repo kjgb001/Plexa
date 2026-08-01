@@ -12,6 +12,36 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      eslint-toolchain:
+        patterns:
+          - "eslint"
+          - "@eslint/*"
+          - "eslint-plugin-*"
+          - "typescript-eslint"
+          - "@typescript-eslint/*"
+        update-types:
+          - minor
+          - patch
+      vite-toolchain:
+        patterns:
+          - "vite"
+          - "@vitejs/plugin-react"
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # Remove these gates only after every installed plugin declares support
+      # and the major upgrade passes maintainence/run-ci-local.sh.
+      - dependency-name: eslint
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "@eslint/js"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: vite
+        update-types:
+          - version-update:semver-major
 
   - package-ecosystem: uv
     directory: /

@@ -83,7 +83,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: bash -n deploy/*.sh deploy/lib/*.sh
+      - run: bash -n deploy/*.sh deploy/lib/*.sh maintainence/*.sh maintainence/lib/*.sh
+      - run: maintainence/audit-ci.sh
       - run: deploy/create-production-env.sh --local --model ci-model --output /tmp/plexa-local-production.env --force
       - run: deploy/check-production-config.sh /tmp/plexa-local-production.env
       - run: deploy/create-production-env.sh --domain plexa.example.test --email ci@example.org --inference-url https://inference.example.test/v1 --model ci-model --retention-days 30 --temporary-dev-login --admin-user ci-admin --output /tmp/plexa-domain-production.env --force

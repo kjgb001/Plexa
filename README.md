@@ -36,6 +36,7 @@ plexa/
 ├── README.md
 ├── pyproject.toml
 ├── conftest.py
+├── maintainence/
 ├── docs/
 ├── plexa_server/
 └── plexa_portal/
@@ -48,6 +49,9 @@ plexa/
 
 - [plexa_portal/README.md](plexa_portal/README.md)
   The shared web portal package for both student and instructor-facing browser workflows.
+
+- [maintainence/README.md](maintainence/README.md)
+  Repository maintenance schedule, local CI runner, CI security audit, dependency update policy, and immutable pin update procedures.
 
 ## Current State Of The Codebase
 

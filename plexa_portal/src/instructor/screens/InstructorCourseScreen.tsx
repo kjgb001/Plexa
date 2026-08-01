@@ -38,33 +38,38 @@ export function InstructorCourseScreen({
   const [addInstructorUserId, setAddInstructorUserId] = useState("")
   const [mutating, setMutating] = useState(false)
 
+  const fetchWorkspace = useCallback(async () => {
+    const [courseResult, lessonsResult, instructorsResult, logsResult] = await Promise.all([
+      instructorApi.getCourse(courseId),
+      instructorApi.listLessons(courseId),
+      instructorApi.listInstructors(courseId),
+      instructorApi.listLogs(courseId),
+    ])
+
+    let requests: string[] = []
+    try {
+      const requestResult = await instructorApi.listRequests(courseId)
+      requests = requestResult.pending_requests
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 404) {
+        throw error
+      }
+    }
+
+    return { courseResult, lessonsResult, instructorsResult, logsResult, requests }
+  }, [courseId, instructorApi])
+
   const loadWorkspace = useCallback(async () => {
     setLoading(true)
-    setLoadError(null)
-
     try {
-      const [courseResult, lessonsResult, instructorsResult, logsResult] = await Promise.all([
-        instructorApi.getCourse(courseId),
-        instructorApi.listLessons(courseId),
-        instructorApi.listInstructors(courseId),
-        instructorApi.listLogs(courseId),
-      ])
-
-      let requests: string[] = []
-      try {
-        const requestResult = await instructorApi.listRequests(courseId)
-        requests = requestResult.pending_requests
-      } catch (error) {
-        if (!(error instanceof ApiError) || error.status !== 404) {
-          throw error
-        }
-      }
-
+      const result = await fetchWorkspace()
+      const { courseResult, lessonsResult, instructorsResult, logsResult, requests } = result
       setCourse(courseResult)
       setLessons(lessonsResult)
       setInstructors(instructorsResult)
       setPendingRequests(requests)
       setLogs(logsResult)
+      setLoadError(null)
     } catch (error) {
       console.error("Failed to load instructor course workspace", error)
       if (error instanceof NotFoundError) {
@@ -75,11 +80,44 @@ export function InstructorCourseScreen({
     } finally {
       setLoading(false)
     }
-  }, [courseId, instructorApi])
+  }, [fetchWorkspace])
 
   useEffect(() => {
-    void loadWorkspace()
-  }, [loadWorkspace])
+    let active = true
+
+    void fetchWorkspace()
+      .then(({ courseResult, lessonsResult, instructorsResult, logsResult, requests }) => {
+        if (!active) {
+          return
+        }
+        setCourse(courseResult)
+        setLessons(lessonsResult)
+        setInstructors(instructorsResult)
+        setPendingRequests(requests)
+        setLogs(logsResult)
+        setLoadError(null)
+      })
+      .catch((error: unknown) => {
+        if (!active) {
+          return
+        }
+        console.error("Failed to load instructor course workspace", error)
+        if (error instanceof NotFoundError) {
+          setLoadError("This course is not available to your instructor account.")
+        } else {
+          setLoadError("Failed to load course workspace.")
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false)
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [fetchWorkspace])
 
   useEffect(() => {
     let active = true

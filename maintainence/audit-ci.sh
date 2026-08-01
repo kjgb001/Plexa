@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=maintainence/lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
+maintainence_cd_repo_root
+
+python_bin="$(maintainence_resolve_python)"
+"$python_bin" - <<'PY'
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+root = Path.cwd()
+workflow_dir = root / ".github" / "workflows"
+workflow_paths = sorted([*workflow_dir.glob("*.yml"), *workflow_dir.glob("*.yaml")])
+errors: list[str] = []
+
+if not workflow_paths:
+    errors.append("No GitHub Actions workflows were found.")
+
+uses_pattern = re.compile(r"^\s*-\s+uses:\s+([^\s#]+)", re.MULTILINE)
+sha_pattern = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}$")
+digest_pattern = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
+
+for path in workflow_paths:
+    text = path.read_text(encoding="utf-8")
+    relative = path.relative_to(root)
+
+    if re.search(r"^\s*(pull_request_target|workflow_run)\s*:", text, re.MULTILINE):
+        errors.append(f"{relative}: privileged trigger requires a dedicated security review")
+    if re.search(r"permissions\s*:\s*write-all", text):
+        errors.append(f"{relative}: permissions: write-all is forbidden")
+    if re.search(r"^\s+[A-Za-z0-9_-]+:\s*write\s*$", text, re.MULTILINE):
+        errors.append(f"{relative}: write permission requires an explicit audit policy update")
+    if re.search(r"^\s*secrets:\s*inherit\s*$", text, re.MULTILINE):
+        errors.append(f"{relative}: inherited secrets are forbidden")
+    if "permissions:\n  contents: read" not in text:
+        errors.append(f"{relative}: top-level contents: read permission is missing")
+    for runner in re.findall(r"^\s*runs-on:\s*([^\s#]+)", text, re.MULTILINE):
+        if runner != "ubuntu-24.04":
+            errors.append(f"{relative}: unapproved runner: {runner}")
+    if text.count("runs-on:") != text.count("timeout-minutes:"):
+        errors.append(f"{relative}: every job must define timeout-minutes")
+    if text.count("uses: actions/checkout@") != text.count("persist-credentials: false"):
+        errors.append(f"{relative}: every checkout step must disable persisted credentials")
+    if re.search(r"\bcurl\b[^\n|]*\|\s*(sh|bash)\b", text):
+        errors.append(f"{relative}: downloading a script directly into a shell is forbidden")
+
+    for reference in uses_pattern.findall(text):
+        if reference.startswith("./"):
+            continue
+        if reference.startswith("docker://"):
+            if not digest_pattern.fullmatch(reference):
+                errors.append(f"{relative}: Docker action is not digest-pinned: {reference}")
+            continue
+        if not sha_pattern.fullmatch(reference):
+            errors.append(f"{relative}: action is not pinned to a full commit SHA: {reference}")
+
+    for image in re.findall(r"^\s*image:\s*([^\s#]+)", text, re.MULTILINE):
+        if not digest_pattern.fullmatch(image):
+            errors.append(f"{relative}: service image is not digest-pinned: {image}")
+
+ci_text = (workflow_dir / "ci.yml").read_text(encoding="utf-8")
+for required in ("npm ci --ignore-scripts", "uv sync --frozen", "uv run --frozen"):
+    if required not in ci_text:
+        errors.append(f".github/workflows/ci.yml: missing reproducible command: {required}")
+
+dependabot = (root / ".github" / "dependabot.yml").read_text(encoding="utf-8")
+for ecosystem in ("github-actions", "npm", "uv"):
+    if f"package-ecosystem: {ecosystem}" not in dependabot:
+        errors.append(f".github/dependabot.yml: missing {ecosystem} updates")
+
+codeowners = (root / ".github" / "CODEOWNERS").read_text(encoding="utf-8")
+for protected_path in ("/.github/", "/maintainence/"):
+    if protected_path not in codeowners:
+        errors.append(f".github/CODEOWNERS: missing protection for {protected_path}")
+
+if errors:
+    print("CI security audit failed:")
+    for error in errors:
+        print(f"- {error}")
+    raise SystemExit(1)
+
+print(f"CI security audit passed for {len(workflow_paths)} workflow(s).")
+PY

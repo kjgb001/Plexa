@@ -73,6 +73,22 @@ export default function ChatScreen({
   const [reflectionDrafts, setReflectionDrafts] = useState<Record<string, string>>({})
   const [collapsedReflectionIds, setCollapsedReflectionIds] = useState<Record<string, boolean>>({})
   const [isReflectionDrawerOpen, setIsReflectionDrawerOpen] = useState(false)
+
+  function applySessionUpdate(nextSession: Session) {
+    setSession(nextSession)
+    setReflectionDrafts((current) => Object.fromEntries(
+      nextSession.reflection_hooks.map((hook) => [
+        hook.hook_id,
+        current[hook.hook_id] ?? hook.response_text ?? "",
+      ]),
+    ))
+    setCollapsedReflectionIds((current) => Object.fromEntries(
+      nextSession.reflection_hooks
+        .filter((hook) => hook.response_text?.trim() || hook.postponed_at)
+        .map((hook) => [hook.hook_id, current[hook.hook_id] ?? true]),
+    ))
+  }
+
   const visibleMessages = messages.filter((message) => message.role !== "system")
   const latestNonUserMessageIndex = (() => {
     for (let index = visibleMessages.length - 1; index >= 0; index -= 1) {
@@ -154,6 +170,9 @@ export default function ChatScreen({
       if (sessionId === null) {
         setSession(null)
         setMessages([])
+        setReflectionDrafts({})
+        setCollapsedReflectionIds({})
+        setIsReflectionDrawerOpen(false)
         setInput("")
         setShowDeleteConfirm(false)
         setBootError(null)
@@ -189,10 +208,11 @@ export default function ChatScreen({
           setCollapsedReflectionIds(
             Object.fromEntries(
               result.session.reflection_hooks
-                .filter((hook) => hook.response_text?.trim())
+                .filter((hook) => hook.response_text?.trim() || hook.postponed_at)
                 .map((hook) => [hook.hook_id, true]),
             ),
           )
+          setIsReflectionDrawerOpen(false)
         }
       } catch (error) {
         console.error("Failed to load session", error)
@@ -200,6 +220,9 @@ export default function ChatScreen({
         if (active) {
           setSession(null)
           setMessages([])
+          setReflectionDrafts({})
+          setCollapsedReflectionIds({})
+          setIsReflectionDrawerOpen(false)
           setBootError("Unable to load this session right now.")
         }
       } finally {
@@ -266,31 +289,6 @@ export default function ChatScreen({
       focusComposerIfAllowed(true)
     }
   }, [booting, deleting, session, sessionId])
-
-  useEffect(() => {
-    if (session === null) {
-      setReflectionDrafts({})
-      setCollapsedReflectionIds({})
-      setIsReflectionDrawerOpen(false)
-      return
-    }
-    setReflectionDrafts((current) => {
-      const next: Record<string, string> = {}
-      for (const hook of session.reflection_hooks) {
-        next[hook.hook_id] = current[hook.hook_id] ?? hook.response_text ?? ""
-      }
-      return next
-    })
-    setCollapsedReflectionIds((current) => {
-      const next: Record<string, boolean> = {}
-      for (const hook of session.reflection_hooks) {
-        if (hook.response_text?.trim() || hook.postponed_at) {
-          next[hook.hook_id] = current[hook.hook_id] ?? true
-        }
-      }
-      return next
-    })
-  }, [session])
 
   useEffect(() => {
     const sessionIdAtMount = sessionId
@@ -385,7 +383,7 @@ export default function ChatScreen({
     setLoading(true)
     try {
       const result = await sessionApi.beginCompletion(courseId, lessonId, lessonVersion, session.session_id)
-      setSession(result.session)
+      applySessionUpdate(result.session)
       dispatchSessionChanged(courseId, lessonId, lessonVersion, {
         type: "upsert",
         session: result.session,
@@ -406,7 +404,7 @@ export default function ChatScreen({
     setLoading(true)
     try {
       const result = await sessionApi.resumeAfterCompletion(courseId, lessonId, lessonVersion, session.session_id)
-      setSession(result.session)
+      applySessionUpdate(result.session)
       dispatchSessionChanged(courseId, lessonId, lessonVersion, {
         type: "upsert",
         session: result.session,
@@ -436,7 +434,7 @@ export default function ChatScreen({
         hook.hook_id,
         responseText,
       )
-      setSession(result.session)
+      applySessionUpdate(result.session)
       setCollapsedReflectionIds((current) => ({
         ...current,
         [hook.hook_id]: true,
@@ -468,7 +466,7 @@ export default function ChatScreen({
         session.session_id,
         hook.hook_id,
       )
-      setSession(result.session)
+      applySessionUpdate(result.session)
       setCollapsedReflectionIds((current) => ({
         ...current,
         [hook.hook_id]: true,
@@ -495,7 +493,7 @@ export default function ChatScreen({
     setLoading(true)
     try {
       const result = await sessionApi.turnInSession(courseId, lessonId, lessonVersion, session.session_id)
-      setSession(result.session)
+      applySessionUpdate(result.session)
       dispatchSessionChanged(courseId, lessonId, lessonVersion, {
         type: "upsert",
         session: result.session,
@@ -594,7 +592,7 @@ export default function ChatScreen({
       }
 
       setMessages((previous) => [...previous, result.assistantMessage])
-      setSession(result.session)
+      applySessionUpdate(result.session)
       messageRetryRef.current = null
       dispatchSessionChanged(courseId, lessonId, lessonVersion, {
         type: "upsert",
