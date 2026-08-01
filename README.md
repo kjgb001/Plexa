@@ -1,138 +1,157 @@
 # Plexa
 
-**Plexa** is a lesson-centric AI orchestration system for higher education.
+[![CI](https://github.com/kjgb001/Plexa/actions/workflows/ci.yml/badge.svg)](https://github.com/kjgb001/Plexa/actions/workflows/ci.yml)
 
-It is not a chatbot, and it is not a general-purpose AI wrapper. Plexa is a **pedagogical runtime**: a system for executing structured lessons with AI under explicit constraints, session controls, and instructor intent.
+Plexa is a lesson-centered AI platform for higher education. Instructors define
+the goal, model behavior, turn limits, reflection points, and completion rules;
+students work through that lesson in a focused conversation.
 
-The core idea is simple:
+> Students do not just chat with an AI. They execute a lesson.
 
-> **Students do not just chat with an AI.**  
-> **They execute a lesson.**
+Plexa is designed to sit between an institution and an OpenAI-compatible
+inference service. It keeps lesson authoring, policy enforcement, model access,
+and student-facing interaction in separate parts of the system.
 
-Everything in Plexa follows from that premise.
+## What Plexa Provides
 
-## What Plexa Is
+- A student portal for courses, lessons, streaming conversations, reflections,
+  and work submission.
+- An instructor portal for course setup, lesson authoring, timelines, rosters,
+  analytics, and submitted-session review.
+- A FastAPI runtime that enforces lesson constraints and session state instead
+  of relying on prompts alone.
+- PostgreSQL persistence with Alembic migrations, encrypted retained logs, and
+  configurable content retention.
+- Development-header authentication for local work and OIDC/JWT authentication
+  for institutional deployments.
+- OpenAI-compatible inference routing, including local Ollama or vLLM and
+  separately hosted inference services.
 
-- A lesson execution engine
-- A policy and constraint enforcement layer
-- A bridge between instructor intent and model behavior
-- A structured session runtime for educational AI workflows
-- A system designed to keep inference, storage, and application concerns separated
+Plexa is not intended to be a general-purpose chatbot, prompt playground,
+grading system, or replacement for instructors.
 
-## What Plexa Is Not
-
-- A generic chat app
-- A prompt playground
-- A grading or surveillance system
-- A replacement for instructors
-- A thin wrapper around whatever model API is fashionable this month
-
-## Repository Structure
-
-This repository is a development monorepo with multiple packages:
+## Architecture
 
 ```text
-plexa/
-├── README.md
-├── pyproject.toml
-├── conftest.py
-├── maintainence/
-├── docs/
-├── plexa_server/
-└── plexa_portal/
+Browser
+  |
+  +-- / --------> React portal
+  +-- /api/* ---> FastAPI server ---> PostgreSQL
+                         |
+                         +----------> OpenAI-compatible inference
 ```
 
-### Package Overview
+The production stack uses Caddy to serve the portal, reverse-proxy `/api`, and
+manage HTTPS. The server owns authorization and never exposes lesson system
+prompts through student APIs.
 
-- [plexa_server/README.md](plexa_server/README.md)
-  The main implemented backend package. It contains the FastAPI server, lesson/session runtime, storage abstractions, PostgreSQL integration, Alembic migrations, bootstrap tooling, and the backend-aware test suite.
+> [!IMPORTANT]
+> The supported production topology currently uses one Plexa web worker.
+> Session coordination, stream ownership, concurrency limits, and disabled-log
+> transcript state are process-local. Do not add workers or replicas until
+> those responsibilities have shared, atomic coordination.
 
-- [plexa_portal/README.md](plexa_portal/README.md)
-  The shared web portal package for both student and instructor-facing browser workflows.
+## Quick Start
 
-- [maintainence/README.md](maintainence/README.md)
-  Repository maintenance schedule, local CI runner, CI security audit, dependency update policy, and immutable pin update procedures.
+The local development setup uses PostgreSQL in Docker while the server and
+portal run on the host.
 
-## Current State Of The Codebase
+### Requirements
 
-The server is the most mature part of the repository.
+- Python 3.12 or 3.13
+- [uv](https://docs.astral.sh/uv/)
+- Node.js 22 and npm
+- Docker with the Compose plugin
+- An OpenAI-compatible inference endpoint for real conversations
 
-What is implemented in `plexa_server` now:
-- lesson, course, session, and message domain models
-- FastAPI routes for runtime and admin flows
-- storage abstractions with both filesystem and PostgreSQL implementations
-- PostgreSQL integration using SQLAlchemy, Alembic, and `asyncpg`
-- database bootstrap and legacy filesystem import tooling
-- backend-aware pytest support for `filesystem`, `postgres`, and `both`
-- course-scoped mutable lesson authoring with per-session execution snapshots
-- verified OIDC/JWT production auth, retention, encrypted-log key rotation, and deployment tooling
+From the repository root, install the Python environment and initialize the
+databases:
 
-The server is no longer just a schema experiment or runtime sketch. It has a working persistence layer, migration path, and testable backend selection model.
+```bash
+uv sync --frozen
+docker compose -f plexa_server/docker-compose.yml up -d
+uv run python -m plexa_server.bootstrap --init-dev --init-test
+uv run python -m plexa_server.utils.seed_dev_data --target dev
+```
 
-The portal has functional student and instructor surfaces, including lesson
-authoring/timelines, streaming chat and reflections, roster operations, and
-encrypted session-log review.
+The bootstrap command creates `plexa_server/.env` when needed. Its inference
+profiles are examples for local Ollama and vLLM endpoints; edit them to match
+the models and services available on your machine.
 
-## Architectural Direction
+Start the API:
 
-Plexa is designed around explicit contracts and separation of concerns.
+```bash
+uv run python -m plexa_server.api.main
+```
 
-Current architectural principles reflected in the code:
-- **Lesson-first runtime**: sessions are created from structured lesson artifacts
-- **Backend abstraction**: storage and inference are behind interfaces
-- **PostgreSQL as primary persistence**: the server supports full relational persistence
-- **Filesystem retained as legacy/test backend**: useful for migration support and comparative testing
-- **Mostly async server path**: runtime persistence and request handling are aligned with the async database stack
+In another terminal, start the portal:
 
-## Development Workflow
+```bash
+cd plexa_portal
+cp -n src/.env.example src/.env
+npm ci
+npm run dev
+```
 
-Most active development currently happens in `plexa_server`.
+Open <http://localhost:5173>. The seeded data includes `tester` as a student and
+`instructor` as a course owner. `admin` is the default local global admin.
 
-For local server work:
-1. create and activate a virtual environment
-2. start the Postgres container from `plexa_server/docker-compose.yml`
-3. bootstrap the development and test databases
-4. run tests through `python3 -m pytest`
+> [!TIP]
+> Use `GET http://localhost:8000/api/ready` to check storage and inference
+> readiness. If inference is unavailable, review the generated
+> `PLEXA_INFERENCE_BACKENDS`, `PLEXA_INFERENCE_PROFILES`, and
+> `PLEXA_INFERENCE_REQUIRED_BACKENDS` values in `plexa_server/.env`.
 
-The detailed server workflow is documented in:
-- [plexa_server/README.md](plexa_server/README.md)
-
-## Production Deployment
-
-The initial production path targets VPS or institution-owned server deployments
-with one public domain:
-
-- the portal is served from `/`
-- the API is reverse-proxied under `/api`
-- Postgres provides persistence
-- inference remains a backend-only endpoint configured on the server
-
-See [deploy/README.md](deploy/README.md) for the Docker Compose and Caddy-based
-deployment guide. Start there for both `deploy/smoke-local-prod.sh` local
-production smoke tests and `deploy/deploy-production.sh` domain-backed
-production setup.
+For component-specific setup and configuration, see the
+[server guide](plexa_server/README.md) and [portal guide](plexa_portal/README.md).
 
 ## Testing
 
-The repository root has a pytest hook in [conftest.py](conftest.py) that:
-- loads `plexa_server/.env`
-- registers the `--storage-backend` option early enough for root-level test runs
-
-Supported backend test modes:
-- `filesystem`
-- `postgres`
-- `both`
-
-Typical examples:
+Run the server suite against both storage implementations:
 
 ```bash
-python3 -m pytest -q plexa_server/tests
-python3 -m pytest -q plexa_server/tests --storage-backend=postgres
-python3 -m pytest -q plexa_server/tests --storage-backend=both
+uv run --frozen pytest -q plexa_server/tests --storage-backend=both
 ```
 
-## License
+Check the portal:
 
-Plexa is open-source with a permissive license.
+```bash
+npm --prefix plexa_portal run lint
+npm --prefix plexa_portal run build
+```
 
-See [LICENSE](LICENSE).
+The repository maintenance runner combines these checks with lockfile, CI
+policy, migration, and disposable-PostgreSQL validation:
+
+```bash
+maintainence/run-ci-local.sh --quick
+maintainence/run-ci-local.sh
+```
+
+The full runner downloads dependencies and a PostgreSQL image. See the
+[maintenance guide](maintainence/README.md) before using it.
+
+## Deployment
+
+Plexa ships with a Docker Compose and Caddy deployment for either:
+
+- a local production-mode smoke test at `http://localhost:8080`; or
+- a domain-backed installation such as `https://plexa.example.edu`.
+
+Start with the [production deployment guide](deploy/README.md). It covers DNS,
+OIDC registration, inference connectivity, generated secrets, validation,
+backups, restoration, and upgrades.
+
+## Repository Guide
+
+| Path | Purpose |
+| --- | --- |
+| [`plexa_server/`](plexa_server/) | FastAPI application, lesson runtime, storage, auth, migrations, and tests |
+| [`plexa_portal/`](plexa_portal/) | React student and instructor portal |
+| [`deploy/`](deploy/) | Production configuration, deployment, checks, backup, and restore tooling |
+| [`maintainence/`](maintainence/) | Local CI, dependency, and repository-security maintenance tooling |
+| [`docs/`](docs/) | Generated API documentation sources and Sphinx build output |
+
+The files under `docs/source/generated/` are generated by TypeDoc and
+Sphinx tooling. Update their source code or documentation comments and
+regenerate them instead of editing generated pages by hand.

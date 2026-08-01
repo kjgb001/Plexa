@@ -1,1 +1,33 @@
-Generic single-database configuration.
+# Plexa Database Migrations
+
+This directory contains the Alembic environment and ordered PostgreSQL schema
+migrations for Plexa. Migrations are the authoritative schema workflow; the
+application must not create or reshape production tables at startup.
+
+Run Alembic from the repository root so the project configuration and imports
+resolve consistently:
+
+```bash
+uv run alembic -c plexa_server/alembic.ini upgrade head
+uv run alembic -c plexa_server/alembic.ini current
+uv run alembic -c plexa_server/alembic.ini history
+```
+
+Create a revision after updating the SQLAlchemy models:
+
+```bash
+uv run alembic -c plexa_server/alembic.ini revision --autogenerate -m "describe the schema change"
+```
+
+> [!CAUTION]
+> Autogeneration is a draft, not a finished migration. Review upgrade and
+> downgrade behavior, constraints, indexes, data backfills, and locking impact
+> before committing the revision.
+
+Migration files live in `versions/`. Keep revisions linear unless a deliberate
+branch and merge migration has been reviewed. Test both clean-database upgrades
+and upgrades from the previous release before deploying a schema change.
+
+Production Compose runs `alembic upgrade head` in the one-shot `plexa_migrate`
+service before the API starts. See [`../../deploy/README.md`](../../deploy/README.md)
+for deployment, backup, and restore procedures.

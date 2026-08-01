@@ -1,299 +1,134 @@
-# Plexa Production Deployment
+# Deploying Plexa
 
-This deployment path is intended for institutions running Plexa from a VPS or an owned internal server.
+Plexa includes a Docker Compose stack for a single-host installation on a VPS
+or institution-owned server. The same stack can run locally in production mode
+for a realistic smoke test without replacing the normal development setup.
 
-It preserves the local development workflow and adds a separate production stack:
+Choose the path that matches your goal:
 
-```text
-student browser -> https://plexa.example.edu
-  /      -> Caddy static portal
-  /api/* -> plexa_server FastAPI app
+| Goal | Entry point | Address |
+| --- | --- | --- |
+| Test the production stack locally | `deploy/smoke-local-prod.sh` | `http://localhost:8080` |
+| Serve Plexa from an institutional domain | `deploy/deploy-production.sh` | `https://plexa.example.edu` |
 
-plexa_server -> Postgres
-plexa_server -> OpenAI-compatible inference endpoint
-```
-
-The inference endpoint is server-side only. It can be an institutional GPU host, a GPU VPS, or another OpenAI-compatible runtime reachable from the Plexa server container.
-Use HTTPS across hosts. For a trusted private network that intentionally uses
-HTTP, pass `--allow-insecure-inference`; never use that override for a public
-inference endpoint.
-
-## Files
-
-- [docker-compose.prod.yml](../docker-compose.prod.yml): production stack.
-- [create-production-env.sh](create-production-env.sh): generates `deploy/production.env` from deployment inputs.
-- [start-production.sh](start-production.sh): starts the production stack with the correct Compose flags.
-- [check-production-config.sh](check-production-config.sh): renders the Compose config without starting services.
-- [check-production.sh](check-production.sh): validates local or domain production setup before and after startup.
-- [deploy-production.sh](deploy-production.sh): guided domain-backed production deploy flow.
-- [smoke-local-prod.sh](smoke-local-prod.sh): guided local production-mode smoke-test flow.
-- [seed-local-prod.sh](seed-local-prod.sh): seeds dev course data inside the local production stack.
-- [check-local-inference.sh](check-local-inference.sh): verifies local inference from the container and `/api/ready`.
-- [backup-production.sh](backup-production.sh): creates a checksummed Postgres dump.
-- [restore-production.sh](restore-production.sh): restores a dump with application writers stopped.
-- [production.env.example](production.env.example): copy this to `deploy/production.env`.
-- [local-production.env.example](local-production.env.example): local production-mode smoke-test config.
-- [Caddyfile](Caddyfile): single-domain static portal and `/api` reverse proxy.
-- [caddy.Dockerfile](caddy.Dockerfile): builds the Vite portal and serves it with Caddy.
-- [../plexa_server/Dockerfile](../plexa_server/Dockerfile): builds the FastAPI server image.
-
-## Prerequisites
-
-- Docker and Docker Compose.
-- A DNS record pointing your domain to the deployment host.
-- Ports `80` and `443` reachable from the public internet if using automatic HTTPS.
-- A configured OpenAI-compatible inference endpoint.
-- An institutional OIDC application registration for real student use.
-- An explicit session-content retention period approved by the institution.
-
-For an internal-only institutional domain, adapt [Caddyfile](Caddyfile) to your
-institutional TLS policy instead of relying on public Let's Encrypt issuance.
-
-The automated setup script generates the encrypted log key for you. Generate one
-manually only when you are not using the script:
-
-```bash
-python3 - <<'PY'
-from plexa_server.utils.cryptography import generate_encryption_key
-print(generate_encryption_key())
-PY
-```
-
-## Domain Setup
-
-For a normal institutional deployment at `https://plexa.<institution>.edu`:
-
-1. Create DNS:
+## Architecture
 
 ```text
-Type: A
-Name: plexa
-Value: <server public IPv4>
+Student or instructor browser
+  |
+  +-- / --------> Caddy --------> React portal
+  +-- /api/* ---> Caddy --------> Plexa server
+                                      |
+                                      +--> PostgreSQL
+                                      +--> OpenAI-compatible inference
 ```
 
-Use an `AAAA` record as well if the server has public IPv6.
+Caddy serves the built portal, proxies the API, and manages public TLS. The
+inference endpoint is configured only on the server and is never sent to the
+browser. It may run on the same host, on institutional compute, or on a separate
+GPU VPS.
 
-2. Generate, start, and verify the production stack:
+The Compose stack includes:
+
+- `postgres` for application data;
+- `plexa_migrate` to run Alembic before startup;
+- `plexa_server` for the API and lesson runtime;
+- `plexa_retention` for scheduled content cleanup; and
+- `caddy` for the portal, reverse proxy, and TLS.
+
+> [!IMPORTANT]
+> This release supports one Plexa web worker. Do not add API workers or replicas;
+> active-session coordination, stream ownership, rate limits, and disabled-log
+> transcript state are process-local.
+
+## Local Production Smoke Test
+
+This is the fastest way to exercise the built portal, production runtime
+validation, migrations, Caddy proxy, private Postgres network, and real
+inference together. It can run beside the host-based development setup because
+the API and PostgreSQL stay private to Compose while Caddy serves the portal on
+port 8080.
+
+### Requirements
+
+- Docker Engine and Docker Compose
+- Python 3 (`python3` is preferred; scripts fall back to `python`)
+- A reachable OpenAI-compatible inference service
+- A model already available through that service
+
+For Ollama, pull the model first:
 
 ```bash
-deploy/deploy-production.sh \
-  --domain plexa.<institution>.edu \
-  --email admin@<institution>.edu \
-  --inference-url https://inference.<institution>.edu/v1 \
-  --model <model-name> \
-  --oidc-authority https://login.<institution>.edu \
-  --oidc-client-id plexa \
-  --oidc-audience plexa-api \
-  --admin-user <initial-admin-subject> \
-  --retention-days 365
+ollama pull llama3.1
 ```
 
-This creates `deploy/production.env`, validates the setup, starts the stack, and
-checks `/api/health`, `/api/ready`, Caddy reachability, and inference reachability.
-It also generates a random Postgres password and encrypted-log keyring, stores
-inference credentials in Docker secret files, configures Caddy for the domain,
-sets `VITE_API_BASE_URL=/api`, and configures verified OIDC/JWT authentication.
-
-Before running it, register Plexa as a public Authorization Code + PKCE client
-with the identity provider. Configure these exact browser return URLs:
-
-```text
-Redirect URI: https://plexa.<institution>.edu/auth/callback
-Post-logout URI: https://plexa.<institution>.edu/login
-```
-
-The identity provider must issue access tokens whose `iss` matches its discovery
-document, whose `aud` contains the value passed to `--oidc-audience`, and whose
-subject claim identifies one stable institutional user. Use `--user-id-claim`
-only when the institution intentionally uses a claim other than `sub`.
-The scopes passed with `--oidc-scope` must cause the provider to issue an access
-token for the Plexa API. Provider-specific API scopes or resource configuration
-may be required; an ID token is not accepted as an API credential.
-
-`--admin-user` must be the stable value of the configured user-id claim for the
-person who will bootstrap the first courses. Instead of an individual bootstrap
-admin, an institution can pass both `--roles-claim <claim>` and
-`--admin-role <role-value>` to map an institutional role to Plexa administration.
-
-If the inference endpoint requires a bearer token, put the token in a local file
-that is not committed and pass the file path:
-
-```bash
-deploy/deploy-production.sh \
-  --domain plexa.<institution>.edu \
-  --email admin@<institution>.edu \
-  --inference-url https://inference.<institution>.edu/v1 \
-  --api-key /secure/path/inference-api-key \
-  --model <model-name> \
-  --oidc-authority https://login.<institution>.edu \
-  --oidc-client-id plexa \
-  --oidc-audience plexa-api \
-  --admin-user <initial-admin-subject> \
-  --retention-days 365
-```
-
-For an HTTP inference endpoint reachable only over a protected institutional
-network, add `--allow-insecure-inference`. The generated server configuration
-otherwise rejects non-HTTPS inference before startup.
-
-If DNS or TLS propagation is not ready yet, start without post-start checks and
-run them later:
-
-```bash
-deploy/deploy-production.sh --env-file deploy/production.env --skip-postcheck
-deploy/check-production.sh deploy/production.env --mode domain --stage poststart
-```
-
-3. Open:
-
-```text
-https://plexa.<institution>.edu
-```
-
-## Manual Configure
-
-If you need to customize beyond the generated defaults, copy the example
-environment file:
-
-```bash
-cp deploy/production.env.example deploy/production.env
-```
-
-Then edit `deploy/production.env`.
-
-Minimum values to replace:
-
-- `PLEXA_SITE_ADDRESS`
-- `ACME_EMAIL`
-- `POSTGRES_PASSWORD`
-- `PLEXA_DATABASE_URL`
-- `PLEXA_DATABASE_SYNC_URL`
-- `PLEXA_CORS_ALLOWED_ORIGINS`
-- OIDC issuer, audience, JWKS, and portal client values
-- encrypted-log keyring and inference API-key secret file paths
-- `PLEXA_CONTENT_RETENTION_DAYS`
-- `PLEXA_INFERENCE_BACKENDS`
-- `PLEXA_INFERENCE_PROFILES`
-
-For the bundled Postgres service, keep the database host as `postgres` in the database URLs.
-
-For a managed or institution-owned external Postgres server:
-
-- remove or ignore the compose `postgres` service only after adapting the stack
-- point `PLEXA_DATABASE_URL` and `PLEXA_DATABASE_SYNC_URL` at the external database
-- keep runtime credentials least-privilege where possible
-
-## Temporary Dev Login
-
-Domain production defaults to OIDC. Temporary username login must be requested
-explicitly and is only for a private smoke test:
-
-```bash
-deploy/deploy-production.sh \
-  --domain plexa.<institution>.edu \
-  --email admin@<institution>.edu \
-  --inference-url https://inference.<institution>.edu/v1 \
-  --model <model-name> \
-  --retention-days 30 \
-  --temporary-dev-login \
-  --admin-user admin
-```
-
-Server settings:
-
-```env
-PLEXA_AUTH_MODE=dev-header
-PLEXA_ENABLE_DEV_LOGIN=true
-```
-
-Portal settings:
-
-```env
-VITE_AUTH_MODE=dev
-VITE_ENABLE_DEV_LOGIN=true
-```
-
-This trusts a browser-supplied username header. It is not institutional auth and
-must never be exposed to real students.
-
-To disable temporary dev login later:
-
-```env
-PLEXA_AUTH_MODE=bearer-jwt
-PLEXA_ENABLE_DEV_LOGIN=false
-VITE_AUTH_MODE=oidc
-VITE_ENABLE_DEV_LOGIN=false
-```
-
-Regenerate the env with the normal OIDC flags rather than hand-switching only
-these four values; issuer, audience, JWKS, redirect, and client settings are all
-required together.
-
-## Start
-
-The automated start command is:
-
-```bash
-deploy/start-production.sh
-```
-
-Prefer the helper because it clears ambient shell variables before Compose
-interpolates the env file. The equivalent explicit Compose command is:
-
-```bash
-PLEXA_DEPLOY_ENV_FILE=deploy/production.env \
-  docker compose -p plexa-prod --env-file deploy/production.env -f docker-compose.prod.yml up -d --build
-```
-
-The `plexa_migrate` service runs Alembic migrations before `plexa_server` starts.
-If you keep the env file somewhere else, set `PLEXA_DEPLOY_ENV_FILE` to that path
-as well as passing it through `--env-file`.
-
-## Local Production-Mode Smoke Test
-
-To run the production stack beside the normal dev setup on your machine, use the
-local env example. It keeps Postgres private inside Docker and exposes Caddy on
-`http://localhost:8080` instead of ports `80`/`443`.
-
-Recommended:
+Then run from the repository root:
 
 ```bash
 deploy/smoke-local-prod.sh --model llama3.1
 ```
 
-This creates `deploy/local-production.env` if needed, checks local prerequisites,
-builds and starts the production stack, seeds development course data, checks
-container inference reachability, and verifies `/api/ready`.
+The script:
 
-If you need to regenerate the env file, pass `--force`:
+1. creates `deploy/local-production.env` and local secret files;
+2. validates the generated Compose configuration;
+3. builds and starts the stack;
+4. seeds the maintained development courses and lessons; and
+5. checks inference from the host, container, and `/api/ready`.
+
+Open <http://localhost:8080>. Temporary username login is enabled in this mode;
+the seeded dataset includes `tester` and `instructor`, and the generated admin
+defaults to `admin`.
+
+> [!NOTE]
+> If `deploy/local-production.env` already exists, the script reuses it. New
+> command-line model, timeout, or API-key values do not replace the existing
+> file unless you pass `--force`.
+
+Regenerate local configuration after changing inference settings:
 
 ```bash
 deploy/smoke-local-prod.sh --model llama3.1 --force
 ```
 
-Manual path:
+Useful options:
+
+```bash
+deploy/smoke-local-prod.sh \
+  --model llama3.1 \
+  --fast-model qwen2.5:7b \
+  --reasoning-model deepseek-r1:8b \
+  --timeout 60 \
+  --api-key /secure/path/inference-api-key
+```
+
+`--model` is the model identifier sent to the inference API. It populates all
+three Plexa inference profiles unless `--fast-model` or `--reasoning-model`
+overrides a profile. The deployment script cannot discover which models your
+inference service has loaded, so this value must be explicit.
+
+To run the same flow one step at a time:
 
 ```bash
 deploy/create-production-env.sh --local --model llama3.1
 deploy/check-production.sh deploy/local-production.env --mode local --stage prestart
 deploy/start-production.sh deploy/local-production.env
-deploy/seed-local-prod.sh
-deploy/check-local-inference.sh
+deploy/seed-local-prod.sh deploy/local-production.env
+deploy/check-local-inference.sh deploy/local-production.env
 ```
 
-Open:
+### Reaching Host Inference
+
+Containers reach a host service through `host.docker.internal`; the production
+Compose file maps that name through Docker's `host-gateway` on Linux. A host
+inference URL therefore looks like:
 
 ```text
-http://localhost:8080
+http://host.docker.internal:11434/v1
 ```
 
-If your inference server runs on the host machine, use
-`http://host.docker.internal:<port>/v1` from inside the container. On Linux this
-is enabled by the production compose file through Docker's `host-gateway`.
-
-For Ollama, the common failure mode is that the host can run
-`curl http://localhost:11434/v1/models` but the container cannot connect because
-Ollama is bound only to `127.0.0.1`. Check the listener:
+Ollama commonly listens only on `127.0.0.1`, which works for host `curl` but
+refuses container connections. Check the active listener and systemd settings:
 
 ```bash
 ss -ltnp 'sport = :11434'
@@ -301,131 +136,288 @@ systemctl cat ollama
 systemctl show ollama -p FragmentPath -p DropInPaths -p Environment
 ```
 
-The listener must be on an address Docker can reach, such as `0.0.0.0:11434` or
-`[::]:11434`, not only `127.0.0.1:11434`. Do not expose that port publicly
-unless the host firewall and network policy make it safe.
-
-If you need custom local values, copy [local-production.env.example](local-production.env.example)
-to `deploy/local-production.env` and edit it manually.
-
-Check status:
+The listener must use an address Docker can reach, such as `0.0.0.0:11434` or
+`[::]:11434`. After changing the Ollama service environment, reload systemd,
+restart Ollama, and check the listener again:
 
 ```bash
-docker compose -p plexa-prod --env-file <env-file> -f docker-compose.prod.yml ps
+sudo systemctl daemon-reload
+sudo systemctl restart ollama
+ss -ltnp 'sport = :11434'
 ```
 
-View logs:
+> [!WARNING]
+> Binding inference to all interfaces can expose it beyond Docker. Use the host
+> firewall and network policy to prevent public access to the inference port.
+
+## Institutional Domain Deployment
+
+The normal production path serves one origin such as
+`https://plexa.example.edu`, uses institutional OIDC, and obtains certificates
+through Caddy.
+
+### 1. Prepare the Host and Services
+
+You need:
+
+- a Linux host with Docker Engine and Docker Compose;
+- an `A` record, and optionally `AAAA`, pointing the domain to the host;
+- inbound ports 80 and 443 available to Caddy;
+- an ACME contact email;
+- an OpenAI-compatible inference URL ending in `/v1`;
+- the model identifier or identifiers Plexa should request;
+- an institutional OIDC client registration; and
+- an institution-approved positive content-retention period.
+
+Use HTTPS between Plexa and inference when they communicate over public or
+untrusted networks. An HTTP inference URL is accepted only with
+`--allow-insecure-inference`, which should be limited to a protected private
+network.
+
+For an internal-only domain, adapt [`Caddyfile`](Caddyfile) to the institution's
+DNS and TLS policy instead of assuming public ACME issuance.
+
+### 2. Register the OIDC Client
+
+Register Plexa as a public Authorization Code with PKCE client. Configure these
+browser return URLs exactly:
+
+```text
+Redirect URI: https://plexa.example.edu/auth/callback
+Post-logout URI: https://plexa.example.edu/login
+```
+
+The identity provider must issue an API access token with:
+
+- an `iss` matching the discovery document;
+- an `aud` containing the configured Plexa API audience;
+- a stable subject identifier, normally `sub`; and
+- an expiration claim.
+
+An ID token is not accepted as the API credential. Some providers require a
+provider-specific API scope or resource setting in addition to
+`openid profile email`.
+
+Choose one administration bootstrap method:
+
+- pass `--admin-user` with the stable subject of the initial Plexa admin; or
+- pass `--roles-claim` and `--admin-role` to map an institutional role.
+
+### 3. Create and Start the Stack
+
+Replace the example values and run:
 
 ```bash
-docker compose -p plexa-prod --env-file <env-file> -f docker-compose.prod.yml logs -f plexa_server
-docker compose -p plexa-prod --env-file <env-file> -f docker-compose.prod.yml logs -f caddy
+deploy/deploy-production.sh \
+  --domain plexa.example.edu \
+  --email admin@example.edu \
+  --inference-url https://inference.example.edu/v1 \
+  --model llama3.1 \
+  --oidc-authority https://login.example.edu \
+  --oidc-client-id plexa \
+  --oidc-audience plexa-api \
+  --admin-user initial-admin-subject \
+  --retention-days 365
 ```
 
-## Smoke Test
+If inference requires a bearer token, place the token in a single-line file
+outside the repository and add:
 
-For a guided post-start check:
+```bash
+--api-key /secure/path/inference-api-key
+```
+
+The helper generates `deploy/production.env`, a random PostgreSQL password, and
+an encrypted-log keyring. It stores inference credentials as Docker secret
+files, validates the deployment, builds and starts the services, then checks
+health, readiness, Caddy, and inference reachability.
+
+Generated env and secret files are ignored by Git. Back them up separately from
+the database; retained encrypted logs cannot be recovered without their keys.
+
+If DNS or TLS is not ready, skip external post-start checks and run them later:
+
+```bash
+deploy/deploy-production.sh --env-file deploy/production.env --skip-postcheck
+deploy/check-production.sh deploy/production.env --mode domain --stage poststart
+```
+
+### 4. Verify the Deployment
+
+Run the guided check:
 
 ```bash
 deploy/check-production.sh deploy/production.env --mode domain --stage poststart
 ```
 
-Check liveness:
+Then verify the public endpoints:
 
 ```bash
-curl https://plexa.<institution>.edu/api/health
+curl https://plexa.example.edu/api/health
+curl https://plexa.example.edu/api/ready
 ```
 
-Check dependency readiness:
+Open `https://plexa.example.edu`, complete OIDC sign-in, confirm the expected
+student or instructor role, and send a real lesson message. Automated checks do
+not prove browser redirects, provider-specific token claims, or actual model
+quality.
 
-```bash
-curl https://plexa.<institution>.edu/api/ready
-```
+## Reusing or Editing Configuration
 
-Then open the site in a browser and sign in with a temporary username if dev login is enabled.
-
-## Verification Checklist
-
-Use the backend test suite before relying on the deployment stack:
-
-```bash
-python3 -m plexa_server.bootstrap --init-dev --init-test --import-filesystem
-python3 -m pytest -q plexa_server/tests --storage-backend=both
-```
-
-For a faster deployment-focused backend pass:
-
-```bash
-python3 -m pytest -q plexa_server/tests/api/test_main.py
-python3 -m pytest -q plexa_server/tests/bootstrap
-python3 -m pytest -q plexa_server/tests/auth
-python3 -m pytest -q plexa_server/tests/inference
-python3 -m pytest -q plexa_server/tests/storage/test_db_postgres_storage.py
-```
-
-Validate the deployment helpers without starting services:
-
-```bash
-bash -n deploy/*.sh deploy/lib/*.sh
-deploy/create-production-env.sh --domain plexa.example.test --email ci@example.org --inference-url https://inference.example.test/v1 --model llama3.1 --timeout 30 --retention-days 30 --temporary-dev-login --admin-user ci-admin --output /tmp/plexa-production.env --force
-deploy/create-production-env.sh --local --model llama3.1 --output /tmp/plexa-local-production.env --force
-deploy/check-production-config.sh /tmp/plexa-production.env
-deploy/check-production-config.sh /tmp/plexa-local-production.env
-```
-
-`deploy/check-production-config.sh` validates quietly by default. Pass `--show`
-before the env-file argument only when you intentionally need the fully rendered
-Compose config; that output can contain resolved secrets and must not be shared.
-
-Validate the portal build:
-
-```bash
-cd plexa_portal
-npm run build
-```
-
-The automated tests cover runtime validation, auth behavior, inference routing,
-storage contracts, migrations/bootstrap orchestration, API behavior, and core
-lesson/session logic. They do not prove DNS, public TLS issuance, browser
-behavior, Docker image startup, Caddy proxying, or reachability of a real
-inference endpoint. Cover those with the local production-mode smoke test and
-the domain smoke test above.
-
-## Troubleshooting
-
-| Symptom | What to check |
-| --- | --- |
-| `permission denied while trying to connect to the docker API at unix:///var/run/docker.sock` | Start Docker and give the current user socket access. On Linux/Pop!_OS: `sudo systemctl enable --now docker`, `sudo usermod -aG docker "$USER"`, then log out and back in. Verify with `docker ps`. |
-| `python: command not found` | Use the deploy scripts after this repo change; they resolve `python3` first, then `python`, and fail clearly if neither exists. |
-| Docker build fails at `npm ci` because no lockfile exists | Confirm `plexa_portal/package-lock.json` exists in the checkout. The production build intentionally uses `npm ci`, so the lockfile must be tracked. |
-| `docker compose exec` says it needs at least two arguments | Use `deploy/seed-local-prod.sh` instead of manually typing the long seed command. |
-| `/api/ready` reports inference unavailable | Run `deploy/check-local-inference.sh` for local-prod or `deploy/check-production.sh deploy/production.env --mode domain --stage poststart` for domain prod. |
-| Host `curl localhost:11434/v1/models` works but Plexa cannot reach Ollama | Ollama is probably bound only to `127.0.0.1`. Bind it to an address Docker can reach and verify with `ss -ltnp 'sport = :11434'`. |
-| Domain deployment cannot get HTTPS | Confirm DNS points at the server, ports `80` and `443` are reachable from the public internet, and `PLEXA_SITE_ADDRESS` is a hostname rather than a URL. |
-| Generated env file still has old values | Regenerate with `--force`, or edit the env file directly and restart with `deploy/start-production.sh <env-file>`. |
-
-## Update
-
-Pull or deploy the new code, then rebuild and restart:
+Start or rebuild from an existing env file:
 
 ```bash
 deploy/start-production.sh deploy/production.env
 ```
 
-Run only migrations:
+The helper clears conflicting ambient deployment variables before invoking
+Compose. The equivalent explicit command is:
 
 ```bash
-docker compose --env-file deploy/production.env -f docker-compose.prod.yml run --rm plexa_migrate
+PLEXA_DEPLOY_ENV_FILE=deploy/production.env \
+  docker compose -p plexa-prod \
+  --env-file deploy/production.env \
+  -f docker-compose.prod.yml \
+  up -d --build
 ```
 
-## Operational Notes
+To generate a replacement env file, rerun `deploy/deploy-production.sh` with the
+full argument set and `--force`. To customize unsupported infrastructure, start
+from [`production.env.example`](production.env.example), but keep the env-file
+path synchronized with `PLEXA_DEPLOY_ENV_FILE`.
 
-- Do not commit `deploy/production.env`.
-- Keep the Postgres port private unless your institution explicitly manages database networking.
-- Keep `PLEXA_WEB_CONCURRENCY=1`; process-local session locks, disabled transcripts, and rate limits are not coordinated across workers yet.
-- `logging_policy=disabled` persists session metadata and reflections but no transcript messages. The transcript exists only in web-process memory and is lost on restart.
-- Existing sessions keep a private snapshot of their lesson and inference config. Editing a lesson affects new sessions only.
-- Retention cleanup removes transcript/reflection content and encrypted payloads after `PLEXA_CONTENT_RETENTION_DAYS`, while preserving content-free submission metadata.
-- Run `deploy/backup-production.sh deploy/production.env` on an institutional schedule and test `deploy/restore-production.sh deploy/production.env <dump> --confirm` before release.
-- Back up `deploy/production.env` and the files under `deploy/secrets/` separately from the database. Losing the encrypted-log keyring makes retained logs unreadable.
-- Prefer network paths where only `plexa_server` can reach the inference endpoint.
-- Caddy manages certificates automatically when `PLEXA_SITE_ADDRESS` is a real public domain and ports `80`/`443` are reachable.
+The bundled database URLs use `postgres` as the host name. Adopting an external
+or managed PostgreSQL service requires adapting the Compose stack and setting
+both the async runtime URL and sync Alembic URL. Use least-privilege application
+credentials wherever the surrounding provisioning system permits it.
+
+## Temporary Domain Dev Login
+
+A domain deployment can explicitly enable username login for a private smoke
+test:
+
+```bash
+deploy/deploy-production.sh \
+  --domain plexa.example.edu \
+  --email admin@example.edu \
+  --inference-url https://inference.example.edu/v1 \
+  --model llama3.1 \
+  --retention-days 30 \
+  --temporary-dev-login \
+  --admin-user admin
+```
+
+> [!CAUTION]
+> This mode trusts a username supplied by the browser. Never expose it to real
+> students or treat it as institutional authentication.
+
+Do not switch to OIDC by editing only `PLEXA_AUTH_MODE`. Regenerate the env file
+with the full OIDC arguments so issuer, audience, JWKS, portal client, redirect,
+and logout settings change together.
+
+## Validation Before Release
+
+Run backend and portal checks from the repository root:
+
+```bash
+uv run --frozen pytest -q plexa_server/tests --storage-backend=both
+npm --prefix plexa_portal run lint
+npm --prefix plexa_portal run build
+```
+
+Validate shell syntax, CI policy, and generated Compose configuration:
+
+```bash
+bash -n deploy/*.sh deploy/lib/*.sh
+maintainence/audit-ci.sh
+deploy/create-production-env.sh \
+  --domain plexa.example.test \
+  --email ci@example.org \
+  --inference-url https://inference.example.test/v1 \
+  --model ci-model \
+  --retention-days 30 \
+  --temporary-dev-login \
+  --admin-user ci-admin \
+  --output /tmp/plexa-production.env \
+  --force
+deploy/check-production-config.sh /tmp/plexa-production.env
+```
+
+`check-production-config.sh` is quiet by default. Its `--show` option prints the
+fully rendered Compose configuration, which can include resolved secrets; do
+not share that output.
+
+## Backups, Restores, and Updates
+
+Create a checksummed PostgreSQL dump:
+
+```bash
+deploy/backup-production.sh deploy/production.env backups
+```
+
+Back up `deploy/production.env` and `deploy/secrets/` through a separate secure
+channel. The database dump does not contain the files needed to decrypt retained
+logs.
+
+Restore only during a maintenance window, using a tested backup:
+
+```bash
+deploy/restore-production.sh \
+  deploy/production.env \
+  backups/plexa-YYYYMMDDTHHMMSSZ.dump \
+  --confirm
+deploy/check-production.sh deploy/production.env --mode domain --stage poststart
+```
+
+The restore script verifies the checksum, stops application writers, replaces
+database contents, reapplies migrations, and restarts the stack.
+
+For a routine application update:
+
+```bash
+deploy/backup-production.sh deploy/production.env
+deploy/check-production.sh deploy/production.env --mode domain --stage prestart
+deploy/start-production.sh deploy/production.env
+deploy/check-production.sh deploy/production.env --mode domain --stage poststart
+```
+
+Read new migration files before deployment. Test restores outside production,
+and never remove an encryption key while retained records still depend on it.
+
+## Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| Docker reports permission denied for `/var/run/docker.sock` | Start Docker and grant the current user access. On Linux, add the user to the `docker` group, then log out and back in before running `docker ps`. |
+| A script reports `python: command not found` | Pull the current scripts. They try `python3`, then `python`, and print a clear error if neither exists. |
+| A Caddy image fails at `npm ci` | Confirm `plexa_portal/package-lock.json` is present and tracked. Production builds intentionally require the lockfile. |
+| `docker compose exec` requires another argument | Use `deploy/seed-local-prod.sh`; `exec` requires both a service and a command. |
+| `/api/ready` reports inference unavailable | Run `deploy/check-local-inference.sh` locally or the domain post-start check, then inspect the configured URL, model, API key, timeout, and required backends. |
+| Host inference works but the container gets connection refused | The service is probably bound only to loopback. Check the listener and bind it to an address Docker can reach without exposing it publicly. |
+| Domain HTTPS is unavailable | Confirm DNS points to the host, ports 80 and 443 are reachable, and `PLEXA_SITE_ADDRESS` contains a hostname rather than a URL. |
+| New command-line values seem ignored | The env file already exists. Pass `--force` to regenerate it, or edit it deliberately and restart the stack. |
+
+Inspect service status and logs with:
+
+```bash
+docker compose -p plexa-prod --env-file deploy/production.env -f docker-compose.prod.yml ps
+docker compose -p plexa-prod --env-file deploy/production.env -f docker-compose.prod.yml logs -f plexa_server
+docker compose -p plexa-prod --env-file deploy/production.env -f docker-compose.prod.yml logs -f caddy
+```
+
+Use `deploy/local-production.env` instead for the local smoke stack.
+
+## Script Reference
+
+| Script | Purpose |
+| --- | --- |
+| `smoke-local-prod.sh` | Generate, start, seed, and verify local production mode |
+| `deploy-production.sh` | Generate, start, and verify a domain deployment |
+| `create-production-env.sh` | Generate validated local or domain env and secret files |
+| `start-production.sh` | Build and start from an existing env file |
+| `check-production.sh` | Run pre-start or post-start deployment checks |
+| `check-production-config.sh` | Render and validate Compose without starting services |
+| `check-local-inference.sh` | Check local inference and API readiness |
+| `seed-local-prod.sh` | Seed maintained development data inside local production mode |
+| `backup-production.sh` | Create a checksummed PostgreSQL dump |
+| `restore-production.sh` | Restore a checked dump with writers stopped |

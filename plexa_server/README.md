@@ -1,467 +1,248 @@
 # Plexa Server
 
-`plexa_server` is the lesson runtime and policy engine for Plexa.
+`plexa_server` is Plexa's FastAPI application and lesson runtime. It validates
+lesson artifacts, authorizes course access, orchestrates inference, enforces
+session rules, and persists course and session state.
 
-It is responsible for:
-- validating lesson artifacts
-- enforcing lesson constraints
-- managing session lifecycle
-- orchestrating inference backends
-- persisting lessons, courses, sessions, and logs
+## Responsibilities
 
-The server now supports both:
-- a legacy filesystem storage backend
-- a PostgreSQL storage backend using SQLAlchemy, Alembic, and `asyncpg`
+- Course, lesson, session, message, and reflection domain models
+- Course-scoped lesson authoring with optimistic revisions
+- Per-session lesson and inference snapshots
+- Turn limits, completion gates, reflection hooks, and idempotent message IDs
+- Streaming responses with an explicit non-streaming fallback path
+- Development-header and bearer-JWT authentication
+- PostgreSQL persistence, Alembic migrations, and encrypted retained logs
+- Filesystem storage for legacy import and backend-contract testing
+- Health, readiness, retention, and structured request logging
 
-## Layout
-
-Key directories:
-
-```text
-plexa_server/
-├── api/         # FastAPI app and route modules
-├── auth/        # Auth helpers and request ownership checks
-├── core/        # Session and lesson runtime logic
-├── data/        # Legacy filesystem-backed development data
-├── db/          # Database config, models, sessions, and DB bootstrap helpers
-├── inference/   # Inference abstraction and stub backend
-├── models/      # Pydantic domain models
-├── storage/     # Filesystem and Postgres storage implementations
-├── tests/       # Backend-aware test suite
-├── utils/       # Import and supporting utilities
-├── alembic/     # Database migrations
-└── docker-compose.yml
-```
+Student-facing lesson responses intentionally omit private execution details,
+including system prompts.
 
 ## Local Development
 
-Create and activate a virtual environment:
+### Requirements
+
+- Python 3.12 or 3.13
+- [uv](https://docs.astral.sh/uv/)
+- Docker with the Compose plugin
+- An OpenAI-compatible inference endpoint for real model responses
+
+Run the following commands from the repository root:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+uv sync --frozen
+docker compose -f plexa_server/docker-compose.yml up -d
+uv run python -m plexa_server.bootstrap --init-dev --init-test
+uv run python -m plexa_server.utils.seed_dev_data --target dev
 ```
 
-Install the server dependencies into that environment. At minimum, the database path requires:
+Bootstrap creates the development and test databases, runs migrations, and
+creates `plexa_server/.env` with safe local defaults when it does not exist.
+Existing values are preserved.
+
+> [!CAUTION]
+> `--init-test` resets the configured test schema. It never targets the
+> development database unless the test database URLs have been misconfigured,
+> so review custom database URLs before running it.
+
+Start the API:
 
 ```bash
-python3 -m pip install sqlalchemy alembic asyncpg pytest cryptography
+uv run python -m plexa_server.api.main
 ```
 
-If `pytest` resolves to a system binary on your machine, prefer:
+The server listens on `http://localhost:8000`. Useful checks are:
 
 ```bash
-python3 -m pytest
+curl http://localhost:8000/api/health
+curl http://localhost:8000/api/ready
+curl http://localhost:8000/api/debug/inference
 ```
 
-## PostgreSQL Setup
+`/api/health` reports process liveness. `/api/ready` also checks storage and
+required inference backends. `/api/debug/inference` shows profile resolution in
+development and returns 404 in production.
 
-This repository includes a local Postgres service definition in [docker-compose.yml](docker-compose.yml).
+## Inference Setup
 
-Start the database:
+The generated local `.env` contains example backends for:
+
+- Ollama at `http://localhost:11434/v1`
+- vLLM at `http://localhost:8001/v1`
+
+It also defines `default`, `fast`, and `reasoning` profiles. These are examples,
+not bundled models. Update the backend URLs, model names, and
+`PLEXA_INFERENCE_REQUIRED_BACKENDS` to match the services your environment
+actually runs. A backend listed as required must pass its health check before
+`/api/ready` returns 200.
+
+The main variables are:
+
+| Variable | Purpose |
+| --- | --- |
+| `PLEXA_INFERENCE_BACKENDS` | Named OpenAI-compatible backend definitions |
+| `PLEXA_INFERENCE_PROFILES` | Lesson profile to backend/model mappings |
+| `PLEXA_INFERENCE_REQUIRED_BACKENDS` | Backends required for readiness |
+
+Each backend definition may include an `api_key_file` path. The deployment
+helpers set that field to the mounted inference Docker secret when `--api-key`
+is supplied.
+
+Production cannot use the stub backend or silently fall back to it. The
+[deployment helper](../deploy/README.md) generates validated inference settings
+and mounts API keys as Docker secrets.
+
+## Development Data
+
+Seed the maintained example courses and lessons into the development database:
 
 ```bash
-docker compose up -d
+uv run python -m plexa_server.utils.seed_dev_data --target dev
 ```
 
-If your machine uses the older standalone Compose binary, use:
+Other explicit targets are available when needed:
 
 ```bash
-docker-compose up -d
+uv run python -m plexa_server.utils.seed_dev_data --target test
+uv run python -m plexa_server.utils.seed_dev_data --target filesystem
 ```
 
-The server-local `.env` file defines the default development and test database URLs.
-
-Important variables:
-- `PLEXA_DATABASE_URL`
-- `PLEXA_DATABASE_SYNC_URL`
-- `PLEXA_BOOTSTRAP_DATABASE_URL`
-- `PLEXA_BOOTSTRAP_DATABASE_SYNC_URL`
-- `PLEXA_TEST_DATABASE_URL`
-- `PLEXA_TEST_DATABASE_SYNC_URL`
-- `PLEXA_TEST_STORAGE_BACKEND`
-- `PLEXA_AUTH_MODE`
-- `PLEXA_ADMIN_USER_IDS`
-- `PLEXA_CORS_ALLOWED_ORIGINS`
-- `PLEXA_LOG_ENCRYPTION_KEYS_FILE`
-- `PLEXA_LOG_ENCRYPTION_ACTIVE_KEY_ID`
-- `PLEXA_CONTENT_RETENTION_DAYS`
-- `PLEXA_WEB_CONCURRENCY`
-- `PLEXA_INFERENCE_BACKENDS`
-- `PLEXA_INFERENCE_PROFILES`
-- `PLEXA_INFERENCE_REQUIRED_BACKENDS`
-
-## Bootstrap
-
-The application bootstrap entrypoint is [bootstrap.py](bootstrap.py).
-
-It can:
-- create `plexa_server/.env` when missing
-- populate missing local defaults without overwriting existing values
-- generate and persist the encrypted log key once
-- seed explicit local auth defaults
-- seed multi-backend inference defaults for local Ollama and vLLM targets
-- wait for Postgres
-- create the development and test databases
-- run Alembic migrations
-- optionally import the legacy filesystem dataset
-
-The generated inference defaults are meant to be edited locally as needed. By default bootstrap writes:
-- `PLEXA_AUTH_MODE=dev-header`
-- `PLEXA_ADMIN_USER_IDS=["admin"]`
-- `PLEXA_CORS_ALLOWED_ORIGINS=["http://localhost:5173"]`
-- `PLEXA_INFERENCE_BACKENDS`
-  - `ollama-local -> http://localhost:11434/v1`
-  - `vllm-local -> http://localhost:8001/v1`
-- `PLEXA_INFERENCE_PROFILES`
-  - `default -> ollama-local / llama3.1`
-  - `fast -> ollama-local / qwen2.5:7b`
-  - `reasoning -> vllm-local / deepseek-r1-distill-qwen-7b`
-
-Initialize both development and test databases:
+The older filesystem importer is a separate, one-way migration tool. Use it
+only when moving an existing filesystem dataset into PostgreSQL:
 
 ```bash
-python3 -m plexa_server.bootstrap --init-dev --init-test
+uv run python -m plexa_server.bootstrap --init-dev --import-filesystem
 ```
 
-Initialize both and import the filesystem dataset into each:
+or:
 
 ```bash
-python3 -m plexa_server.bootstrap --init-dev --init-test --import-filesystem
+uv run python -m plexa_server.utils.import_filesystem_to_postgres --target dev
 ```
 
-Initialize only the development database:
+## Database Migrations
+
+Alembic configuration lives in [`alembic.ini`](alembic.ini), with project
+guidance in [`alembic/README`](alembic/README).
+
+From the repository root:
 
 ```bash
-python3 -m plexa_server.bootstrap --init-dev
+uv run alembic -c plexa_server/alembic.ini upgrade head
 ```
 
-Initialize only the test database:
+Create a revision:
 
 ```bash
-python3 -m plexa_server.bootstrap --init-test
+uv run alembic -c plexa_server/alembic.ini revision --autogenerate -m "describe the schema change"
 ```
 
-Write a production env template with placeholders only:
+Review autogenerated migrations by hand. They must account for existing data,
+downgrades, constraints, indexes, and deployment-time locking.
+
+## Testing
+
+The test suite can run against filesystem storage, PostgreSQL, or both:
 
 ```bash
-python3 -m plexa_server.bootstrap --write-prod-template
+uv run --frozen pytest -q plexa_server/tests
+uv run --frozen pytest -q plexa_server/tests --storage-backend=postgres
+uv run --frozen pytest -q plexa_server/tests --storage-backend=both
 ```
 
-The lower-level Postgres-specific helpers remain in [db/bootstrap.py](db/bootstrap.py), but the intended user-facing entrypoint is the top-level bootstrap module.
+The selector is resolved from the command line, the environment, then
+`PLEXA_TEST_STORAGE_BACKEND`. PostgreSQL runs use
+`PLEXA_TEST_DATABASE_URL` and `PLEXA_TEST_DATABASE_SYNC_URL`.
 
-Important boundary:
-- bootstrap is local development and test tooling
-- it is not the production provisioning contract
-- production mode now refuses bootstrap by default unless `PLEXA_ALLOW_PRODUCTION_BOOTSTRAP=true` is set explicitly
-
-## Migrations
-
-Alembic is configured in:
-- [alembic.ini](alembic.ini)
-- [alembic/env.py](alembic/env.py)
-
-Run all migrations:
+Run a focused suite in the same way:
 
 ```bash
-alembic upgrade head
+uv run --frozen pytest -q plexa_server/tests/api --storage-backend=both
 ```
 
-Create a new revision:
-
-```bash
-alembic revision -m "describe schema change"
-```
-
-For schema updates driven from models, use autogeneration carefully:
-
-```bash
-alembic revision --autogenerate -m "describe schema change"
-```
-
-Migrations are the authoritative schema workflow. The application should not rely on ad hoc table creation at startup.
-
-## Importing Legacy Filesystem Data
-
-The one-way importer lives at [utils/import_filesystem_to_postgres.py](utils/import_filesystem_to_postgres.py).
-
-Import the filesystem dataset into the development database:
-
-```bash
-python3 -m plexa_server.utils.import_filesystem_to_postgres --target dev
-```
-
-Import it into the test database:
-
-```bash
-python3 -m plexa_server.utils.import_filesystem_to_postgres --target test
-```
-
-In normal local setup, it is simpler to let the bootstrap command handle this with `--import-filesystem`.
-
-## Storage Backends
-
-The active persistence implementations live under [storage](storage):
-
-- [filesystem.py](storage/filesystem.py)
-- [postgres.py](storage/postgres.py)
-- [storage_interface.py](storage/storage_interface.py)
-
-The application depends on the storage interfaces. Concrete backend selection happens in the composition root, not inside core session logic.
-
-## Production Runtime
-
-Plexa now distinguishes between local/dev behavior and production runtime behavior.
-
-Set:
-
-```env
-PLEXA_ENV=production
-```
-
-In production, startup fails closed when critical configuration is missing or unsafe. At minimum you should provide:
-- `PLEXA_DATABASE_URL` or `PLEXA_DATABASE_SYNC_URL`
-- `PLEXA_AUTH_MODE`
-  - `dev-header` is rejected unless `PLEXA_ENABLE_DEV_LOGIN=true`
-- `PLEXA_CORS_ALLOWED_ORIGINS`
-- an encrypted-log keyring file and active key id
-- a positive `PLEXA_CONTENT_RETENTION_DAYS`
-- verified JWT issuer, audience, JWKS URL, RS256, and expiration enforcement for bearer auth
-- `PLEXA_WEB_CONCURRENCY=1`
-- real inference configuration
-  - production cannot fall back to stub inference
-
-Production startup should run the ASGI app with explicit environment injection. For example:
-
-```bash
-uvicorn plexa_server.api.main:app --host 0.0.0.0 --port 8000
-```
-
-Reload is disabled by default. Only enable it intentionally with:
-
-```env
-PLEXA_UVICORN_RELOAD=true
-```
-
-The supported initial release stack is documented in [../deploy/README.md](../deploy/README.md).
-It intentionally runs one web worker because session locks, in-memory disabled
-transcripts, rate limits, and inference concurrency counters are process-local.
-
-### Data Boundaries
-
-- Student lesson APIs expose lesson identity and intent, not execution/system prompts.
-- Course owners and global admins can author or bind course-scoped lessons; co-instructors cannot.
-- Lesson artifacts are mutable, but each session freezes a private lesson and inference snapshot at creation.
-- Removing a learner from a course revokes access to that learner's existing sessions immediately.
-- `logging_policy=disabled` persists metadata and reflection state only. Transcript messages are held in the single web process and disappear on restart.
-- Retention cleanup removes transcript/reflection content and encrypted payloads while retaining content-free session/log metadata.
-
-### Production Database Configuration
-
-For deployed environments, treat database values as explicit infrastructure configuration rather than bootstrap output.
-
-Runtime variables:
-- `PLEXA_DATABASE_URL`
-  - async SQLAlchemy URL used by the application at runtime
-- `PLEXA_DATABASE_SYNC_URL`
-  - sync SQLAlchemy URL used by Alembic and any sync-only tooling
-
-Typical values:
-
-```env
-PLEXA_DATABASE_URL=postgresql+asyncpg://app_user:app_password@db.example.com:5432/plexa
-PLEXA_DATABASE_SYNC_URL=postgresql://app_user:app_password@db.example.com:5432/plexa
-```
-
-Field meanings:
-- `app_user`
-  - the database role the application uses during normal runtime
-- `app_password`
-  - that role's password, injected securely by your deployment system
-- `db.example.com`
-  - the real database host or service name for the deployment
-- `5432`
-  - the Postgres port, unless your environment uses a different one
-- `plexa`
-  - the production application database name
-
-Operational recommendation:
-- production runtime credentials should usually be least-privilege application credentials, not a superuser account
-
-Optional bootstrap-only variables:
-- `PLEXA_BOOTSTRAP_DATABASE_URL`
-- `PLEXA_BOOTSTRAP_DATABASE_SYNC_URL`
-
-Use those only when database creation or migration orchestration needs a different privileged connection than normal runtime. For example:
-
-```env
-PLEXA_BOOTSTRAP_DATABASE_URL=postgresql+asyncpg://bootstrap_user:bootstrap_password@db.example.com:5432/postgres
-PLEXA_BOOTSTRAP_DATABASE_SYNC_URL=postgresql://bootstrap_user:bootstrap_password@db.example.com:5432/postgres
-```
-
-If you do not set the bootstrap URLs, Plexa derives them from the runtime URLs by switching the database name to `postgres`. That is acceptable for local development, but explicit bootstrap credentials are usually clearer in non-dev environments.
-
-Production runtime now rejects obvious development-only database values such as:
-- `plexa_dev_password`
-- the test database name `plexa_test`
-
-Use [`.env.production.example`](.env.production.example) as the placeholder template, not as a source of real secrets.
-
-## Mode Switching
-
-Use these settings when switching between local development and production-like runtime behavior.
-
-### Development mode
-
-Typical local server settings:
-
-```env
-PLEXA_ENV=development
-PLEXA_AUTH_MODE=dev-header
-PLEXA_ADMIN_USER_IDS=["admin"]
-PLEXA_CORS_ALLOWED_ORIGINS=["http://localhost:5173"]
-PLEXA_DATABASE_URL=postgresql+asyncpg://plexa:plexa_dev_password@localhost:5432/plexa
-PLEXA_DATABASE_SYNC_URL=postgresql://plexa:plexa_dev_password@localhost:5432/plexa
-PLEXA_LOG_ENCRYPTION_KEY=...
-PLEXA_INFERENCE_BACKENDS={"ollama-local":{"type":"openai-compatible","base_url":"http://localhost:11434/v1","timeout_s":30.0},"vllm-local":{"type":"openai-compatible","base_url":"http://localhost:8001/v1","timeout_s":30.0}}
-PLEXA_INFERENCE_PROFILES={"default":{"backend_id":"ollama-local","model":"llama3.1"},"fast":{"backend_id":"ollama-local","model":"qwen2.5:7b"},"reasoning":{"backend_id":"vllm-local","model":"deepseek-r1-distill-qwen-7b"}}
-```
-
-This mode allows:
-- `dev-header` auth
-- local bootstrap
-- local DB and localhost inference endpoints
-
-### Production-like mode
-
-Typical production-oriented server settings:
-
-```env
-PLEXA_ENV=production
-PLEXA_AUTH_MODE=bearer-jwt
-PLEXA_ENABLE_DEV_LOGIN=false
-PLEXA_ADMIN_USER_IDS=["instructor-admin-1"]
-PLEXA_CORS_ALLOWED_ORIGINS=["https://app.example.com"]
-PLEXA_DATABASE_URL=postgresql+asyncpg://...
-PLEXA_DATABASE_SYNC_URL=postgresql://...
-PLEXA_LOG_ENCRYPTION_KEY=...
-PLEXA_INFERENCE_BACKENDS={"primary":{"type":"openai-compatible","base_url":"https://inference.example.com/v1","timeout_s":30.0}}
-PLEXA_INFERENCE_PROFILES={"default":{"backend_id":"primary","model":"your-model-name"}}
-PLEXA_INFERENCE_REQUIRED_BACKENDS=["primary"]
-```
-
-In this mode:
-- startup rejects `PLEXA_AUTH_MODE=dev-header`
-  - unless `PLEXA_ENABLE_DEV_LOGIN=true` is explicitly set for temporary smoke testing
-- startup rejects missing CORS origins
-- startup rejects missing encrypted-log key
-- startup rejects stub inference and stub fallback
-- bootstrap is refused unless `PLEXA_ALLOW_PRODUCTION_BOOTSTRAP=true` is set explicitly
+The root [`conftest.py`](../conftest.py) registers the storage option for tests
+started from the repository root. CI also exercises a migration
+upgrade/downgrade/data-verification sequence before the full suite.
 
 ## Authentication
 
-The server now supports modular request authentication selected by `PLEXA_AUTH_MODE`.
+The server selects authentication with `PLEXA_AUTH_MODE`:
 
-Current modes:
-- `dev-header`
-- `bearer-jwt`
+- `dev-header` reads `X-User-Id` and is intended only for local development.
+- `bearer-jwt` validates bearer-token signatures and registered claims, then
+  maps the configured user ID and optional role claims into Plexa identity.
 
-`dev-header`:
-- local development only
-- authenticates requests from `X-User-Id`
+Application authorization remains server-side. Global admins come from
+`PLEXA_ADMIN_USER_IDS` or a configured institutional admin role; course owners
+and instructors receive course-scoped capabilities.
 
-`bearer-jwt`:
-- validates `Authorization: Bearer ...`
-- verifies JWT signature and registered claims
-- supports:
-  - `HS256`
-  - `RS256`
-- can load verification material from:
-  - shared secret
-  - PEM public key
-  - JWKS JSON/file/URL
+Production bearer authentication requires an HTTPS issuer and JWKS URL, the
+expected audience, RS256, and token expiration. See
+[`deploy/README.md`](../deploy/README.md) for the matching portal configuration
+and OIDC callback requirements.
 
-Admin access is no longer based on a shared admin token. Plexa admin users are mapped through:
-- `PLEXA_ADMIN_USER_IDS`
+> [!WARNING]
+> Production rejects `dev-header` unless `PLEXA_ENABLE_DEV_LOGIN=true` is set
+> explicitly. That escape hatch is for private smoke tests, not real users.
 
-Useful bearer-JWT settings:
-- `PLEXA_AUTH_ISSUER`
-- `PLEXA_AUTH_AUDIENCE`
-- `PLEXA_AUTH_USER_ID_CLAIM`
-- `PLEXA_AUTH_ROLES_CLAIM`
-- `PLEXA_AUTH_ALLOWED_ALGORITHMS`
-- `PLEXA_AUTH_SHARED_SECRET`
-- `PLEXA_AUTH_PUBLIC_KEY_PEM`
-- `PLEXA_AUTH_PUBLIC_KEY_FILE`
-- `PLEXA_AUTH_JWKS_JSON`
-- `PLEXA_AUTH_JWKS_FILE`
-- `PLEXA_AUTH_JWKS_URL`
+## Persistence and Privacy
 
-At this point:
-- PostgreSQL is the primary backend
-- filesystem storage remains available for legacy compatibility and comparative testing
+PostgreSQL is the primary runtime backend. Filesystem storage remains available
+for import compatibility and tests.
 
-## Running Tests
+Important data boundaries:
 
-The test suite is backend-aware.
+- Course owners and global admins can author or bind lessons; co-instructors
+  cannot.
+- Lessons are mutable, but every new session stores a private snapshot of its
+  lesson and inference configuration. Editing a lesson does not rewrite an
+  active or historical session.
+- Removing a learner from a course immediately revokes access to that learner's
+  existing sessions.
+- Retained logs are encrypted, audited when accessed, and subject to the
+  configured content-retention period.
+- Retention cleanup removes transcript and reflection content while preserving
+  content-free submission metadata.
 
-The default backend selector is read from:
-1. an exported environment variable
-2. `plexa_server/.env`
-3. the hard default `filesystem`
+> [!IMPORTANT]
+> `logging_policy=disabled` means transcript messages are never persisted.
+> Session metadata and reflection state may still be stored, while transcript
+> messages exist only in the current web process and are lost on restart.
 
-Set the backend in `.env`:
+## Production Runtime
+
+Setting `PLEXA_ENV=production` enables fail-closed validation for database,
+authentication, CORS, encryption, retention, inference, and worker settings.
+The initial supported deployment runs exactly one application worker:
 
 ```env
-PLEXA_TEST_STORAGE_BACKEND=filesystem
+PLEXA_WEB_CONCURRENCY=1
 ```
 
-Supported values:
-- `filesystem`
-- `postgres`
-- `both`
+Do not increase this value yet. Active-session locks, disabled-policy
+transcripts, rate limits, stream ownership, and inference counters are not
+coordinated across processes.
 
-Run the full suite:
+Use [`.env.production.example`](.env.production.example) only as a reference.
+For a working Docker Compose configuration, secrets, Caddy proxy, OIDC setup,
+and operational checks, follow the [production deployment guide](../deploy/README.md).
 
-```bash
-python3 -m pytest -q plexa_server/tests
+## Project Layout
+
+```text
+plexa_server/
+├── alembic/       # Ordered database revisions
+├── api/           # FastAPI composition, schemas, and routes
+├── auth/          # Request authentication and identity mapping
+├── core/          # Lesson, session, logging, and policy logic
+├── db/            # SQLAlchemy models, sessions, and database configuration
+├── inference/     # Backend adapters, routing, and streaming
+├── models/        # Pydantic domain models
+├── storage/       # PostgreSQL and filesystem implementations
+├── tests/         # Backend-aware server suite
+├── utils/         # Seeding, import, retention, and cryptography tools
+├── bootstrap.py
+├── runtime.py
+└── docker-compose.yml
 ```
-
-Run backend-agnostic suites against both backends:
-
-```bash
-python3 -m pytest -q plexa_server/tests --storage-backend=both
-```
-
-Run only the Postgres-specific DB tests:
-
-```bash
-python3 -m pytest -q plexa_server/tests/storage/test_db_postgres_storage.py
-```
-
-Run only the API suite against Postgres:
-
-```bash
-python3 -m pytest -q plexa_server/tests/api --storage-backend=postgres
-```
-
-The backend-aware test wiring is centralized in [tests/conftest.py](tests/conftest.py).
-
-## Running the API
-
-The FastAPI app is constructed in [api/app.py](api/app.py).
-
-You can interact with it over the terminal using `curl` once the server is running. Example:
-
-```bash
-curl http://127.0.0.1:8000/api/health
-```
-
-## Current Development Posture
-
-The current intended development path is:
-- PostgreSQL as the primary persistence layer
-- Alembic migrations for schema changes
-- `asyncpg` as the async driver under SQLAlchemy
-- mostly full async runtime semantics
-- filesystem storage retained only where it still provides value for testing or migration support

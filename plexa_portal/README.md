@@ -1,238 +1,165 @@
 # Plexa Portal
 
-`plexa_portal` is the web frontend for Plexa.
+`plexa_portal` is the React and TypeScript frontend shared by Plexa's student
+and instructor experiences. It talks to the Plexa API for identity, course
+access, lesson state, session execution, and instructor operations.
 
-It now contains two parallel application surfaces built on the same frontend platform:
-- the student portal
-- the instructor portal
+## Features
 
-This package is a React + TypeScript + Vite application. It depends on a running Plexa server API and shares the same auth and API foundations across both surfaces.
+Students can:
 
-## Current Scope
+- browse their courses and available lessons;
+- start, resume, complete, and submit lesson sessions;
+- receive streamed model responses with a non-streaming fallback;
+- answer, postpone, review, and save mid-session and post-session reflections;
+- see lesson goals, behavioral focus, constraints, and current session state.
 
-The portal currently provides:
-- configurable client auth services for development and OIDC
-- shared API client modules and DTO mappings
-- a student portal for course browsing, lesson browsing, and session chat
-- an instructor portal skeleton for:
-  - course lookup
-  - course overview
-  - lesson timeline visibility
-  - instructor roster management
-  - learner request review
-  - encrypted log review
-- theme support and shared styling
+Instructors can:
 
-The instructor side is intentionally a first slice, not a finished portal.
+- manage course lessons and availability timelines;
+- author and update course-scoped lesson artifacts;
+- manage instructors, enrollment requests, and learner rosters;
+- browse logs by lesson or student and review submitted conversations;
+- view course and lesson activity summaries.
 
-## Package Layout
+Both surfaces use the same API client, auth provider, route parser, and visual
+system.
 
-```text
-plexa_portal/
-├── package.json
-├── vite.config.ts
-├── tsconfig.json
-├── src/
-│   ├── App.tsx
-│   ├── main.tsx
-│   ├── styles.css
-│   ├── api/
-│   ├── app/
-│   ├── auth/
-│   ├── config/
-│   ├── instructor/
-│   ├── screens/
-│   ├── student/
-│   ├── theme/
-│   └── types/
-└── public/
-```
+## Getting Started
 
-### Source Structure
+### Requirements
 
-- `src/api/`
-  HTTP client code, DTOs, API interfaces, mappers, and provider wiring.
-
-- `src/app/`
-  Top-level app composition, route parsing, boot screen, and auth callback handling.
-
-- `src/auth/`
-  Authentication context plus development and OIDC auth services.
-
-- `src/student/`
-  Student-specific app composition and shell wiring.
-
-- `src/instructor/`
-  Instructor-specific shell and screen composition.
-
-- `src/screens/`
-  Shared or student-oriented screen-level UI such as login, courses, lessons, and chat.
-
-- `src/theme/`
-  Theme context and provider logic.
-
-## Requirements
-
-- Node.js
+- Node.js 22
 - npm
+- A running [Plexa server](../plexa_server/README.md)
 
-`npm` is the expected package manager here because the package already includes `package-lock.json`.
+The lockfile is authoritative, so use npm rather than another package manager.
 
-## Install Dependencies
-
-From the `plexa_portal` directory:
+From this directory:
 
 ```bash
+cp -n src/.env.example src/.env
 npm ci
-```
-
-## Development Server
-
-Start the Vite development server:
-
-```bash
 npm run dev
 ```
 
-Build the portal:
+Open <http://localhost:5173>.
 
-```bash
-npm run build
-```
+The example environment uses development login and expects the API at
+`http://localhost:8000/api`. With the seeded dataset, `tester` has student data
+and `instructor` owns the example courses.
 
-Preview the production build locally:
+If an existing ignored `src/.env` still uses `http://localhost:8000`, append
+`/api` before starting Vite.
 
-```bash
-npm run preview
-```
+> [!NOTE]
+> `VITE_API_BASE_URL` is the unversioned API base, not just the server origin.
+> The client appends `TARGET_API_VERSION` to build requests such as
+> `http://localhost:8000/api/v1/courses`.
 
-Run ESLint:
+## Commands
 
-```bash
-npm run lint
-```
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the Vite development server |
+| `npm run build` | Type-check and create the production bundle |
+| `npm run preview` | Serve the production bundle locally |
+| `npm run lint` | Run ESLint |
+| `npm run docs` | Regenerate the TypeDoc Markdown under `docs/source/generated/client_api` |
 
-Generate TypeDoc output:
+CI installs dependencies with `npm ci --ignore-scripts`, then runs the audit,
+lint, and build commands. Do not use `--force` or `--legacy-peer-deps` to hide a
+dependency conflict; update peer-coupled packages together instead.
 
-```bash
-npm run docs
-```
+## Configuration
 
-## Environment Configuration
+Local values live in the ignored `src/.env` file. Start from
+[`src/.env.example`](src/.env.example).
 
-The portal reads local configuration from [src/.env.example](src/.env.example) and your local `src/.env`.
+| Variable | Purpose | Development default |
+| --- | --- | --- |
+| `VITE_APP_ENV` | Enables development or production validation | `development` |
+| `VITE_API_BASE_URL` | Unversioned API base | `http://localhost:8000/api` |
+| `TARGET_API_VERSION` | API version appended by the HTTP client | `v1` |
+| `VITE_AUTH_MODE` | Selects `dev` or `oidc` authentication | `dev` |
+| `VITE_ENABLE_DEV_LOGIN` | Explicitly permits dev login in a production build | `false` |
+| `VITE_AUTH_AUTHORITY` | OIDC issuer/authority | empty |
+| `VITE_AUTH_DISCOVERY_URL` | Optional OIDC discovery override | empty |
+| `VITE_AUTH_CLIENT_ID` | Public OIDC client identifier | empty |
+| `VITE_AUTH_SCOPE` | Requested OIDC scopes | `openid profile email` |
+| `VITE_AUTH_REDIRECT_URI` | Sign-in callback | `<origin>/auth/callback` |
+| `VITE_AUTH_LOGOUT_REDIRECT_URI` | Post-logout destination | `<origin>/login` |
 
-Common variables:
+Production builds fail fast when required API or authentication values are
+missing.
 
-```env
-VITE_APP_ENV=development
-VITE_API_BASE_URL=http://localhost:8000
-TARGET_API_VERSION=v1
-VITE_AUTH_MODE=dev
-VITE_ENABLE_DEV_LOGIN=false
-```
+### Authentication
 
-These are consumed in:
-- [src/api/config.ts](src/api/config.ts)
-- [src/auth/config.ts](src/auth/config.ts)
-- [src/config/validate.ts](src/config/validate.ts)
+`VITE_AUTH_MODE=dev` shows the local username form, stores the selected user in
+the browser, and sends `X-User-Id`. The server still determines roles and course
+capabilities through `/api/v1/auth/me`.
 
-Important note:
-- `VITE_API_BASE_URL` should point at the server base path expected by the portal
-- the current code fallback is `http://localhost:8000/api`
+`VITE_AUTH_MODE=oidc` uses Authorization Code with PKCE through
+`oidc-client-ts`, stores the OIDC session in `sessionStorage`, and sends the
+access token as `Authorization: Bearer ...`. The UI does not grant application
+permissions from unverified client-side claims.
 
-## Authentication Model
+> [!WARNING]
+> Development login trusts a browser-supplied username. Never enable it for a
+> student-facing deployment. The temporary production switch exists only for
+> private smoke testing.
 
-The portal supports:
-- `VITE_AUTH_MODE=dev`
-- `VITE_AUTH_MODE=oidc`
-
-Development mode:
-- uses the local dev login screen
-- keeps the active user id in browser storage for development only
-- sends `X-User-Id`
-- resolves roles and course capabilities from the server's `/api/v1/auth/me` response
-
-OIDC mode:
-- starts an Authorization Code + PKCE flow
-- validates callback state and nonce through `oidc-client-ts`
-- stores the OIDC session in `sessionStorage`
-- sends `Authorization: Bearer ...`
-- resolves application authorization from the server rather than trusting token claims in the UI
-
-Production deployments should use OIDC mode.
-
-Temporary production dev login is available only for deployment smoke testing.
-Production builds reject `VITE_AUTH_MODE=dev` unless
-`VITE_ENABLE_DEV_LOGIN=true` is set explicitly.
-
-## Mode Switching
-
-### Development mode
-
-Typical local portal settings:
-
-```env
-VITE_APP_ENV=development
-VITE_API_BASE_URL=http://localhost:8000
-TARGET_API_VERSION=v1
-VITE_AUTH_MODE=dev
-VITE_ENABLE_DEV_LOGIN=false
-```
-
-### Production-like mode
-
-Typical production-oriented portal settings:
-
-```env
-VITE_APP_ENV=production
-VITE_API_BASE_URL=/api
-TARGET_API_VERSION=v1
-VITE_AUTH_MODE=oidc
-VITE_ENABLE_DEV_LOGIN=false
-VITE_AUTH_AUTHORITY=https://idp.example.com
-VITE_AUTH_CLIENT_ID=plexa-portal
-VITE_AUTH_SCOPE=openid profile email
-VITE_AUTH_REDIRECT_URI=https://portal.example.com/auth/callback
-VITE_AUTH_LOGOUT_REDIRECT_URI=https://portal.example.com/login
-```
-
-In production mode the portal fails fast on missing required API or auth configuration.
+Use the [deployment guide](../deploy/README.md) to generate a matched portal and
+server configuration for OIDC.
 
 ## Routing
 
-Top-level routing is handled in:
-- [src/App.tsx](src/App.tsx)
-- [src/app/router.ts](src/app/router.ts)
+Plexa uses a small browser-history router in [`src/app/router.ts`](src/app/router.ts).
 
-Current route groups:
-- `/student/...`
-- `/instructor/...`
-- `/login`
-- `/auth/callback`
+| Route | Screen |
+| --- | --- |
+| `/login` | Portal selection and sign-in |
+| `/auth/callback` | OIDC callback |
+| `/student/courses` | Student course list |
+| `/student/courses/:courseId/lessons` | Course lessons |
+| `/student/courses/:courseId/lessons/:lessonId/:version` | New or active lesson session |
+| `/instructor` | Instructor course list |
+| `/instructor/courses/:courseId/:mode` | Course overview, lessons, builder, logs, analytics, or roster |
+| `/instructor/courses/:courseId/logs/:sessionId` | Session review |
 
-Legacy `/app/...` student routes are still parsed as aliases during transition.
+Legacy `/app/...` student URLs remain accepted as aliases.
 
-## Styling And Theme
+## Source Map
 
-Global styles live in [src/styles.css](src/styles.css).
+```text
+src/
+├── api/          # HTTP transport, DTOs, mappers, and API services
+├── app/          # App composition, routing, and shared shell
+├── auth/         # Development and OIDC authentication
+├── config/       # Runtime configuration validation
+├── instructor/   # Instructor shell, screens, and lesson builder
+├── screens/      # Login and student-facing screens
+├── student/      # Student app composition
+├── theme/        # Theme context and provider
+├── App.tsx
+├── main.tsx
+└── styles.css
+```
 
-The portal already has:
-- light and dark theme variables
-- a student shell
-- a separate instructor shell
-- shared visual tokens and interaction patterns
+Global styles and component tokens live in [`src/styles.css`](src/styles.css).
+The application supports light and dark themes through `src/theme/`.
 
-Theme wiring lives under:
-- [src/theme/ThemeProvider.tsx](src/theme/ThemeProvider.tsx)
-- [src/theme/ThemeContext.ts](src/theme/ThemeContext.ts)
+## Production Build
 
-## Current Development Posture
+The standalone build command writes to `dist/`:
 
-The student portal is materially more complete than the instructor portal.
+```bash
+npm ci
+npm run build
+```
 
-Practical summary:
-- the shared platform layer is real
-- the student side is functional
-- the instructor side now has a real web foothold
-- the instructor portal still needs additional workflow depth and UI refinement
+The repository's production image performs this build in
+[`deploy/caddy.Dockerfile`](../deploy/caddy.Dockerfile) and serves the result
+through Caddy. Prefer the documented [production stack](../deploy/README.md)
+over manually serving `dist/` unless you are integrating Plexa into existing
+institutional infrastructure.

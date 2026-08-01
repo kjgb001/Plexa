@@ -1,197 +1,188 @@
-# Plexa Repository Maintainence
+# Plexa Repository Maintenance
 
-This directory is the operator entry point for keeping Plexa's source,
-dependencies, CI, and production deployment healthy. The directory intentionally
-uses the requested `maintainence` spelling so these command paths remain stable.
+This directory contains the repeatable checks and update helpers used to keep
+Plexa's dependencies, CI workflows, and production setup healthy.
 
-## Commands
+> [!NOTE]
+> The directory name intentionally retains the historical `maintainence`
+> spelling. Renaming it would break documented commands and CI paths.
 
-| Command | Purpose | Network or destructive behavior |
-| --- | --- | --- |
-| `maintainence/audit-ci.sh` | Enforce the repository's CI security invariants. | No network; does not modify files. |
-| `maintainence/run-ci-local.sh --quick` | Run static policy, lock, portal lint, and portal build checks using installed dependencies. | No intentional network; does not modify tracked files. |
-| `maintainence/run-ci-local.sh` | Recreate CI locally with clean installs and an isolated disposable PostgreSQL container. | Downloads dependencies/images; replaces `plexa_portal/node_modules`; deletes only its disposable container. |
-| `maintainence/update-action-pin.sh OWNER/REPO TAG` | Resolve a reviewed action release tag to a full commit SHA and update existing workflow references. | Reads GitHub; modifies workflow files. |
-| `maintainence/update-uv-pin.sh VERSION` | Fetch the official Astral manifest, download and verify the Linux artifact, and update the uv version/checksum pair. | Reads GitHub/Astral; modifies `ci.yml`. |
-| `maintainence/update-postgres-pin.sh TAG` | Pull a selected official PostgreSQL image and update the CI tag/digest pair. | Reads Docker Hub; modifies `ci.yml`. |
+## Start Here
 
-All scripts can be called from any working directory. Update scripts refuse to
-overwrite uncommitted changes in the files they manage.
-
-## Prerequisites
-
-- Bash, Git, Python 3, npm, and uv.
-- Docker Engine for the full local CI check and PostgreSQL pin updates.
-- The Node.js and uv versions currently pinned in `.github/workflows/ci.yml`.
-- Permission to read public GitHub and package registry resources.
-
-Do not work around npm peer dependency failures with `--force` or
-`--legacy-peer-deps`. A clean `npm ci --ignore-scripts` failure means the
-proposed manifest is not a supported dependency combination.
-
-## Normal Schedule
-
-### Every Dependabot Run
-
-1. Read the upstream changelog and security notes before running code from the pull request.
-2. Inspect changes to manifests, lockfiles, workflows, and resolved download URLs.
-3. For a GitHub Action, confirm the full SHA in the diff belongs to the release tag shown in the comment.
-4. Run `maintainence/run-ci-local.sh --quick` after checking out the PR.
-5. Run `maintainence/run-ci-local.sh` before merging a major update or a coupled toolchain update.
-6. Merge only after the protected GitHub checks pass. Do not enable unattended auto-merge for major updates.
-
-Dependabot intentionally groups compatible minor and patch updates for the
-ESLint, Vite, and TypeScript documentation toolchains. ESLint 10 is blocked
-until `eslint`, `@eslint/js`, and the plugin set are upgraded and tested
-together. Vite and its React plugin are both major-gated so neither side of
-their peer contract can advance alone. TypeScript 7 is blocked until TypeDoc,
-TypeScript ESLint, and the remaining tooling declare support. Security alerts
-for these ecosystems must still be reviewed immediately; use a manual
-compatibility upgrade if a fix requires a blocked major.
-
-### Monthly
-
-1. Run `maintainence/run-ci-local.sh` from a clean branch.
-2. Review open Dependabot alerts and stale Dependabot PRs.
-3. Check supported Node.js, Python, uv, PostgreSQL, and Ubuntu runner releases.
-4. Apply patch/security releases with the pin helpers below.
-5. Run `deploy/check-production.sh <env-file> --mode domain --stage prestart` for each maintained production configuration.
-6. Confirm recent database backups exist and that the last scheduled restore drill succeeded.
-
-### Quarterly
-
-1. Recheck the GitHub repository settings in the manual checklist below.
-2. Review `.github/CODEOWNERS` and remove users or teams that no longer require access.
-3. Review all workflow permissions, triggers, third-party actions, runner types, and secrets.
-4. Perform a restore drill with `deploy/restore-production.sh` in an isolated non-production stack.
-5. Review log-retention policy, encrypted-log key rotation, OIDC configuration, and administrator membership.
-6. Confirm production still runs one web worker; multiple workers require shared session coordination before they are supported.
-
-## Local Verification
-
-Use the quick check while editing:
+Run the quick check while developing:
 
 ```bash
 maintainence/run-ci-local.sh --quick
 ```
 
-Quick mode warns, but does not fail, when local Node.js or uv differs from CI.
-Full mode requires exact version matches so its result is comparable to GitHub.
-
-The quick mode deliberately does not prove that lockfiles install cleanly. Use
-the full check before merging dependency, migration, workflow, or deployment
-changes:
+Run the full CI-equivalent check before merging dependency, migration,
+workflow, or deployment changes:
 
 ```bash
 maintainence/run-ci-local.sh
 ```
 
-Full mode performs the following automatically:
+The full check downloads dependencies and a PostgreSQL image, replaces
+`plexa_portal/node_modules` with a clean install, and creates a disposable
+database container. It does not use or remove development or production data.
 
-1. Audits workflow security policy and validates Bash syntax.
-2. Checks `uv.lock`, runs a clean npm install with lifecycle scripts disabled, and audits high-severity npm vulnerabilities.
-3. Lints and builds the portal.
-4. Synchronizes the frozen Python environment.
-5. Starts a disposable PostgreSQL container from the exact digest pinned in CI.
-6. Runs the migration upgrade/downgrade compatibility sequence.
-7. Runs the server tests against filesystem and PostgreSQL storage.
-8. Stops and removes the disposable PostgreSQL container on exit.
+## Commands
 
-The full script does not use, reset, or delete the development or production
-database. If it is interrupted, remove only a leftover container whose name
-starts with `plexa-maintainence-postgres-`.
+| Command | What it does | Side effects |
+| --- | --- | --- |
+| `maintainence/audit-ci.sh` | Enforces workflow security and pinning rules | Offline; read-only |
+| `maintainence/run-ci-local.sh --quick` | Checks CI policy, shell syntax, locks, portal lint, and portal build | Uses installed dependencies; read-only for tracked files |
+| `maintainence/run-ci-local.sh` | Recreates CI with clean installs, migrations, tests, and disposable PostgreSQL | Downloads packages/images and replaces `node_modules` |
+| `maintainence/update-action-pin.sh OWNER/REPO TAG` | Resolves a reviewed action tag to its commit and updates workflow pins | Uses GitHub and edits workflows |
+| `maintainence/update-uv-pin.sh VERSION` | Downloads and verifies the official uv artifact, then updates its CI pin | Uses GitHub/Astral and edits `ci.yml` |
+| `maintainence/update-postgres-pin.sh TAG` | Pulls PostgreSQL and records the resolved CI image digest | Uses Docker Hub and edits `ci.yml` |
+
+All scripts can be called from any working directory. Pin-update helpers refuse
+to overwrite uncommitted changes in files they manage.
+
+## Requirements
+
+- Bash, Git, Python 3, Node.js, npm, and uv
+- Docker Engine for the full check and PostgreSQL image updates
+- Network access to GitHub, Python and npm registries, and Docker Hub
+- The exact Node.js and uv versions pinned in [CI](../.github/workflows/ci.yml)
+  when running the full check
+
+Quick mode warns about local Node.js or uv version drift. Full mode fails on
+drift so its result remains comparable to GitHub Actions.
+
+## What the Full Check Covers
+
+`maintainence/run-ci-local.sh` performs these steps in order:
+
+1. Audit workflow security policy and validate deployment and maintenance Bash.
+2. Check `uv.lock` and install portal dependencies with lifecycle scripts disabled.
+3. Audit high-severity npm vulnerabilities, then lint and build the portal.
+4. Synchronize the frozen Python environment.
+5. Start PostgreSQL from the exact image digest pinned in CI.
+6. Exercise the migration downgrade and hardening-upgrade path with data checks.
+7. Run the server suite against filesystem and PostgreSQL storage.
+8. Remove the disposable database container on exit.
+
+If the script is interrupted, remove only a leftover container whose name
+starts with `plexa-maintainence-postgres-` after confirming it is the disposable
+CI database.
+
+## Routine Schedule
+
+### For Every Dependency PR
+
+1. Read the upstream release notes and security advisories.
+2. Inspect manifest, lockfile, workflow, and resolved-download changes.
+3. For a GitHub Action, verify that the pinned commit belongs to the release tag
+   named in the workflow comment.
+4. Run the quick local check on the PR branch.
+5. Run the full check for major releases, migration changes, or coupled
+   JavaScript toolchain updates.
+6. Require the `portal`, `server`, and `deployment` GitHub checks to pass.
+7. Merge one lockfile-changing PR at a time, then let Dependabot rebase the
+   remaining PRs before reviewing them again.
+
+If a Dependabot PR is stale after another dependency merge, comment:
+
+```text
+@dependabot rebase
+```
+
+Do not enable unattended auto-merge for major updates.
+
+### Monthly
+
+1. Run the full local check from a clean branch.
+2. Review Dependabot alerts, open dependency PRs, and stale CI runs.
+3. Check supported Node.js, Python, uv, PostgreSQL, and Ubuntu runner releases.
+4. Apply reviewed patch and security releases using the pin helpers where applicable.
+5. Run the production pre-start check for each maintained deployment configuration.
+6. Confirm recent backups exist and the most recent scheduled restore drill succeeded.
+
+### Quarterly
+
+1. Recheck every GitHub setting in the repository checklist below.
+2. Review `CODEOWNERS`, collaborators, deploy keys, Actions secrets, and environment access.
+3. Review workflow permissions, triggers, actions, images, and runner types.
+4. Restore a production backup into an isolated environment.
+5. Review retention policy, encrypted-log keys, OIDC settings, and Plexa admins.
+6. Confirm production still uses one web worker.
+
+## Dependabot and Toolchain Updates
+
+Dependabot groups compatible minor and patch updates for ESLint, Vite, and the
+TypeScript documentation toolchain. Major versions of peer-coupled tools are
+gated in [`.github/dependabot.yml`](../.github/dependabot.yml) until the complete
+toolchain supports them.
+
+For a grouped JavaScript update:
+
+1. Confirm every plugin's peer range overlaps the proposed host-tool version.
+2. Check out the PR and run `npm ci --ignore-scripts` without overrides.
+3. Run lint and build; for TypeDoc updates, also run `npm run docs` from
+   `plexa_portal` and inspect generated changes.
+4. Run the full maintenance check before removing a major-version gate.
+
+> [!WARNING]
+> Never use `npm install --force` or `--legacy-peer-deps` to make a dependency PR
+> appear green. A clean `npm ci --ignore-scripts` failure means the manifest is
+> not a supported dependency combination.
+
+When a new lint rule fails, review the source rather than disabling the rule by
+default. In React code, remove derived-state effects or move updates to event and
+request-completion paths when that better matches the component's lifecycle.
+
+Security alerts still require immediate review. If a fix needs a gated major
+version, prepare a manual compatibility PR that upgrades the entire peer group.
 
 ## Updating Immutable Pins
 
-Pin helpers automate resolution and verification, but choosing and approving a
-release remains a manual security decision.
+The helpers verify mechanical details, but a maintainer must still choose and
+approve the release.
 
-### GitHub Action
+### GitHub Actions
 
-1. Read the action's release notes and security policy on its official repository.
-2. Run the helper with the exact reviewed tag:
+Read the release notes on the action's official repository, then run:
 
 ```bash
 maintainence/update-action-pin.sh actions/checkout v7.0.1
 ```
 
-3. Confirm the printed diff changes only the expected action and preserves a 40-character SHA.
-4. Run `maintainence/run-ci-local.sh --quick`, commit the workflow update, and require normal PR review.
-
-The helper handles annotated tags by selecting the tag's peeled commit. It only
-updates actions already present in the repository; adding a new third-party
-action requires a separate security review.
+Confirm that the diff changes only the expected action, retains a full
+40-character commit SHA, and updates the human-readable tag comment. The helper
+handles annotated tags but only updates actions already present in the repo.
 
 ### uv
 
-1. Read the official uv release notes and select a concrete version.
-2. Run:
+After reviewing an official uv release:
 
 ```bash
 maintainence/update-uv-pin.sh 0.12.1
 ```
 
-3. Confirm that both `version` and `checksum` changed together.
-4. Run the full local CI check before merging.
-
-The helper reads Astral's official release manifest, downloads the exact x86-64
-Linux artifact used by the GitHub runner, verifies its SHA-256 checksum, and
-then updates the workflow.
+The helper reads Astral's release manifest, downloads the Linux x86-64 artifact
+used by CI, verifies its SHA-256 digest, and updates the version and checksum
+together. Run the full check afterward.
 
 ### PostgreSQL CI Image
 
-1. Read the official image and PostgreSQL release notes. Preserve the Debian variant unless a base-image migration is intentional.
-2. Run:
+After reviewing the PostgreSQL and official image release notes:
 
 ```bash
 maintainence/update-postgres-pin.sh 17.10-bookworm
 ```
 
-3. Confirm that the workflow contains both the selected tag and an immutable `sha256` digest.
-4. Run the full local CI check before merging.
+Preserve the Debian image variant unless changing the base image is deliberate.
+Confirm that CI records both the selected tag and immutable digest.
 
-The production image and database upgrade procedure are separate from this CI
-service-image pin. Back up production and follow `deploy/README.md` before any
-production PostgreSQL upgrade.
+This helper updates only CI. A production PostgreSQL upgrade requires a backup,
+tested restore, migration review, and the separate procedure in
+[`deploy/README.md`](../deploy/README.md).
 
-## Handling Dependency Failures
+## Production Maintenance
 
-### npm `ERESOLVE`
-
-1. Read the error's `Found`, `Could not resolve dependency`, and peer range lines.
-2. Identify the host tool and every plugin that declares a peer dependency on it.
-3. Check whether compatible plugin releases exist. Upgrade the host and plugins together only when all peer ranges overlap.
-4. If no compatible plugin exists, close the update PR and add or retain a documented temporary Dependabot major-version gate.
-5. Never commit a lockfile generated with `--force` or `--legacy-peer-deps` merely to make CI pass.
-
-The current gates are documented directly in `.github/dependabot.yml`. Remove a
-gate only in the same PR that proves the complete toolchain works.
-
-### New Lint Rules
-
-Treat a newly enabled rule as a source review, not a reason to disable the rule.
-Prefer removing derived state effects, moving state changes to user/request
-completion paths, or synchronizing only with actual external systems. Disable a
-rule only when its behavior is demonstrably incompatible with the application,
-and document the smallest possible exception.
-
-### Current Dependabot PR Cleanup
-
-After this maintenance change reaches `main`:
-
-1. Close the standalone ESLint 10 PR because it was generated against the old React Hooks peer tree and does not coordinate the `@eslint/js` major upgrade.
-2. Close the standalone Vite 8 PR because `@vitejs/plugin-react` 5.1.4 supports Vite only through 7.x.
-3. Close the React Hooks 7.1.1 PR after this change reaches `main`; the compatible dependency update and required source fixes are included here.
-4. Close the standalone TypeScript 7 PR because TypeDoc 0.28 and TypeScript ESLint 8 do not support it.
-5. Close the standalone `@vitejs/plugin-react` 6 PR because it requires the currently gated Vite 8 major.
-6. Remove a major-version gate only in a dedicated compatibility PR that updates every peer-coupled package and passes `npm ci --ignore-scripts`, lint, build, and protected CI checks.
-
-These GitHub PR operations are manual because repository scripts must not close
-or merge remote pull requests without an explicit operator decision.
-
-## Production Maintainence
-
-Before a routine production deployment:
+Use this sequence for a routine application deployment:
 
 ```bash
 deploy/backup-production.sh deploy/production.env
@@ -200,42 +191,74 @@ deploy/start-production.sh deploy/production.env
 deploy/check-production.sh deploy/production.env --mode domain --stage poststart
 ```
 
-Manual requirements:
+Manual checks are still required:
 
-- Verify the backup checksum and retention location before changing the stack.
-- Read migration revisions before deploying them; do not rely only on successful test migrations.
-- Schedule downtime for database restores, PostgreSQL major upgrades, OIDC changes, and encrypted-log key removal.
-- Test restore procedures outside production. A backup that has never been restored is not considered verified.
-- Never remove an old encrypted-log key until all retained records using it have expired or been re-encrypted.
-- Keep temporary dev login disabled for student-facing deployments.
+- Verify the backup checksum and off-host retention location before changing the stack.
+- Read every new migration instead of relying only on successful test runs.
+- Schedule downtime for restores, PostgreSQL major upgrades, OIDC changes, and encryption-key removal.
+- Test restores away from production; an untested backup is not a verified backup.
+- Keep old log-encryption keys until dependent records expire or are re-encrypted.
+- Keep temporary development login disabled on student-facing installations.
 
 ## GitHub Repository Settings
 
-These settings cannot be enforced completely from files in the repository and
-must be checked manually by an administrator.
+Repository files cannot enforce all GitHub security controls. An administrator
+should complete this checklist after creating the repository and review it
+quarterly.
+
+### Actions
 
 1. Open **Settings > Actions > General**.
-2. Under Actions permissions, allow actions created by GitHub and explicitly allow `astral-sh/setup-uv@*`; do not allow arbitrary actions.
-3. Set workflow permissions to read repository contents and packages. Disable permission for Actions to create or approve pull requests.
-4. Require approval for workflows submitted by all external contributors.
-5. Open **Settings > Rules > Rulesets** and create an active branch ruleset targeting the default branch.
-6. Restrict deletion and force pushes, and require pull requests with resolved conversations.
-7. Require the `portal`, `server`, and `deployment` status checks from a recent successful CI run. Require the branch to be up to date.
-8. With two or more trusted maintainers, require one Code Owner approval, dismiss stale approvals, require approval of the most recent push, and configure no routine bypass.
-9. With only one maintainer, use a repository-administrator bypass limited to pull requests; otherwise the sole Code Owner cannot approve their own PR. Remove this bypass after adding a second maintainer.
-10. Open **Settings > Security > Advanced Security** and enable the dependency graph, Dependabot alerts, Dependabot security updates, secret scanning, push protection, and private vulnerability reporting.
-11. Enable default CodeQL analysis for Python and JavaScript/TypeScript. After its first successful run, require code-scanning results in the branch ruleset.
-12. Open **Settings > Secrets and variables > Actions** and remove unused secrets. Put future deployment credentials in a protected `production` environment with required reviewers.
+2. Under **Actions permissions**, allow actions created by GitHub and explicitly
+   allow `astral-sh/setup-uv@*`; do not allow arbitrary third-party actions.
+3. Under **Workflow permissions**, select read-only repository contents and
+   packages.
+4. Disable the option that allows GitHub Actions to create or approve pull requests.
+5. Require approval before workflows from all outside collaborators can run.
 
-Record completion of this checklist in the institution's operational system;
-Git history cannot prove that out-of-repository settings remain enabled.
+### Default Branch Ruleset
+
+1. Open **Settings > Rules > Rulesets** and create an active branch ruleset for
+   the default branch.
+2. Block branch deletion and force pushes.
+3. Require changes through pull requests and require resolved conversations.
+4. Require the branch to be up to date before merging.
+5. Add the `portal`, `server`, and `deployment` checks from a recent successful
+   CI run as required status checks.
+6. With two or more maintainers, require one Code Owner approval, dismiss stale
+   approvals, and require approval of the latest push.
+7. With one maintainer, add only a repository-administrator PR bypass so the
+   sole Code Owner can merge reviewed, green changes. Remove it after adding a
+   second maintainer.
+
+### Security Features
+
+1. Open **Settings > Security > Advanced Security**.
+2. Enable the dependency graph, Dependabot alerts, and Dependabot security updates.
+3. Enable secret scanning, push protection, and private vulnerability reporting.
+4. Enable default CodeQL analysis for Python and JavaScript/TypeScript.
+5. After CodeQL succeeds, require its code-scanning results in the branch ruleset.
+
+### Secrets and Environments
+
+1. Open **Settings > Secrets and variables > Actions** and remove unused values.
+2. Do not add production credentials to ordinary CI jobs.
+3. Put future deployment credentials in a protected `production` environment.
+4. Require an appropriate reviewer before jobs can access that environment.
+5. Review collaborators, deploy keys, and environment access at the same time.
+
+Record completion in the institution's operational system. Git history cannot
+show whether out-of-repository settings remain enabled.
 
 ## Security Incident Procedure
 
-1. Disable affected workflows or Actions if untrusted code may still run.
-2. Revoke and rotate every credential the workflow could access, including environment secrets and deployment tokens.
-3. Revert the compromised dependency, image, or action to a reviewed immutable pin.
-4. Inspect workflow logs, artifacts, releases, packages, caches, and repository changes made during the exposure window.
-5. Remove untrusted artifacts and caches, then run the full local CI check from a known-clean checkout.
-6. Re-enable workflows only after review, protected CI, and credential rotation are complete.
+If a workflow, action, package, or image may have been compromised:
+
+1. Disable affected workflows while untrusted code could still run.
+2. Revoke and rotate every credential available to those jobs.
+3. Revert the dependency, image, or action to a reviewed immutable pin.
+4. Inspect logs, artifacts, releases, packages, caches, and repository changes
+   from the exposure window.
+5. Remove untrusted artifacts and caches, then run the full check from a known-clean checkout.
+6. Re-enable workflows only after review, protected CI, and credential rotation.
 7. Publish a security advisory when downstream operators or student data could be affected.
