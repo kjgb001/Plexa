@@ -19,6 +19,7 @@ build-backend = "setuptools.build_meta"
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.0.0",
     "pytest",
 ]
 

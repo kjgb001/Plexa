@@ -1,0 +1,8 @@
+alembic
+asyncpg
+cryptography
+fastapi
+httpx
+pydantic
+sqlalchemy
+uvicorn

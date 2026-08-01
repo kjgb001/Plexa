@@ -1,8 +1,8 @@
+import socket
 import threading
 import time
-import socket
-import requests
 
+import httpx
 import uvicorn
 
 
@@ -13,29 +13,42 @@ def _find_free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def run_server(app, port: int) -> None:
-    """Run a Uvicorn server for the supplied test app on the given port."""
+def build_server(app, port: int) -> uvicorn.Server:
+    """Build a Uvicorn server for the supplied test app on the given port."""
     config = uvicorn.Config(
         app=app,
         host="127.0.0.1",
         port=port,
         log_level="warning",
-        ws="none"
+        ws="none",
     )
-
-    server = uvicorn.Server(config)
-    server.run()
+    return uvicorn.Server(config)
 
 
 def test_server_health_endpoint(app, storage_backend):
     port = _find_free_port()
-    thread = threading.Thread(target=run_server, args=(app, port), daemon=True)
+    server = build_server(app, port)
+    thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
 
-    # Give server time to boot
-    time.sleep(0.5)
+    deadline = time.monotonic() + 5
+    response = None
+    try:
+        while time.monotonic() < deadline:
+            try:
+                response = httpx.get(
+                    f"http://127.0.0.1:{port}/api/health",
+                    timeout=0.5,
+                )
+                break
+            except httpx.ConnectError:
+                time.sleep(0.05)
 
-    response = requests.get(f"http://127.0.0.1:{port}/api/health")
+        assert response is not None, "Live test server did not start within 5 seconds"
+        assert response.status_code == 200
+        assert response.json()["status"] == "alive"
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)
 
-    assert response.status_code == 200
-    assert response.json()["status"] == "alive"
+    assert not thread.is_alive(), "Live test server did not stop within 5 seconds"
