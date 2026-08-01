@@ -15,8 +15,8 @@ jobs:
       run:
         working-directory: plexa_portal
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: 22.23.1
           cache: npm
@@ -48,8 +48,8 @@ jobs:
       PLEXA_TEST_DATABASE_URL: postgresql+asyncpg://plexa:plexa_ci_password@localhost:5432/plexa_test
       PLEXA_TEST_DATABASE_SYNC_URL: postgresql://plexa:plexa_ci_password@localhost:5432/plexa_test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: python -m pip install uv==0.10.8
@@ -64,7 +64,7 @@ jobs:
   deployment:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: bash -n deploy/*.sh deploy/lib/*.sh
       - run: deploy/create-production-env.sh --local --model ci-model --output /tmp/plexa-local-production.env --force
       - run: deploy/check-production-config.sh /tmp/plexa-local-production.env

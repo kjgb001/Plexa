@@ -34,6 +34,7 @@ from plexa_server.tests.fixtures import (
     valid_course,
     valid_lesson,
 )
+from plexa_server.utils.cryptography import generate_encryption_key
 
 
 def run(coro):
@@ -287,6 +288,7 @@ def app(
     session_storage,
     course_storage,
     workspace_state_storage,
+    monkeypatch,
 ) -> FastAPI:
     """Build an application instance for the selected backend.
 
@@ -295,10 +297,13 @@ def app(
         artifact_storage: Selected artifact storage implementation.
         session_storage: Selected session storage implementation.
         course_storage: Selected course storage implementation.
+        workspace_state_storage: Selected workspace-state storage implementation.
+        monkeypatch: Pytest environment isolation fixture.
 
     Returns:
         FastAPI: Configured test application.
     """
+    monkeypatch.setenv("PLEXA_LOG_ENCRYPTION_KEY", generate_encryption_key())
     return build_app(
         inference_backend=StubInference(),
         data_dir=tmp_data_dir,
