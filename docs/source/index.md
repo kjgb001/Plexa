@@ -1,8 +1,9 @@
 # Plexa documentation
 
-Plexa is a lesson-centered AI platform for higher education. It gives
-instructors control over learning goals, model behavior, reflections, and
-completion while giving students a focused conversational workspace.
+Plexa is an open-source platform for instructor-authored, AI-supported lessons
+in higher education. It gives instructors control over learning goals, model
+behavior, reflections, and completion while giving students a focused
+conversational workspace.
 
 ::::{grid} 1 1 3 3
 :gutter: 2
@@ -38,6 +39,8 @@ lesson authoring contracts.
   development environment.
 - [Architecture](architecture.md) explains how requests, data, and inference
   move through the system.
+- [Design decisions](decisions/index.md) records the constraints future changes
+  must preserve or explicitly supersede.
 - [HTTP API](http-api.md) documents authentication, errors, streaming, and the
   generated OpenAPI schema.
 
@@ -55,6 +58,7 @@ rate limits, and cleanup leases move to shared atomic infrastructure.
 
 getting-started
 architecture
+decisions/index
 operations
 http-api
 server/index

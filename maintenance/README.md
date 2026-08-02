@@ -3,23 +3,19 @@
 This directory contains the repeatable checks and update helpers used to keep
 Plexa's dependencies, CI workflows, and production setup healthy.
 
-> [!NOTE]
-> The directory name intentionally retains the historical `maintainence`
-> spelling. Renaming it would break documented commands and CI paths.
-
 ## Start Here
 
 Run the quick check while developing:
 
 ```bash
-maintainence/run-ci-local.sh --quick
+maintenance/run-ci-local.sh --quick
 ```
 
 Run the full CI-equivalent check before merging dependency, migration,
 workflow, or deployment changes:
 
 ```bash
-maintainence/run-ci-local.sh
+maintenance/run-ci-local.sh
 ```
 
 The full check downloads dependencies and a PostgreSQL image, replaces
@@ -30,12 +26,12 @@ database container. It does not use or remove development or production data.
 
 | Command | What it does | Side effects |
 | --- | --- | --- |
-| `maintainence/audit-ci.sh` | Enforces workflow security and pinning rules | Offline; read-only |
-| `maintainence/run-ci-local.sh --quick` | Checks CI policy, shell syntax, locks, portal lint, and portal build | Uses installed dependencies; read-only for tracked files |
-| `maintainence/run-ci-local.sh` | Recreates CI with clean installs, migrations, tests, and disposable PostgreSQL | Downloads packages/images and replaces `node_modules` |
-| `maintainence/update-action-pin.sh OWNER/REPO TAG` | Resolves a reviewed action tag to its commit and updates workflow pins | Uses GitHub and edits workflows |
-| `maintainence/update-uv-pin.sh VERSION` | Downloads and verifies the official uv artifact, then updates its CI pin | Uses GitHub/Astral and edits `ci.yml` |
-| `maintainence/update-postgres-pin.sh TAG` | Pulls PostgreSQL and records the resolved CI image digest | Uses Docker Hub and edits `ci.yml` |
+| `maintenance/audit-ci.sh` | Enforces workflow security and pinning rules | Offline; read-only |
+| `maintenance/run-ci-local.sh --quick` | Checks CI policy, shell syntax, locks, portal lint, and portal build | Uses installed dependencies; read-only for tracked files |
+| `maintenance/run-ci-local.sh` | Recreates CI with clean installs, migrations, tests, and disposable PostgreSQL | Downloads packages/images and replaces `node_modules` |
+| `maintenance/update-action-pin.sh OWNER/REPO TAG` | Resolves a reviewed action tag to its commit and updates workflow pins | Uses GitHub and edits workflows |
+| `maintenance/update-uv-pin.sh VERSION` | Downloads and verifies the official uv artifact, then updates its CI pin | Uses GitHub/Astral and edits `ci.yml` |
+| `maintenance/update-postgres-pin.sh TAG` | Pulls PostgreSQL and records the resolved CI image digest | Uses Docker Hub and edits `ci.yml` |
 | `docs/build_docs.sh --install` | Installs locked portal dependencies and builds the strict documentation site | Downloads packages and replaces `node_modules` |
 
 All scripts can be called from any working directory. Pin-update helpers refuse
@@ -54,7 +50,7 @@ drift so its result remains comparable to GitHub Actions.
 
 ## What the Full Check Covers
 
-`maintainence/run-ci-local.sh` performs these steps in order:
+`maintenance/run-ci-local.sh` performs these steps in order:
 
 1. Audit workflow security policy and validate deployment and maintenance Bash.
 2. Check `uv.lock` and install portal dependencies with lifecycle scripts disabled.
@@ -67,7 +63,7 @@ drift so its result remains comparable to GitHub Actions.
 9. Remove the disposable database container on exit.
 
 If the script is interrupted, remove only a leftover container whose name
-starts with `plexa-maintainence-postgres-` after confirming it is the disposable
+starts with `plexa-maintenance-postgres-` after confirming it is the disposable
 CI database.
 
 ## Routine Schedule
@@ -148,7 +144,7 @@ approve the release.
 Read the release notes on the action's official repository, then run:
 
 ```bash
-maintainence/update-action-pin.sh actions/checkout v7.0.1
+maintenance/update-action-pin.sh actions/checkout v7.0.1
 ```
 
 Confirm that the diff changes only the expected action, retains a full
@@ -160,7 +156,7 @@ handles annotated tags but only updates actions already present in the repo.
 After reviewing an official uv release:
 
 ```bash
-maintainence/update-uv-pin.sh 0.12.1
+maintenance/update-uv-pin.sh 0.12.1
 ```
 
 The helper reads Astral's release manifest, downloads the Linux x86-64 artifact
@@ -172,7 +168,7 @@ together. Run the full check afterward.
 After reviewing the PostgreSQL and official image release notes:
 
 ```bash
-maintainence/update-postgres-pin.sh 17.10-bookworm
+maintenance/update-postgres-pin.sh 17.10-bookworm
 ```
 
 Preserve the Debian image variant unless changing the base image is deliberate.

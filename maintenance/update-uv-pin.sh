@@ -2,26 +2,26 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=maintainence/lib/common.sh
+# shellcheck source=maintenance/lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
-maintainence_cd_repo_root
+maintenance_cd_repo_root
 
 version="${1:-}"
 if [ "$#" -ne 1 ] || [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
-  maintainence_die "Usage: maintainence/update-uv-pin.sh VERSION"
+  maintenance_die "Usage: maintenance/update-uv-pin.sh VERSION"
 fi
 
-maintainence_require_command curl
-maintainence_require_command sha256sum
-maintainence_require_clean_path .github/workflows/ci.yml
-python_bin="$(maintainence_resolve_python)"
+maintenance_require_command curl
+maintenance_require_command sha256sum
+maintenance_require_clean_path .github/workflows/ci.yml
+python_bin="$(maintenance_resolve_python)"
 
 temporary_dir="$(mktemp -d)"
 trap 'rm -rf "$temporary_dir"' EXIT INT TERM
 manifest="$temporary_dir/uv.ndjson"
 archive="$temporary_dir/uv.tar.gz"
 
-maintainence_note "Fetching the official Astral release manifest..."
+maintenance_note "Fetching the official Astral release manifest..."
 curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
   https://raw.githubusercontent.com/astral-sh/versions/main/v1/uv.ndjson \
   --output "$manifest"
@@ -46,13 +46,13 @@ PY
 checksum="${release_data%%$'\t'*}"
 url="${release_data#*$'\t'}"
 if [[ ! "$checksum" =~ ^[0-9a-f]{64}$ ]] || [[ "$url" != https://* ]]; then
-  maintainence_die "The uv release metadata was malformed."
+  maintenance_die "The uv release metadata was malformed."
 fi
 
-maintainence_note "Downloading and verifying the pinned uv artifact..."
+maintenance_note "Downloading and verifying the pinned uv artifact..."
 curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location "$url" --output "$archive"
 printf '%s  %s\n' "$checksum" "$archive" | sha256sum --check --status || \
-  maintainence_die "The downloaded uv artifact did not match the official checksum."
+  maintenance_die "The downloaded uv artifact did not match the official checksum."
 
 PLEXA_UV_VERSION="$version" PLEXA_UV_CHECKSUM="$checksum" "$python_bin" - <<'PY'
 import os
@@ -91,5 +91,5 @@ path.write_text("".join(lines), encoding="utf-8")
 print(f"Updated the CI uv pin to {version} ({checksum}).")
 PY
 
-maintainence/audit-ci.sh
-maintainence_show_changes .github/workflows/ci.yml
+maintenance/audit-ci.sh
+maintenance_show_changes .github/workflows/ci.yml

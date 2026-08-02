@@ -51,5 +51,5 @@ The [deployment guide](https://github.com/kjgb001/Plexa/blob/main/deploy/README.
 is the source of truth for DNS, OIDC registration, inference networking,
 generated secrets, backups, restoration, upgrades, and troubleshooting.
 
-The [maintenance guide](https://github.com/kjgb001/Plexa/blob/main/maintainence/README.md)
+The [maintenance guide](https://github.com/kjgb001/Plexa/blob/main/maintenance/README.md)
 covers dependency updates, local CI, workflow security, and release checks.

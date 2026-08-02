@@ -2,11 +2,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=maintainence/lib/common.sh
+# shellcheck source=maintenance/lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
-maintainence_cd_repo_root
+maintenance_cd_repo_root
 
-python_bin="$(maintainence_resolve_python)"
+python_bin="$(maintenance_resolve_python)"
 "$python_bin" - <<'PY'
 from __future__ import annotations
 
@@ -126,7 +126,7 @@ for dependency in ("eslint", "@eslint/js", "vite", "@vitejs/plugin-react", "type
         errors.append(f".github/dependabot.yml: missing major-version gate for {dependency}")
 
 codeowners = (root / ".github" / "CODEOWNERS").read_text(encoding="utf-8")
-for protected_path in ("/.github/", "/maintainence/", "/docs/"):
+for protected_path in ("/.github/", "/maintenance/", "/docs/"):
     if protected_path not in codeowners:
         errors.append(f".github/CODEOWNERS: missing protection for {protected_path}")
 

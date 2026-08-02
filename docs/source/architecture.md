@@ -50,3 +50,10 @@ state make multiple workers unsafe until shared atomic coordination exists.
 Inference may run on the application host, institutional compute, or a separate
 GPU service. Only the server receives inference credentials and model routing
 configuration; the browser communicates exclusively with Plexa's API.
+
+## Decision records
+
+The [architecture decision archive](decisions/index.md) records why these
+boundaries exist, their consequences, and the conditions required to change
+them. A future implementation that changes an accepted boundary should add a
+superseding decision record rather than silently rewriting the original.

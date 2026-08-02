@@ -36,6 +36,7 @@ CI because upstream sites can fail independently of Plexa.
 | Path | Purpose |
 | --- | --- |
 | `source/*.md` | Authored overview, architecture, operations, and HTTP guides |
+| `source/decisions/` | Architecture decision records for durable design rationale |
 | `source/server/` | Server overview and generated Python reference entry point |
 | `source/client/` | Portal overview and generated TypeScript reference entry point |
 | `source/_static/` | Small Furo theme adjustments |

@@ -1,6 +1,13 @@
 [project]
 name = "plexa"
 version = "0.0.0"
+description = "Open-source platform for instructor-authored, AI-supported lessons in higher education."
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Kellan Guinn-Bailey" },
+]
+keywords = ["artificial intelligence", "higher education", "learning technology"]
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "alembic",
@@ -12,6 +19,11 @@ dependencies = [
     "sqlalchemy",
     "uvicorn",
 ]
+
+[project.urls]
+Documentation = "https://kjgb001.github.io/Plexa/"
+Issues = "https://github.com/kjgb001/Plexa/issues"
+Repository = "https://github.com/kjgb001/Plexa"
 
 [build-system]
 requires = ["setuptools"]

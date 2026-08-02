@@ -1,5 +1,6 @@
 /.github/ @kjgb001
-/maintainence/ @kjgb001
+/CITATION.cff @kjgb001
+/maintenance/ @kjgb001
 /deploy/ @kjgb001
 /docs/ @kjgb001
 /docker-compose.prod.yml @kjgb001

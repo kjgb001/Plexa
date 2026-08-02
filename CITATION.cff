@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: >-
+  If you use Plexa in research or teaching, please cite this software using
+  the metadata in this file.
+title: Plexa
+type: software
+authors:
+  - family-names: Guinn-Bailey
+    given-names: Kellan
+abstract: >-
+  Plexa is an open-source platform for instructor-authored, AI-supported
+  lessons in higher education. It provides institutionally deployable student
+  and instructor portals, a server-authoritative lesson runtime, and
+  OpenAI-compatible inference integration.
+repository-code: https://github.com/kjgb001/Plexa
+url: https://kjgb001.github.io/Plexa/
+license: MIT
+keywords:
+  - artificial intelligence
+  - higher education
+  - learning technology
+  - open-source software

@@ -40,7 +40,7 @@ updates:
           - patch
     ignore:
       # Remove these gates only after every installed plugin declares support
-      # and the major upgrade passes maintainence/run-ci-local.sh.
+      # and the major upgrade passes maintenance/run-ci-local.sh.
       - dependency-name: eslint
         update-types:
           - version-update:semver-major

@@ -329,7 +329,7 @@ Validate shell syntax, CI policy, and generated Compose configuration:
 
 ```bash
 bash -n deploy/*.sh deploy/lib/*.sh
-maintainence/audit-ci.sh
+maintenance/audit-ci.sh
 deploy/create-production-env.sh \
   --domain plexa.example.test \
   --email ci@example.org \

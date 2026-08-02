@@ -3,9 +3,10 @@
 [![CI](https://github.com/kjgb001/Plexa/actions/workflows/ci.yml/badge.svg)](https://github.com/kjgb001/Plexa/actions/workflows/ci.yml)
 [![Documentation](https://github.com/kjgb001/Plexa/actions/workflows/docs-pages.yml/badge.svg)](https://kjgb001.github.io/Plexa/)
 
-Plexa is a lesson-centered AI platform for higher education. Instructors define
-the goal, model behavior, turn limits, reflection points, and completion rules;
-students work through that lesson in a focused conversation.
+Plexa is an open-source platform for instructor-authored, AI-supported lessons
+in higher education. Instructors define the goal, model behavior, turn limits,
+reflection points, and completion rules; students work through that lesson in
+a focused conversation.
 
 > Students do not just chat with an AI. They execute a lesson.
 
@@ -125,12 +126,12 @@ The repository maintenance runner combines these checks with lockfile, CI
 policy, migration, and disposable-PostgreSQL validation:
 
 ```bash
-maintainence/run-ci-local.sh --quick
-maintainence/run-ci-local.sh
+maintenance/run-ci-local.sh --quick
+maintenance/run-ci-local.sh
 ```
 
 The full runner downloads dependencies and a PostgreSQL image. See the
-[maintenance guide](maintainence/README.md) before using it.
+[maintenance guide](maintenance/README.md) before using it.
 
 ## Deployment
 
@@ -150,7 +151,7 @@ backups, restoration, and upgrades.
 | [`plexa_server/`](plexa_server/) | FastAPI application, lesson runtime, storage, auth, migrations, and tests |
 | [`plexa_portal/`](plexa_portal/) | React student and instructor portal |
 | [`deploy/`](deploy/) | Production configuration, deployment, checks, backup, and restore tooling |
-| [`maintainence/`](maintainence/) | Local CI, dependency, and repository-security maintenance tooling |
+| [`maintenance/`](maintenance/) | Local CI, dependency, and repository-security maintenance tooling |
 | [`docs/`](docs/) | Authored guides and reproducible API-documentation tooling |
 
 The files under `docs/source/generated/` are ignored build products. Update

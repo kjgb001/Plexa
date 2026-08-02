@@ -2,21 +2,21 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=maintainence/lib/common.sh
+# shellcheck source=maintenance/lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
-maintainence_cd_repo_root
+maintenance_cd_repo_root
 
 action="${1:-}"
 tag="${2:-}"
 if [ "$#" -ne 2 ] || [[ ! "$action" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || [[ ! "$tag" =~ ^v?[0-9][A-Za-z0-9_.-]*$ ]]; then
-  maintainence_die "Usage: maintainence/update-action-pin.sh OWNER/REPOSITORY RELEASE_TAG"
+  maintenance_die "Usage: maintenance/update-action-pin.sh OWNER/REPOSITORY RELEASE_TAG"
 fi
 
-maintainence_require_command git
-maintainence_require_clean_path .github/workflows
+maintenance_require_command git
+maintenance_require_clean_path .github/workflows
 
 if ! grep -R -q --include='*.yml' --include='*.yaml' "uses:[[:space:]]*$action@" .github/workflows; then
-  maintainence_die "$action is not referenced by an existing workflow."
+  maintenance_die "$action is not referenced by an existing workflow."
 fi
 
 remote="https://github.com/${action}.git"
@@ -25,10 +25,10 @@ sha="$(printf '%s\n' "$refs" | awk '$2 ~ /\^\{\}$/ {print $1; found=1} END {if (
   sha="$(printf '%s\n' "$refs" | awk 'NR == 1 {print $1}')"
 
 if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
-  maintainence_die "Unable to resolve $action tag $tag to a 40-character commit SHA."
+  maintenance_die "Unable to resolve $action tag $tag to a 40-character commit SHA."
 fi
 
-python_bin="$(maintainence_resolve_python)"
+python_bin="$(maintenance_resolve_python)"
 PLEXA_ACTION="$action" PLEXA_ACTION_TAG="$tag" PLEXA_ACTION_SHA="$sha" "$python_bin" - <<'PY'
 import os
 import re
@@ -55,5 +55,5 @@ if updates == 0:
 print(f"Updated {updates} reference(s) to {action}@{sha} ({tag}).")
 PY
 
-maintainence/audit-ci.sh
-maintainence_show_changes .github/workflows
+maintenance/audit-ci.sh
+maintenance_show_changes .github/workflows
