@@ -1,14 +1,18 @@
 # Plexa
 
 [![CI](https://github.com/kjgb001/Plexa/actions/workflows/ci.yml/badge.svg)](https://github.com/kjgb001/Plexa/actions/workflows/ci.yml)
-[![Documentation](https://github.com/kjgb001/Plexa/actions/workflows/docs-pages.yml/badge.svg)](https://kjgb001.github.io/Plexa/)
+[![Documentation](https://img.shields.io/badge/docs-read-2f6f59?logo=readthedocs&logoColor=white)](https://kjgb001.github.io/Plexa/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-2f6f59)](LICENSE)
+[![Python 3.12 | 3.13](https://img.shields.io/badge/python-3.12%20%7C%203.13-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![PostgreSQL 17](https://img.shields.io/badge/postgresql-17-4169E1?logo=postgresql&logoColor=white)](deploy/README.md)
+[![Citation: CFF](https://img.shields.io/badge/citation-CFF-2f6f59?logo=googlescholar&logoColor=white)](CITATION.cff)
 
 Plexa is an open-source platform for instructor-authored, AI-supported lessons
 in higher education. Instructors define the goal, model behavior, turn limits,
 reflection points, and completion rules; students work through that lesson in
 a focused conversation.
 
-> Students do not just chat with an AI. They execute a lesson.
+> Plexa is a framework for guided AI interaction.
 
 Plexa is designed to sit between an institution and an OpenAI-compatible
 inference service. It keeps lesson authoring, policy enforcement, model access,
