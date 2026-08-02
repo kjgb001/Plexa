@@ -7,10 +7,12 @@ import type {
 import type { Course, Lesson } from "./interfaces"
 import { mapCourse, mapLessonSummary } from "./mappers"
 
+/** Student-facing course and lesson discovery operations. */
 export class CourseApi {
   private http: HttpClient
   constructor(http: HttpClient) {this.http = http}
 
+  /** List courses visible to the authenticated student. */
   async listDiscoverable(): Promise<{ courses: Course[] }> {
     const result = await this.http.request<ApiCourseListResponse>("/courses")
 
@@ -19,17 +21,20 @@ export class CourseApi {
     }
   }
 
+  /** Load one visible course and the caller's relationship to it. */
   async get(courseId: string): Promise<Course> {
     const result = await this.http.request<ApiCourse>(`/courses/${courseId}`)
     return mapCourse(result)
   }
 
+  /** Request enrollment in a discoverable course. */
   requestEnrollment(courseId: string): Promise<{ status: string }> {
     return this.http.request<{ status: string }>(`/courses/${courseId}/enroll`, {
       method: "POST"
     })
   }
 
+  /** List lessons currently available in a course. */
   async listLessons(courseId: string): Promise<{ lessons: Lesson[] }> {
     const result = await this.http.request<ApiCourseLessonsResponse>(
       `courses/${courseId}/lessons`, {

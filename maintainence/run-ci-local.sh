@@ -71,6 +71,9 @@ npm --prefix plexa_portal audit --audit-level=high
 npm --prefix plexa_portal run lint
 npm --prefix plexa_portal run build
 
+maintainence_note "Building the authored and generated documentation..."
+docs/build_docs.sh
+
 maintainence_note "Synchronizing the exact server dependency tree..."
 uv sync --frozen
 

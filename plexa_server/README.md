@@ -64,6 +64,11 @@ curl http://localhost:8000/api/debug/inference
 required inference backends. `/api/debug/inference` shows profile resolution in
 development and returns 404 in production.
 
+FastAPI serves the runtime OpenAPI schema at `/openapi.json` and interactive
+Swagger UI at `/docs`. The schema advertises the configured development-header
+or bearer-JWT authentication mode. The maintained static API guide is published
+with the [Plexa documentation](https://kjgb001.github.io/Plexa/http-api.html).
+
 ## Inference Setup
 
 The generated local `.env` contains example backends for:

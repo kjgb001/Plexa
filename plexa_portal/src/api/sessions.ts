@@ -23,6 +23,7 @@ import {
   mapSession,
 } from "./mappers"
 
+/** Student session lifecycle, messaging, reflection, and submission operations. */
 export class SessionApi {
   private http: HttpClient
 
@@ -30,6 +31,7 @@ export class SessionApi {
     this.http = http
   }
 
+  /** List the caller's sessions for one lesson version. */
   async listSessions(
     courseId: string,
     lessonId: string,
@@ -45,6 +47,7 @@ export class SessionApi {
     return mapListSessionsResult(result)
   }
 
+  /** Load one session and its available transcript. */
   async getSession(
     courseId: string,
     lessonId: string,
@@ -61,6 +64,7 @@ export class SessionApi {
     return mapCreateSessionResult(result)
   }
 
+  /** Start a new session for a course-bound lesson. */
   async createSession(
     courseId: string,
     lessonId: string,
@@ -76,6 +80,7 @@ export class SessionApi {
     return mapCreateSessionResult(result)
   }
 
+  /** Send a message through the non-streaming fallback endpoint. */
   async sendMessage(
     courseId: string,
     lessonId: string,
@@ -95,6 +100,13 @@ export class SessionApi {
     return mapSendMessageResult(result)
   }
 
+  /**
+   * Stream an assistant response over server-sent events.
+   *
+   * Delta callbacks are provisional. The returned result is the canonical
+   * committed message and session state. A {@link MessageStreamError} states
+   * whether retrying the same message ID through `sendMessage` is safe.
+   */
   async streamMessage(
     courseId: string,
     lessonId: string,
@@ -265,6 +277,7 @@ export class SessionApi {
     return completedResult
   }
 
+  /** Close an active session and activate its post-session reflections. */
   async closeSession(
     courseId: string,
     lessonId: string,
@@ -279,6 +292,7 @@ export class SessionApi {
     return mapSession(result)
   }
 
+  /** Delete a session owned by the current user. */
   async deleteSession(
     courseId: string,
     lessonId: string,
@@ -293,6 +307,7 @@ export class SessionApi {
     return mapDeleteSessionResult(result)
   }
 
+  /** Enter completion mode before turning work in. */
   async beginCompletion(
     courseId: string,
     lessonId: string,
@@ -306,6 +321,7 @@ export class SessionApi {
     return { session: mapSession(result) }
   }
 
+  /** Resume conversation from an unsubmitted completion state. */
   async resumeAfterCompletion(
     courseId: string,
     lessonId: string,
@@ -319,6 +335,7 @@ export class SessionApi {
     return { session: mapSession(result) }
   }
 
+  /** Save one reflection response. */
   async saveReflectionResponse(
     courseId: string,
     lessonId: string,
@@ -337,6 +354,7 @@ export class SessionApi {
     return { session: mapSession(result) }
   }
 
+  /** Defer an active mid-session reflection until later. */
   async postponeReflection(
     courseId: string,
     lessonId: string,
@@ -351,6 +369,7 @@ export class SessionApi {
     return { session: mapSession(result) }
   }
 
+  /** Permanently lock and submit a completed session. */
   async turnInSession(
     courseId: string,
     lessonId: string,
@@ -365,6 +384,7 @@ export class SessionApi {
   }
 }
 
+/** Streaming failure that indicates whether the non-streaming retry is safe. */
 export class MessageStreamError extends Error {
   fallbackAllowed: boolean
 

@@ -65,7 +65,10 @@ If an existing ignored `src/.env` still uses `http://localhost:8000`, append
 | `npm run build` | Type-check and create the production bundle |
 | `npm run preview` | Serve the production bundle locally |
 | `npm run lint` | Run ESLint |
-| `npm run docs` | Regenerate the TypeDoc Markdown under `docs/source/generated/client_api` |
+| `npm run docs` | Regenerate the ignored TypeDoc Markdown for inspection |
+
+Use `docs/build_docs.sh` from the repository root for the complete strict
+documentation build. The generated Markdown is not committed.
 
 CI installs dependencies with `npm ci --ignore-scripts`, then runs the audit,
 lint, and build commands. Do not use `--force` or `--legacy-peer-deps` to hide a

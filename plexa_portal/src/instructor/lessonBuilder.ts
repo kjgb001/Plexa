@@ -38,6 +38,7 @@ function createReflectionHook(orderIndex: number) {
   }
 }
 
+/** Create a new lesson document populated with safe authoring defaults. */
 export function createDefaultLessonDraft(courseId?: string): LessonDocument {
   return {
     schema_version: "1.0",
@@ -81,14 +82,17 @@ export function createDefaultLessonDraft(courseId?: string): LessonDocument {
   }
 }
 
+/** Deep-copy an editable lesson document. */
 export function duplicateLessonDraft(document: LessonDocument): LessonDocument {
   return cloneLessonDocument(document)
 }
 
+/** Format a string list as one value per line for a text control. */
 export function listToMultiline(values?: string[] | null): string {
   return values?.join("\n") ?? ""
 }
 
+/** Parse non-empty trimmed lines into a string list. */
 export function multilineToList(value: string): string[] {
   return value
     .split("\n")
@@ -96,10 +100,12 @@ export function multilineToList(value: string): string[] {
     .filter(Boolean)
 }
 
+/** Format a string list as comma-separated text. */
 export function listToCsv(values?: string[] | null): string {
   return values?.join(", ") ?? ""
 }
 
+/** Parse comma-separated text into non-empty trimmed values. */
 export function csvToList(value: string): string[] {
   return value
     .split(",")
@@ -107,6 +113,7 @@ export function csvToList(value: string): string[] {
     .filter(Boolean)
 }
 
+/** Format an optional JSON object for an authoring text area. */
 export function jsonToText(value: Record<string, unknown> | null | undefined): string {
   if (!value || Object.keys(value).length === 0) {
     return ""
@@ -114,6 +121,7 @@ export function jsonToText(value: Record<string, unknown> | null | undefined): s
   return JSON.stringify(value, null, 2)
 }
 
+/** Parse text as a JSON object, rejecting arrays and primitive values. */
 export function textToJsonObject(value: string): Record<string, unknown> {
   if (!value.trim()) {
     return {}
@@ -125,10 +133,12 @@ export function textToJsonObject(value: string): Record<string, unknown> {
   return parsed as Record<string, unknown>
 }
 
+/** Serialize an authored lesson using the canonical readable JSON format. */
 export function serializeLessonDraft(document: LessonDocument): string {
   return JSON.stringify(document, null, 2)
 }
 
+/** Reassign reflection order indexes after hooks are moved or removed. */
 export function renumberReflectionHooks(document: LessonDocument): LessonDocument {
   return {
     ...document,
@@ -142,6 +152,7 @@ export function renumberReflectionHooks(document: LessonDocument): LessonDocumen
   }
 }
 
+/** Create a blank post-session reflection hook at the requested position. */
 export function newReflectionHook(orderIndex: number) {
   return createReflectionHook(orderIndex)
 }

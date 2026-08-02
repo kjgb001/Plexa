@@ -27,6 +27,7 @@ import {
   mapLessonSummary,
 } from "./mappers"
 
+/** Instructor workspace operations for courses, rosters, timelines, and logs. */
 export class InstructorApi {
   private http: HttpClient
 
@@ -34,6 +35,7 @@ export class InstructorApi {
     this.http = http
   }
 
+  /** List courses the current instructor can manage, including archived courses. */
   async listCourses(): Promise<Course[]> {
     const result = await this.http.request<ApiCourseListResponse>(
       "/courses?include_archived=true",
@@ -41,11 +43,13 @@ export class InstructorApi {
     return result.courses.map(mapCourse)
   }
 
+  /** Load one instructor-visible course. */
   async getCourse(courseId: string): Promise<Course> {
     const result = await this.http.request<ApiCourse>(`/courses/${courseId}`)
     return mapCourse(result)
   }
 
+  /** List bound lessons and identify the currently pinned lesson. */
   async listLessons(courseId: string): Promise<Lesson[]> {
     const result = await this.http.request<ApiCourseLessonsResponse>(`/courses/${courseId}/lessons`)
     const pinnedKey = `${result.pinned_lesson_id ?? ""}:${result.pinned_lesson_version ?? ""}`
@@ -58,11 +62,13 @@ export class InstructorApi {
     })
   }
 
+  /** Load scheduled lesson availability windows. */
   async getLessonTimeline(courseId: string): Promise<CourseLessonWindow[]> {
     const result = await this.http.request<ApiCourseLessonTimelineResponse>(`/courses/${courseId}/lesson-timeline`)
     return mapCourseLessonTimeline(result)
   }
 
+  /** Replace the course lesson timeline. */
   async updateLessonTimeline(
     courseId: string,
     lessonTimeline: CourseLessonWindow[],
@@ -74,11 +80,13 @@ export class InstructorApi {
     return mapCourseLessonTimeline(result)
   }
 
+  /** List course ownership and delegated instructors. */
   async listInstructors(courseId: string): Promise<CourseInstructors> {
     const result = await this.http.request<ApiCourseInstructorsResponse>(`/courses/${courseId}/instructors`)
     return mapCourseInstructors(result)
   }
 
+  /** Delegate instructor access to another user. */
   async addInstructor(courseId: string, userId: string): Promise<CourseInstructors> {
     const result = await this.http.request<ApiCourseInstructorsResponse>(`/courses/${courseId}/instructors`, {
       method: "POST",
@@ -87,6 +95,7 @@ export class InstructorApi {
     return mapCourseInstructors(result)
   }
 
+  /** Revoke delegated instructor access. */
   async removeInstructor(courseId: string, userId: string): Promise<CourseInstructors> {
     const result = await this.http.request<ApiCourseInstructorsResponse>(`/courses/${courseId}/instructors/${encodeURIComponent(userId)}`, {
       method: "DELETE",
@@ -94,11 +103,13 @@ export class InstructorApi {
     return mapCourseInstructors(result)
   }
 
+  /** List pending student enrollment requests. */
   async listRequests(courseId: string): Promise<CourseRequestsResult> {
     const result = await this.http.request<ApiCourseRequestsResponse>(`/courses/${courseId}/requests`)
     return mapCourseRequests(result)
   }
 
+  /** Approve a pending enrollment request. */
   async approveRequest(courseId: string, userId: string): Promise<{ status: string }> {
     return this.http.request<ApiStatusResponse>(`/courses/${courseId}/approve`, {
       method: "POST",
@@ -106,6 +117,7 @@ export class InstructorApi {
     })
   }
 
+  /** Remove a student and revoke access to their existing course sessions. */
   async removeStudent(courseId: string, userId: string): Promise<{ status: string }> {
     return this.http.request<ApiStatusResponse>(`/courses/${courseId}/remove`, {
       method: "POST",
@@ -113,6 +125,7 @@ export class InstructorApi {
     })
   }
 
+  /** List encrypted session-log metadata with optional lesson and user filters. */
   async listLogs(
     courseId: string,
     filters?: {
@@ -136,6 +149,7 @@ export class InstructorApi {
     return mapEncryptedLogList(result)
   }
 
+  /** Decrypt and load one authorized session log. */
   async getLog(courseId: string, sessionId: string): Promise<EncryptedLogPayload> {
     return this.http.request<EncryptedLogPayload>(`/courses/${courseId}/logs/${encodeURIComponent(sessionId)}`)
   }

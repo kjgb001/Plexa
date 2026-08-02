@@ -27,6 +27,12 @@ from plexa_server.api.routes.health import get_health_router
 from plexa_server.api.routes.admin import get_admin_router
 from plexa_server.api.routes.courses import get_course_router
 from plexa_server.api.routes.auth import get_auth_router
+from plexa_server.api.openapi_schema import (
+    API_DESCRIPTION,
+    OPENAPI_TAGS,
+    configure_openapi_security,
+)
+from plexa_server.auth.config import load_auth_config
 from plexa_server.auth.factory import create_request_authenticator
 from plexa_server.auth.middleware import create_auth_identity_middleware
 from plexa_server.core.encrypted_logs import EncryptedLogService
@@ -133,7 +139,12 @@ def build_app(
     )
 
     # FastAPI app
-    app = FastAPI(title="Plexa Server", version=APP_VERSION)
+    app = FastAPI(
+        title="Plexa Server",
+        version=APP_VERSION,
+        description=API_DESCRIPTION,
+        openapi_tags=OPENAPI_TAGS,
+    )
 
     @app.middleware("http")
     async def request_limits_and_logging(request: Request, call_next):
@@ -218,6 +229,7 @@ def build_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    configure_openapi_security(app, load_auth_config())
 
     return app
 

@@ -11,6 +11,7 @@ import type {
 } from "./interfaces"
 import { mapLessonDocument, mapUploadLessonResult } from "./mappers"
 
+/** Course-owner lesson authoring and binding operations. */
 export class AdminApi {
   private http: HttpClient
 
@@ -18,6 +19,7 @@ export class AdminApi {
     this.http = http
   }
 
+  /** Load an editable lesson artifact and its optimistic revision. */
   async getLesson(courseId: string, lessonId: string, version: string): Promise<LessonArtifactResult> {
     const result = await this.http.request<ApiLessonArtifactResponse>(
       `/courses/${encodeURIComponent(courseId)}/lesson-artifacts/${encodeURIComponent(lessonId)}/${encodeURIComponent(version)}`,
@@ -28,6 +30,7 @@ export class AdminApi {
     }
   }
 
+  /** Create or replace a lesson artifact using optimistic concurrency. */
   async uploadLesson(
     courseId: string,
     payload: LessonDocument,
@@ -43,6 +46,7 @@ export class AdminApi {
     return mapUploadLessonResult(result)
   }
 
+  /** Make an authored lesson version available in a course. */
   async bindLessonToCourse(courseId: string, lessonId: string, version: string): Promise<{ status: string }> {
     return this.http.request<ApiStatusResponse>(`/courses/${encodeURIComponent(courseId)}/lessons`, {
       method: "POST",

@@ -14,6 +14,7 @@ def get_auth_router(course_storage: CourseStorage) -> APIRouter:
     async def get_me(
         identity: UserIdentity = Depends(require_identity),
     ) -> AuthMeResponse:
+        """Return the authenticated identity and its instructor-portal access."""
         courses = await course_storage.list_courses()
         owned = sorted(
             course.course_id

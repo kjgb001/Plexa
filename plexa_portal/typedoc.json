@@ -1,12 +1,29 @@
 {
-  "entryPoints": ["src"],
-  "entryPointStrategy": "expand",
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "Plexa Portal API",
+  "entryPoints": ["src/documentation.ts"],
+  "entryPointStrategy": "resolve",
+  "alwaysCreateEntryPointModule": true,
   "plugin": ["typedoc-plugin-markdown"],
   "tsconfig": "tsconfig.json",
   "out": "../docs/source/generated/client_api",
+  "readme": "none",
   "excludePrivate": true,
   "excludeProtected": true,
   "excludeInternal": true,
-  "includeVersion": true,
-  "exclude" : []
+  "includeVersion": false,
+  "gitRemote": "origin",
+  "validation": {
+    "notExported": true,
+    "invalidLink": true,
+    "invalidPath": true,
+    "notDocumented": true
+  },
+  "requiredToBeDocumented": [
+    "Class",
+    "Interface",
+    "Function",
+    "TypeAlias"
+  ],
+  "treatWarningsAsErrors": true
 }

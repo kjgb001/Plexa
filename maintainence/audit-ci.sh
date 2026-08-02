@@ -33,8 +33,37 @@ for path in workflow_paths:
         errors.append(f"{relative}: privileged trigger requires a dedicated security review")
     if re.search(r"permissions\s*:\s*write-all", text):
         errors.append(f"{relative}: permissions: write-all is forbidden")
-    if re.search(r"^\s+[A-Za-z0-9_-]+:\s*write\s*$", text, re.MULTILINE):
-        errors.append(f"{relative}: write permission requires an explicit audit policy update")
+    deploy_job = None
+    if relative.as_posix() == ".github/workflows/docs-pages.yml":
+        deploy_job = re.search(
+            r"(?ms)^  deploy:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+            text,
+        )
+        if deploy_job is None:
+            errors.append(f"{relative}: expected a dedicated deploy job")
+
+    allowed_pages_writes: set[str] = set()
+    for match in re.finditer(
+        r"^\s+(?P<scope>[A-Za-z0-9_-]+):\s*write\s*$",
+        text,
+        re.MULTILINE,
+    ):
+        scope = match.group("scope")
+        inside_pages_deploy = (
+            deploy_job is not None
+            and deploy_job.start("body") <= match.start() < deploy_job.end("body")
+            and scope in {"pages", "id-token"}
+        )
+        if inside_pages_deploy:
+            allowed_pages_writes.add(scope)
+        else:
+            errors.append(
+                f"{relative}: write permission for {scope} requires an explicit audit policy update"
+            )
+    if deploy_job is not None and allowed_pages_writes != {"pages", "id-token"}:
+        errors.append(
+            f"{relative}: deploy job must request exactly pages: write and id-token: write"
+        )
     if re.search(r"^\s*secrets:\s*inherit\s*$", text, re.MULTILINE):
         errors.append(f"{relative}: inherited secrets are forbidden")
     if "permissions:\n  contents: read" not in text:
@@ -68,6 +97,21 @@ for required in ("npm ci --ignore-scripts", "uv sync --frozen", "uv run --frozen
     if required not in ci_text:
         errors.append(f".github/workflows/ci.yml: missing reproducible command: {required}")
 
+docs_workflow = (workflow_dir / "docs-pages.yml").read_text(encoding="utf-8")
+for required in (
+    "if: github.event_name != 'pull_request'",
+    "needs: build",
+    "name: github-pages",
+    "npm --prefix plexa_portal ci --ignore-scripts",
+    "uv sync --frozen --group docs",
+    "docs/build_docs.sh",
+    "actions/configure-pages@",
+    "actions/upload-pages-artifact@",
+    "actions/deploy-pages@",
+):
+    if required not in docs_workflow:
+        errors.append(f".github/workflows/docs-pages.yml: missing Pages safeguard: {required}")
+
 dependabot = (root / ".github" / "dependabot.yml").read_text(encoding="utf-8")
 for ecosystem in ("github-actions", "npm", "uv"):
     if f"package-ecosystem: {ecosystem}" not in dependabot:
@@ -82,7 +126,7 @@ for dependency in ("eslint", "@eslint/js", "vite", "@vitejs/plugin-react", "type
         errors.append(f".github/dependabot.yml: missing major-version gate for {dependency}")
 
 codeowners = (root / ".github" / "CODEOWNERS").read_text(encoding="utf-8")
-for protected_path in ("/.github/", "/maintainence/"):
+for protected_path in ("/.github/", "/maintainence/", "/docs/"):
     if protected_path not in codeowners:
         errors.append(f".github/CODEOWNERS: missing protection for {protected_path}")
 

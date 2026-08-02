@@ -1,8 +1,10 @@
+/** Chat message visible in a session transcript. */
 export interface Message {
   role: "user" | "assistant" | "system" | "instructor"
   content: string
 }
 
+/** Canonical student session state returned by the server. */
 export interface Session {
   session_id: string
   title: string
@@ -25,6 +27,7 @@ export interface Session {
   reflection_hooks: SessionReflectionHook[]
 }
 
+/** Runtime state for one configured reflection hook. */
 export interface SessionReflectionHook {
   hook_id: string
   prompt: string
@@ -41,6 +44,7 @@ export interface SessionReflectionHook {
   last_updated_at?: string | null
 }
 
+/** Course metadata and the current viewer's relationship to the course. */
 export interface Course {
   course_id: string
   title: string
@@ -59,6 +63,7 @@ export interface Course {
   revision?: number
 }
 
+/** Scheduled availability window for a bound lesson version. */
 export interface CourseLessonWindow {
   lesson_id: string
   lesson_version: string
@@ -66,6 +71,7 @@ export interface CourseLessonWindow {
   ends_at?: string | null
 }
 
+/** Lesson summary shown in course navigation. */
 export interface Lesson {
   lesson_id: string
   version: string
@@ -79,6 +85,7 @@ export interface Lesson {
   tags?: string[]
 }
 
+/** Stable lesson identity and attribution fields. */
 export interface LessonIdentity {
   lesson_id: string
   version: string
@@ -91,6 +98,7 @@ export interface LessonIdentity {
   tags?: string[] | null
 }
 
+/** Learning goals and expected student behavior for a lesson. */
 export interface LessonIntent {
   learning_objective: string
   behavioral_focus: string
@@ -100,11 +108,13 @@ export interface LessonIntent {
   approximate_time?: string | null
 }
 
+/** Optional model capabilities available during lesson execution. */
 export interface LessonCapabilities {
   tools_enabled?: boolean
   browsing_enabled?: boolean
 }
 
+/** Model instructions and inference profile for a lesson. */
 export interface LessonExecution {
   system_prompt: string
   initial_assistant_message?: string | null
@@ -113,6 +123,7 @@ export interface LessonExecution {
   capabilities?: LessonCapabilities | null
 }
 
+/** Conversation limits and allowed interaction modes. */
 export interface LessonConstraints {
   input_mode: string
   turn_limit?: number | null
@@ -120,11 +131,13 @@ export interface LessonConstraints {
   termination_condition?: string | null
 }
 
+/** Reflection hooks and transcript logging policy for a lesson. */
 export interface LessonReflection {
   hooks: LessonReflectionHook[]
   logging_policy?: string | null
 }
 
+/** Author-defined reflection prompt and trigger behavior. */
 export interface LessonReflectionHook {
   hook_id: string
   prompt: string
@@ -134,6 +147,7 @@ export interface LessonReflectionHook {
   carry_to_post: boolean
 }
 
+/** Complete versioned lesson-authoring document. */
 export interface LessonDocument {
   schema_version: string
   identity: LessonIdentity
@@ -143,34 +157,41 @@ export interface LessonDocument {
   reflection: LessonReflection
 }
 
+/** Newly created or loaded session with its available transcript. */
 export interface CreateSessionResult {
   session: Session
   messages: Message[]
 }
 
+/** Collection of sessions associated with one lesson version. */
 export interface ListSessionsResult {
   sessions: Session[]
 }
 
+/** Confirmation that a session was deleted. */
 export interface DeleteSessionResult {
   status: string
   sessionId: string
 }
 
+/** Canonical result after an assistant message is committed. */
 export interface SendMessageResult {
   assistantMessage: Message
   session: Session
 }
 
+/** Updated session state after a lifecycle operation. */
 export interface UpdateSessionResult {
   session: Session
 }
 
+/** Course owner and delegated instructor identities. */
 export interface CourseInstructors {
   owner_id: string
   instructor_ids: string[]
 }
 
+/** Searchable metadata for an encrypted session log. */
 export interface EncryptedLogMetadata {
   instance_id: string
   user_id: string
@@ -193,14 +214,17 @@ export interface EncryptedLogMetadata {
   content_available: boolean
 }
 
+/** Pending course-enrollment requests. */
 export interface CourseRequestsResult {
   pending_requests: string[]
 }
 
+/** Decrypted structured session log visible to an authorized instructor. */
 export interface EncryptedLogPayload {
   [key: string]: unknown
 }
 
+/** Result of creating or replacing a lesson artifact. */
 export interface UploadLessonResult {
   status: string
   lesson_id: string
@@ -209,6 +233,7 @@ export interface UploadLessonResult {
   artifact_revision: number
 }
 
+/** Editable lesson artifact paired with its optimistic revision. */
 export interface LessonArtifactResult {
   lesson: LessonDocument
   artifactRevision: number

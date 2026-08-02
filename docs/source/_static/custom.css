@@ -1,0 +1,46 @@
+:root {
+  --plexa-orange: #ef8354;
+}
+
+.sd-card {
+  border: 1px solid color-mix(in srgb, var(--color-brand-primary) 28%, transparent);
+  border-top: 3px solid var(--plexa-orange);
+  border-radius: 0.45rem;
+  box-shadow: none;
+}
+
+.sd-card:hover {
+  border-color: color-mix(in srgb, var(--color-brand-primary) 58%, transparent);
+  box-shadow: 0 0.25rem 0.8rem rgb(20 33 61 / 8%);
+}
+
+.sd-card-title {
+  color: var(--color-foreground-primary);
+}
+
+.api dl.py,
+.api dl.js,
+dl.py,
+dl.js {
+  border-top-color: color-mix(in srgb, var(--plexa-orange) 60%, transparent);
+}
+
+dl.py dt.sig,
+dl.js dt.sig {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.content table.docutils {
+  display: block;
+  overflow-x: auto;
+  width: 100%;
+}
+
+.content code.literal {
+  overflow-wrap: anywhere;
+}
+
+body[data-theme="dark"] .sd-card:hover {
+  box-shadow: 0 0.25rem 0.8rem rgb(0 0 0 / 24%);
+}

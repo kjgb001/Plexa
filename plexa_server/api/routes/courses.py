@@ -556,6 +556,7 @@ def get_course_router(
         version: str,
         identity: UserIdentity = Depends(require_identity),
     ) -> dict:
+        """Return the editable lesson document and optimistic artifact revision."""
         course = await course_storage.get_course(course_id)
         if course is None or course.archived_at is not None:
             raise HTTPException(status_code=404, detail="Course not found")
@@ -576,6 +577,7 @@ def get_course_router(
         request: LessonBindingRequest,
         identity: UserIdentity = Depends(require_identity),
     ) -> dict:
+        """Bind an authored lesson version to a course and clear older windows."""
         course = await course_storage.get_course(course_id)
         if course is None or course.archived_at is not None:
             raise HTTPException(status_code=404, detail="Course not found")

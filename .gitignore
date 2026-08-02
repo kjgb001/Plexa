@@ -1,6 +1,7 @@
 # Python
 __pycache__/
 *.pyc
+*.egg-info/
 
 *uml.txt
 
@@ -19,6 +20,7 @@ deploy/secrets/
 backups/
 
 docs/build/
+docs/source/generated/
 
 .impeccable.md
 AGENTS.md

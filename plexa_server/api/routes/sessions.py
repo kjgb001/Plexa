@@ -577,6 +577,7 @@ def get_sessions_router(
         lesson_version: str,
         identity: UserIdentity = Depends(require_identity),
     ) -> SessionResponse:
+        """Enter completion mode and activate required post-session reflections."""
         session = await get_owned_session(
             session_manager, session_id, identity, course_storage
         )
@@ -601,6 +602,7 @@ def get_sessions_router(
         lesson_version: str,
         identity: UserIdentity = Depends(require_identity),
     ) -> SessionResponse:
+        """Return an unsubmitted session to active conversation mode."""
         session = await get_owned_session(
             session_manager, session_id, identity, course_storage
         )
@@ -627,6 +629,7 @@ def get_sessions_router(
         request: ReflectionResponseRequest,
         identity: UserIdentity = Depends(require_identity),
     ) -> SessionResponse:
+        """Save one reflection response and return the updated session state."""
         session = await get_owned_session(
             session_manager, session_id, identity, course_storage
         )
@@ -656,6 +659,7 @@ def get_sessions_router(
         hook_id: str,
         identity: UserIdentity = Depends(require_identity),
     ) -> SessionResponse:
+        """Move an active mid-session reflection into the reflections drawer."""
         session = await get_owned_session(
             session_manager, session_id, identity, course_storage
         )
@@ -680,6 +684,7 @@ def get_sessions_router(
         lesson_version: str,
         identity: UserIdentity = Depends(require_identity),
     ) -> SessionResponse:
+        """Lock and submit a session after all required reflections are saved."""
         session = await get_owned_session(
             session_manager, session_id, identity, course_storage
         )

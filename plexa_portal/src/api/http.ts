@@ -6,6 +6,7 @@ import {
   ConflictError
 } from "./errors"
 
+/** Authenticated JSON transport shared by the portal's domain API clients. */
 export class HttpClient {
   private getAuthHeaders: () => Promise<Record<string, string>>
 
@@ -34,6 +35,7 @@ export class HttpClient {
     return response
   }
 
+  /** Decode a successful JSON response into the requested transport type. */
   async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const response = await this.fetchResponse(path, options)
 
@@ -45,6 +47,7 @@ export class HttpClient {
     return undefined as T
   }
 
+  /** Return a successful raw response for server-sent event processing. */
   async stream(path: string, options: RequestInit = {}): Promise<Response> {
     return this.fetchResponse(path, options)
   }

@@ -36,6 +36,7 @@ database container. It does not use or remove development or production data.
 | `maintainence/update-action-pin.sh OWNER/REPO TAG` | Resolves a reviewed action tag to its commit and updates workflow pins | Uses GitHub and edits workflows |
 | `maintainence/update-uv-pin.sh VERSION` | Downloads and verifies the official uv artifact, then updates its CI pin | Uses GitHub/Astral and edits `ci.yml` |
 | `maintainence/update-postgres-pin.sh TAG` | Pulls PostgreSQL and records the resolved CI image digest | Uses Docker Hub and edits `ci.yml` |
+| `docs/build_docs.sh --install` | Installs locked portal dependencies and builds the strict documentation site | Downloads packages and replaces `node_modules` |
 
 All scripts can be called from any working directory. Pin-update helpers refuse
 to overwrite uncommitted changes in files they manage.
@@ -58,11 +59,12 @@ drift so its result remains comparable to GitHub Actions.
 1. Audit workflow security policy and validate deployment and maintenance Bash.
 2. Check `uv.lock` and install portal dependencies with lifecycle scripts disabled.
 3. Audit high-severity npm vulnerabilities, then lint and build the portal.
-4. Synchronize the frozen Python environment.
-5. Start PostgreSQL from the exact image digest pinned in CI.
-6. Exercise the migration downgrade and hardening-upgrade path with data checks.
-7. Run the server suite against filesystem and PostgreSQL storage.
-8. Remove the disposable database container on exit.
+4. Build the authored guides, TypeScript reference, Python reference, and OpenAPI schema.
+5. Synchronize the frozen Python environment.
+6. Start PostgreSQL from the exact image digest pinned in CI.
+7. Exercise the migration downgrade and hardening-upgrade path with data checks.
+8. Run the server suite against filesystem and PostgreSQL storage.
+9. Remove the disposable database container on exit.
 
 If the script is interrupted, remove only a leftover container whose name
 starts with `plexa-maintainence-postgres-` after confirming it is the disposable
@@ -79,7 +81,7 @@ CI database.
 4. Run the quick local check on the PR branch.
 5. Run the full check for major releases, migration changes, or coupled
    JavaScript toolchain updates.
-6. Require the `portal`, `server`, and `deployment` GitHub checks to pass.
+6. Require the `portal`, `server`, `deployment`, and documentation `build` checks to pass.
 7. Merge one lockfile-changing PR at a time, then let Dependabot rebase the
    remaining PRs before reviewing them again.
 
@@ -120,8 +122,8 @@ For a grouped JavaScript update:
 
 1. Confirm every plugin's peer range overlaps the proposed host-tool version.
 2. Check out the PR and run `npm ci --ignore-scripts` without overrides.
-3. Run lint and build; for TypeDoc updates, also run `npm run docs` from
-   `plexa_portal` and inspect generated changes.
+3. Run lint and build; for TypeDoc updates, run `docs/build_docs.sh` and inspect
+   the generated site. Generated Markdown is intentionally not committed.
 4. Run the full maintenance check before removing a major-version gate.
 
 > [!WARNING]
@@ -223,8 +225,8 @@ quarterly.
 2. Block branch deletion and force pushes.
 3. Require changes through pull requests and require resolved conversations.
 4. Require the branch to be up to date before merging.
-5. Add the `portal`, `server`, and `deployment` checks from a recent successful
-   CI run as required status checks.
+5. Add the `portal`, `server`, `deployment`, and documentation `build` checks
+   from recent successful runs as required status checks.
 6. With two or more maintainers, require one Code Owner approval, dismiss stale
    approvals, and require approval of the latest push.
 7. With one maintainer, add only a repository-administrator PR bypass so the
@@ -246,6 +248,18 @@ quarterly.
 3. Put future deployment credentials in a protected `production` environment.
 4. Require an appropriate reviewer before jobs can access that environment.
 5. Review collaborators, deploy keys, and environment access at the same time.
+
+### GitHub Pages
+
+1. Open **Settings > Pages**.
+2. Under **Build and deployment**, set **Source** to **GitHub Actions**.
+3. Open **Settings > Environments > github-pages** after the first successful
+   documentation build creates the environment.
+4. Add a deployment branch rule that permits only the default branch.
+5. Do not add repository or production secrets to the documentation workflow;
+   it requires only the job-scoped Pages and OIDC permissions in the workflow.
+6. Confirm <https://kjgb001.github.io/Plexa/> loads after merging the initial
+   documentation workflow.
 
 Record completion in the institution's operational system. Git history cannot
 show whether out-of-repository settings remain enabled.
