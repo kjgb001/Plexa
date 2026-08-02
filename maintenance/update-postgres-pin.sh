@@ -17,31 +17,46 @@ python_bin="$(maintenance_resolve_python)"
 image="postgres:$tag"
 
 maintenance_note "Pulling the selected official PostgreSQL image..."
-docker pull "$image"
+maintenance_pull_image "$image"
 repo_digest="$(docker image inspect "$image" --format '{{range .RepoDigests}}{{println .}}{{end}}' | grep -E '(^|/)postgres@sha256:' | head -n 1)"
 digest="${repo_digest##*@}"
 if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
   maintenance_die "Docker did not return a valid immutable digest for $image."
 fi
+fallback_image="public.ecr.aws/docker/library/postgres@$digest"
+maintenance_note "Verifying the same manifest through the ECR Public mirror..."
+maintenance_pull_image "$fallback_image"
 
-PLEXA_POSTGRES_IMAGE="$image" PLEXA_POSTGRES_DIGEST="$digest" "$python_bin" - <<'PY'
+PLEXA_POSTGRES_IMAGE="$image" \
+PLEXA_POSTGRES_FALLBACK_IMAGE="$fallback_image" \
+PLEXA_POSTGRES_DIGEST="$digest" \
+  "$python_bin" - <<'PY'
 import os
 import re
 from pathlib import Path
 
 path = Path(".github/workflows/ci.yml")
 image = os.environ["PLEXA_POSTGRES_IMAGE"]
+fallback_image = os.environ["PLEXA_POSTGRES_FALLBACK_IMAGE"]
 digest = os.environ["PLEXA_POSTGRES_DIGEST"]
 text = path.read_text(encoding="utf-8")
-text, updates = re.subn(
-    r"(?m)^(\s*image:\s*)postgres:[^\s@]+@sha256:[0-9a-f]{64}(\s*)$",
+text, primary_updates = re.subn(
+    r"(?m)^(\s*PLEXA_CI_POSTGRES_IMAGE:\s*)postgres:[^\s@]+@sha256:[0-9a-f]{64}(\s*)$",
     rf"\g<1>{image}@{digest}\g<2>",
     text,
 )
-if updates != 1:
-    raise SystemExit(f"Expected one PostgreSQL service image, found {updates}.")
+text, fallback_updates = re.subn(
+    r"(?m)^(\s*PLEXA_CI_POSTGRES_FALLBACK_IMAGE:\s*)[^\s@]+@sha256:[0-9a-f]{64}(\s*)$",
+    rf"\g<1>{fallback_image}\g<2>",
+    text,
+)
+if primary_updates != 1 or fallback_updates != 1:
+    raise SystemExit(
+        "Expected one primary and one fallback PostgreSQL CI image, "
+        f"found {primary_updates} and {fallback_updates}."
+    )
 path.write_text(text, encoding="utf-8")
-print(f"Updated the CI PostgreSQL image to {image}@{digest}.")
+print(f"Updated both CI PostgreSQL registry references to {digest}.")
 PY
 
 maintenance/audit-ci.sh

@@ -40,6 +40,38 @@ maintenance_require_command() {
   maintenance_die "$command_name is required."
 }
 
+maintenance_pull_image() {
+  local max_attempts="${MAINTENANCE_IMAGE_PULL_ATTEMPTS:-3}"
+  local image
+  local attempt
+  local delay
+
+  maintenance_require_command docker
+  if [ "$#" -eq 0 ]; then
+    maintenance_die "At least one container image is required."
+  fi
+  if [[ ! "$max_attempts" =~ ^[1-9][0-9]*$ ]]; then
+    maintenance_die "Image pull attempt count must be a positive integer."
+  fi
+
+  for image in "$@"; do
+    for ((attempt = 1; attempt <= max_attempts; attempt++)); do
+      if docker pull "$image"; then
+        MAINTENANCE_PULLED_IMAGE="$image"
+        return 0
+      fi
+      if [ "$attempt" -lt "$max_attempts" ]; then
+        delay=$((attempt * 15))
+        maintenance_warn "Image pull failed; retrying in ${delay}s ($attempt/$max_attempts): $image"
+        sleep "$delay"
+      fi
+    done
+    maintenance_warn "Image pull failed after $max_attempts attempts: $image"
+  done
+
+  maintenance_die "All configured container image registries failed."
+}
+
 maintenance_resolve_python() {
   if command -v python3 >/dev/null 2>&1; then
     printf '%s\n' "python3"

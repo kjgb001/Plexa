@@ -57,7 +57,8 @@ drift so its result remains comparable to GitHub Actions.
 3. Audit high-severity npm vulnerabilities, then lint and build the portal.
 4. Build the authored guides, TypeScript reference, Python reference, and OpenAPI schema.
 5. Synchronize the frozen Python environment.
-6. Start PostgreSQL from the exact image digest pinned in CI.
+6. Pull PostgreSQL with bounded retries and an ECR Public fallback, then start
+   the exact image digest pinned in CI.
 7. Exercise the migration downgrade and hardening-upgrade path with data checks.
 8. Run the server suite against filesystem and PostgreSQL storage.
 9. Remove the disposable database container on exit.

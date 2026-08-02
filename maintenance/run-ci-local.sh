@@ -77,8 +77,10 @@ docs/build_docs.sh
 maintenance_note "Synchronizing the exact server dependency tree..."
 uv sync --frozen
 
-postgres_image="$(sed -n 's/^[[:space:]]*image:[[:space:]]*\(postgres:[^[:space:]]*\).*/\1/p' .github/workflows/ci.yml | head -n 1)"
-if [ -z "$postgres_image" ] || [[ "$postgres_image" != *@sha256:* ]]; then
+postgres_image="$(sed -n 's/^[[:space:]]*PLEXA_CI_POSTGRES_IMAGE:[[:space:]]*\(postgres:[^[:space:]]*\).*/\1/p' .github/workflows/ci.yml | head -n 1)"
+postgres_fallback_image="$(sed -n 's/^[[:space:]]*PLEXA_CI_POSTGRES_FALLBACK_IMAGE:[[:space:]]*\([^[:space:]]*\).*/\1/p' .github/workflows/ci.yml | head -n 1)"
+if [ -z "$postgres_image" ] || [[ "$postgres_image" != *@sha256:* ]] || \
+  [ -z "$postgres_fallback_image" ] || [[ "$postgres_fallback_image" != *@sha256:* ]]; then
   maintenance_die "Could not find a digest-pinned PostgreSQL CI image."
 fi
 
@@ -88,15 +90,16 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-maintenance_note "Starting an isolated PostgreSQL container from $postgres_image..."
-docker pull "$postgres_image"
+maintenance_note "Pulling the isolated PostgreSQL image..."
+maintenance_pull_image "$postgres_image" "$postgres_fallback_image"
+maintenance_note "Starting an isolated PostgreSQL container from $MAINTENANCE_PULLED_IMAGE..."
 docker run --detach --rm \
   --name "$container_name" \
   --env POSTGRES_DB=plexa_test \
   --env POSTGRES_USER=plexa \
   --env POSTGRES_PASSWORD=plexa_maintenance_password \
   --publish 127.0.0.1::5432 \
-  "$postgres_image" >/dev/null
+  "$MAINTENANCE_PULLED_IMAGE" >/dev/null
 
 for _ in $(seq 1 30); do
   if docker exec "$container_name" pg_isready -U plexa -d plexa_test >/dev/null 2>&1; then

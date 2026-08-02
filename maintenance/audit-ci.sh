@@ -88,14 +88,40 @@ for path in workflow_paths:
         if not sha_pattern.fullmatch(reference):
             errors.append(f"{relative}: action is not pinned to a full commit SHA: {reference}")
 
-    for image in re.findall(r"^\s*image:\s*([^\s#]+)", text, re.MULTILINE):
+    for image in re.findall(
+        r"^\s*(?:image|PLEXA_CI_POSTGRES_IMAGE|PLEXA_CI_POSTGRES_FALLBACK_IMAGE):\s*([^\s#]+)",
+        text,
+        re.MULTILINE,
+    ):
         if not digest_pattern.fullmatch(image):
-            errors.append(f"{relative}: service image is not digest-pinned: {image}")
+            errors.append(f"{relative}: container image is not digest-pinned: {image}")
 
 ci_text = (workflow_dir / "ci.yml").read_text(encoding="utf-8")
-for required in ("npm ci --ignore-scripts", "uv sync --frozen", "uv run --frozen"):
+for required in (
+    "npm ci --ignore-scripts",
+    "uv sync --frozen",
+    "uv run --frozen",
+    "PLEXA_CI_POSTGRES_FALLBACK_IMAGE",
+    '"$PLEXA_CI_POSTGRES_IMAGE"',
+    '"$PLEXA_CI_POSTGRES_FALLBACK_IMAGE"',
+    '"$MAINTENANCE_PULLED_IMAGE"',
+    "docker rm --force plexa-ci-postgres",
+    "if: always()",
+):
     if required not in ci_text:
         errors.append(f".github/workflows/ci.yml: missing reproducible command: {required}")
+
+postgres_images = {
+    name: re.search(rf"^\s*{name}:\s*([^\s#]+)", ci_text, re.MULTILINE)
+    for name in ("PLEXA_CI_POSTGRES_IMAGE", "PLEXA_CI_POSTGRES_FALLBACK_IMAGE")
+}
+for name, match in postgres_images.items():
+    if match is None:
+        errors.append(f".github/workflows/ci.yml: missing {name}")
+if all(match is not None for match in postgres_images.values()):
+    digests = {match.group(1).rsplit("@", 1)[-1] for match in postgres_images.values()}
+    if len(digests) != 1:
+        errors.append(".github/workflows/ci.yml: PostgreSQL registry digests do not match")
 
 docs_workflow = (workflow_dir / "docs-pages.yml").read_text(encoding="utf-8")
 for required in (
