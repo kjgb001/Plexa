@@ -92,6 +92,7 @@ jobs:
           category: /language:javascript-typescript
 
   required:
+    name: Plexa CodeQL
     if: always()
     needs: [changes, analyze-python, analyze-javascript]
     runs-on: ubuntu-24.04

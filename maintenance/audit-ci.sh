@@ -153,6 +153,7 @@ for required in (
     "docker rm --force plexa-ci-postgres",
     "maintenance/classify_ci_changes.py",
     "needs: [changes, portal, server, deployment]",
+    "name: Plexa CI",
     'cron: "17 6 * * 1"',
     "workflow_dispatch:",
     "if: always()",
@@ -176,6 +177,7 @@ docs_workflow = (workflow_dir / "docs-pages.yml").read_text(encoding="utf-8")
 for required in (
     "maintenance/classify_ci_changes.py",
     "docs_changed: ${{ steps.classify.outputs.docs }}",
+    "name: Plexa Documentation",
     "if: steps.classify.outputs.docs == 'true'",
     "if: github.event_name != 'pull_request' && needs.build.outputs.docs_changed == 'true'",
     "needs: build",
@@ -193,6 +195,7 @@ for required in (
 codeql_workflow = (workflow_dir / "codeql.yml").read_text(encoding="utf-8")
 for required in (
     "maintenance/classify_ci_changes.py",
+    "name: Plexa CodeQL",
     "languages: python",
     "languages: javascript-typescript",
     "build-mode: none",

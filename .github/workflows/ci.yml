@@ -149,6 +149,7 @@ jobs:
       - run: deploy/check-production-config.sh /tmp/plexa-domain-production.env
 
   required:
+    name: Plexa CI
     if: always()
     needs: [changes, portal, server, deployment]
     runs-on: ubuntu-24.04

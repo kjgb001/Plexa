@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   build:
+    name: Plexa Documentation
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:

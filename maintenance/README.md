@@ -88,8 +88,8 @@ if it cannot resolve a Git diff, it selects every category rather than skipping
 work. Renames are treated as a deletion plus an addition so both the old and new
 locations select checks.
 
-The required checks are `CI / required`, `Documentation / build`, and
-`CodeQL / required`. Individual jobs may be skipped by design and must not be
+The required checks are `Plexa CI`, `Plexa Documentation`, and `Plexa CodeQL`.
+Individual jobs may be skipped by design and must not be
 configured as required checks. Scheduled runs execute full CI every Monday at
 06:17 UTC and both CodeQL analyses at 06:47 UTC. A maintainer can also run
 either workflow manually from the Actions page to force every category.
@@ -105,7 +105,7 @@ either workflow manually from the Actions page to force every category.
 4. Run the quick local check on the PR branch.
 5. Run the full check for major releases, migration changes, or coupled
    JavaScript toolchain updates.
-6. Require `CI / required`, `Documentation / build`, and `CodeQL / required` to pass.
+6. Require `Plexa CI`, `Plexa Documentation`, and `Plexa CodeQL` to pass.
 7. Merge one lockfile-changing PR at a time, then let Dependabot rebase the
    remaining PRs before reviewing them again.
 
@@ -250,7 +250,7 @@ quarterly.
 2. Block branch deletion and force pushes.
 3. Require changes through pull requests and require resolved conversations.
 4. Require the branch to be up to date before merging.
-5. Add `CI / required`, `Documentation / build`, and `CodeQL / required` from
+5. Add `Plexa CI`, `Plexa Documentation`, and `Plexa CodeQL` from
    recent successful runs as required status checks.
 6. Do not require component jobs or individual CodeQL analysis jobs. They are
    intentionally conditional and may be skipped for unrelated changes.
@@ -268,7 +268,7 @@ quarterly.
 4. Use the advanced CodeQL workflow in [`.github/workflows/codeql.yml`](../.github/workflows/codeql.yml),
    not GitHub's default CodeQL setup.
 5. Do not enable the ruleset option **Require code scanning results**. Documentation-only
-   changes intentionally skip language analysis, while `CodeQL / required`
+   changes intentionally skip language analysis, while `Plexa CodeQL`
    verifies that every selected analysis succeeded.
 
 ### Activating Path-Aware Checks
@@ -287,8 +287,9 @@ changed.
    the default branch so GitHub registers their current check names.
 5. Confirm the manual runs succeed. CodeQL should report successful Python and
    JavaScript/TypeScript analyses in addition to its aggregate check.
-6. Configure the default branch ruleset to require `CI / required`,
-   `Documentation / build`, and `CodeQL / required`.
+6. Configure the default branch ruleset to require `Plexa CI`,
+   `Plexa Documentation`, and `Plexa CodeQL` with **GitHub Actions** selected as
+   the source.
 7. Remove component jobs, individual language analyses, and superseded checks
    from the required status-check list.
 8. Leave **Require code scanning results** disabled because language analyses
