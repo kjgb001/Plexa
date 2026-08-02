@@ -1,6 +1,7 @@
 # Plexa
 
 [![CI](https://github.com/kjgb001/Plexa/actions/workflows/ci.yml/badge.svg)](https://github.com/kjgb001/Plexa/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/kjgb001/Plexa/actions/workflows/codeql.yml/badge.svg)](https://github.com/kjgb001/Plexa/actions/workflows/codeql.yml)
 [![Documentation](https://img.shields.io/badge/docs-read-2f6f59?logo=readthedocs&logoColor=white)](https://kjgb001.github.io/Plexa/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2f6f59)](LICENSE)
 [![Python 3.12 | 3.13](https://img.shields.io/badge/python-3.12%20%7C%203.13-3776AB?logo=python&logoColor=white)](pyproject.toml)
