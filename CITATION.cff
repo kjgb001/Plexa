@@ -8,8 +8,9 @@ authors:
   - family-names: Guinn-Bailey
     given-names: Kellan
 abstract: >-
-  Plexa is an open-source platform for instructor-authored, AI-supported
-  lessons in higher education. It provides institutionally deployable student
+  Open-source, modular platform for instructor-authored,
+  AI-supported lessons that develop general and domain-specific AI literacy in higher education.
+  It provides institutionally deployable student
   and instructor portals, a server-authoritative lesson runtime, and
   OpenAI-compatible inference integration.
 repository-code: https://github.com/kjgb001/Plexa
