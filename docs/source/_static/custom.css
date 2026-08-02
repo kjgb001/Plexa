@@ -41,6 +41,37 @@ dl.js dt.sig {
   overflow-wrap: anywhere;
 }
 
+.api-reference-menu.sd-card,
+.api-reference-menu.sd-card:hover {
+  border: 1px solid color-mix(in srgb, var(--color-brand-primary) 28%, transparent);
+  border-radius: 0.4rem;
+  box-shadow: none;
+}
+
+.api-reference-menu .sd-summary-title {
+  background: color-mix(in srgb, var(--color-background-secondary) 72%, transparent);
+  padding-block: 0.55rem;
+}
+
+.api-reference-menu .sd-summary-content {
+  padding-block: 0.65rem;
+}
+
+.api-reference-menu .toctree-wrapper > ul,
+.api-reference-menu .sd-summary-content > ul {
+  list-style: none;
+  margin-block: 0;
+  padding-left: 0;
+}
+
+.api-reference-menu li + li {
+  margin-top: 0.35rem;
+}
+
 body[data-theme="dark"] .sd-card:hover {
   box-shadow: 0 0.25rem 0.8rem rgb(0 0 0 / 24%);
+}
+
+body[data-theme="dark"] .api-reference-menu.sd-card:hover {
+  box-shadow: none;
 }

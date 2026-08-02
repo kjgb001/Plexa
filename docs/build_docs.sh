@@ -66,6 +66,7 @@ echo "Generating server API reference"
 uv run --frozen --group docs sphinx-apidoc \
     --force \
     --separate \
+    --no-toc \
     --module-first \
     --maxdepth 2 \
     --automodule-options members,show-inheritance \
@@ -79,6 +80,8 @@ uv run --frozen --group docs sphinx-apidoc \
     "$REPO_ROOT/plexa_server/storage/postgres.py" \
     "$REPO_ROOT/plexa_server/utils/dev_seed_data.py" \
     "$REPO_ROOT/plexa_server/utils/seed_dev_data.py"
+uv run --frozen --group docs python "$SCRIPT_DIR/prepare_server_docs.py" \
+    "$GENERATED_DIR/server_api"
 
 echo "Generating portal API reference"
 npm --prefix plexa_portal run docs

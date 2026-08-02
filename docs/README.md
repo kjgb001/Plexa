@@ -41,6 +41,7 @@ CI because upstream sites can fail independently of Plexa.
 | `source/_static/` | Small Furo theme adjustments |
 | `source/generated/` | Ignored output recreated by the build script |
 | `generate_openapi.py` | Isolated production-oriented OpenAPI generator |
+| `prepare_server_docs.py` | Python reference title and navigation cleanup |
 | `prepare_typedoc.py` | TypeDoc validation and Sphinx integration cleanup |
 
 The portal reference is intentionally limited by

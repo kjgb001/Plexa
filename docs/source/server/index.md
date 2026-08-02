@@ -37,5 +37,5 @@ migrations, process startup, and development seed internals are excluded.
 ```{toctree}
 :maxdepth: 2
 
-../generated/server_api/modules
+../generated/server_api/plexa_server
 ```

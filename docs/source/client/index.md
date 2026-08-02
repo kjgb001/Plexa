@@ -39,5 +39,5 @@ application wiring are implementation details rather than a reusable API.
 ```{toctree}
 :maxdepth: 2
 
-../generated/client_api/README
+../generated/client_api/portal-api/README
 ```
