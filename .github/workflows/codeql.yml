@@ -1,0 +1,132 @@
+name: CodeQL
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "47 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      codeql_python: ${{ steps.classify.outputs.codeql_python }}
+      codeql_javascript: ${{ steps.classify.outputs.codeql_javascript }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify changes
+        id: classify
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "schedule" || "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            maintenance/classify_ci_changes.py --all --github-output "$GITHUB_OUTPUT"
+          else
+            maintenance/classify_ci_changes.py \
+              --base "$BASE_SHA" \
+              --head "$HEAD_SHA" \
+              --github-output "$GITHUB_OUTPUT"
+          fi
+
+  analyze-python:
+    needs: changes
+    if: needs.changes.outputs.codeql_python == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: github/codeql-action/init@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        with:
+          languages: python
+          build-mode: none
+      - uses: github/codeql-action/analyze@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        with:
+          category: /language:python
+
+  analyze-javascript:
+    needs: changes
+    if: needs.changes.outputs.codeql_javascript == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: github/codeql-action/init@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        with:
+          languages: javascript-typescript
+          build-mode: none
+      - uses: github/codeql-action/analyze@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        with:
+          category: /language:javascript-typescript
+
+  required:
+    if: always()
+    needs: [changes, analyze-python, analyze-javascript]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify required CodeQL jobs
+        shell: bash
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          PYTHON_SELECTED: ${{ needs.changes.outputs.codeql_python }}
+          PYTHON_RESULT: ${{ needs.analyze-python.result }}
+          JAVASCRIPT_SELECTED: ${{ needs.changes.outputs.codeql_javascript }}
+          JAVASCRIPT_RESULT: ${{ needs.analyze-javascript.result }}
+        run: |
+          set -euo pipefail
+          failed=false
+          if [[ "$CHANGES_RESULT" != "success" ]]; then
+            echo "Change classification did not succeed: $CHANGES_RESULT" >&2
+            failed=true
+          fi
+          check_job() {
+            local name="$1"
+            local selected="$2"
+            local result="$3"
+            if [[ "$selected" == "true" && "$result" != "success" ]]; then
+              echo "$name analysis was selected but did not succeed: $result" >&2
+              failed=true
+            elif [[ "$selected" != "true" && "$result" != "skipped" && "$result" != "success" ]]; then
+              echo "$name analysis had an unexpected result: $result" >&2
+              failed=true
+            fi
+          }
+          check_job python "$PYTHON_SELECTED" "$PYTHON_RESULT"
+          check_job javascript-typescript "$JAVASCRIPT_SELECTED" "$JAVASCRIPT_RESULT"
+          if [[ "$failed" == "true" ]]; then
+            exit 1
+          fi
+          echo "All selected CodeQL jobs succeeded."

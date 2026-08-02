@@ -7,6 +7,7 @@ source "$SCRIPT_DIR/lib/common.sh"
 maintenance_cd_repo_root
 
 python_bin="$(maintenance_resolve_python)"
+"$python_bin" -m unittest discover -s maintenance -p 'test_classify_ci_changes.py'
 "$python_bin" - <<'PY'
 from __future__ import annotations
 
@@ -22,7 +23,9 @@ if not workflow_paths:
     errors.append("No GitHub Actions workflows were found.")
 
 uses_pattern = re.compile(r"^\s*-\s+uses:\s+([^\s#]+)", re.MULTILINE)
-sha_pattern = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}$")
+sha_pattern = re.compile(
+    r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*@[0-9a-f]{40}$"
+)
 digest_pattern = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
 
 for path in workflow_paths:
@@ -31,9 +34,13 @@ for path in workflow_paths:
 
     if re.search(r"^\s*(pull_request_target|workflow_run)\s*:", text, re.MULTILINE):
         errors.append(f"{relative}: privileged trigger requires a dedicated security review")
+    trigger_text = text.split("\npermissions:", 1)[0]
+    if re.search(r"^\s+paths(?:-ignore)?:\s*", trigger_text, re.MULTILINE):
+        errors.append(f"{relative}: top-level path filters are forbidden for required workflows")
     if re.search(r"permissions\s*:\s*write-all", text):
         errors.append(f"{relative}: permissions: write-all is forbidden")
     deploy_job = None
+    codeql_analysis_jobs: dict[str, re.Match[str]] = {}
     if relative.as_posix() == ".github/workflows/docs-pages.yml":
         deploy_job = re.search(
             r"(?ms)^  deploy:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
@@ -41,8 +48,31 @@ for path in workflow_paths:
         )
         if deploy_job is None:
             errors.append(f"{relative}: expected a dedicated deploy job")
+    if relative.as_posix() == ".github/workflows/codeql.yml":
+        for job_name in ("analyze-python", "analyze-javascript"):
+            match = re.search(
+                rf"(?ms)^  {re.escape(job_name)}:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+                text,
+            )
+            if match is None:
+                errors.append(f"{relative}: expected {job_name} job")
+            else:
+                codeql_analysis_jobs[job_name] = match
+    if relative.as_posix() in {
+        ".github/workflows/ci.yml",
+        ".github/workflows/codeql.yml",
+    }:
+        required_job = re.search(
+            r"(?ms)^  required:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+            text,
+        )
+        if required_job is None:
+            errors.append(f"{relative}: expected a required aggregate job")
+        elif not re.search(r"^    if:\s*always\(\)\s*$", required_job.group("body"), re.MULTILINE):
+            errors.append(f"{relative}: required aggregate job must use if: always()")
 
     allowed_pages_writes: set[str] = set()
+    allowed_codeql_writes: set[str] = set()
     for match in re.finditer(
         r"^\s+(?P<scope>[A-Za-z0-9_-]+):\s*write\s*$",
         text,
@@ -56,6 +86,16 @@ for path in workflow_paths:
         )
         if inside_pages_deploy:
             allowed_pages_writes.add(scope)
+        elif scope == "security-events" and relative.as_posix() == ".github/workflows/codeql.yml":
+            containing_jobs = {
+                name
+                for name, job in codeql_analysis_jobs.items()
+                if job.start("body") <= match.start() < job.end("body")
+            }
+            if len(containing_jobs) == 1:
+                allowed_codeql_writes.update(containing_jobs)
+            else:
+                errors.append(f"{relative}: security-events write is outside an analysis job")
         else:
             errors.append(
                 f"{relative}: write permission for {scope} requires an explicit audit policy update"
@@ -64,6 +104,11 @@ for path in workflow_paths:
         errors.append(
             f"{relative}: deploy job must request exactly pages: write and id-token: write"
         )
+    if relative.as_posix() == ".github/workflows/codeql.yml" and allowed_codeql_writes != {
+        "analyze-python",
+        "analyze-javascript",
+    }:
+        errors.append(f"{relative}: both analysis jobs must request security-events: write")
     if re.search(r"^\s*secrets:\s*inherit\s*$", text, re.MULTILINE):
         errors.append(f"{relative}: inherited secrets are forbidden")
     if "permissions:\n  contents: read" not in text:
@@ -106,6 +151,10 @@ for required in (
     '"$PLEXA_CI_POSTGRES_FALLBACK_IMAGE"',
     '"$MAINTENANCE_PULLED_IMAGE"',
     "docker rm --force plexa-ci-postgres",
+    "maintenance/classify_ci_changes.py",
+    "needs: [changes, portal, server, deployment]",
+    'cron: "17 6 * * 1"',
+    "workflow_dispatch:",
     "if: always()",
 ):
     if required not in ci_text:
@@ -125,7 +174,10 @@ if all(match is not None for match in postgres_images.values()):
 
 docs_workflow = (workflow_dir / "docs-pages.yml").read_text(encoding="utf-8")
 for required in (
-    "if: github.event_name != 'pull_request'",
+    "maintenance/classify_ci_changes.py",
+    "docs_changed: ${{ steps.classify.outputs.docs }}",
+    "if: steps.classify.outputs.docs == 'true'",
+    "if: github.event_name != 'pull_request' && needs.build.outputs.docs_changed == 'true'",
     "needs: build",
     "name: github-pages",
     "npm --prefix plexa_portal ci --ignore-scripts",
@@ -137,6 +189,26 @@ for required in (
 ):
     if required not in docs_workflow:
         errors.append(f".github/workflows/docs-pages.yml: missing Pages safeguard: {required}")
+
+codeql_workflow = (workflow_dir / "codeql.yml").read_text(encoding="utf-8")
+for required in (
+    "maintenance/classify_ci_changes.py",
+    "languages: python",
+    "languages: javascript-typescript",
+    "build-mode: none",
+    "needs: [changes, analyze-python, analyze-javascript]",
+    'cron: "47 6 * * 1"',
+    "workflow_dispatch:",
+):
+    if required not in codeql_workflow:
+        errors.append(f".github/workflows/codeql.yml: missing CodeQL safeguard: {required}")
+
+codeql_references = re.findall(
+    r"github/codeql-action/(?:init|analyze)@([0-9a-f]{40})",
+    codeql_workflow,
+)
+if len(codeql_references) != 4 or len(set(codeql_references)) != 1:
+    errors.append(".github/workflows/codeql.yml: CodeQL init/analyze actions must share one full SHA")
 
 dependabot = (root / ".github" / "dependabot.yml").read_text(encoding="utf-8")
 for ecosystem in ("github-actions", "npm", "uv"):

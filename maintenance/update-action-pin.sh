@@ -15,7 +15,8 @@ fi
 maintenance_require_command git
 maintenance_require_clean_path .github/workflows
 
-if ! grep -R -q --include='*.yml' --include='*.yaml' "uses:[[:space:]]*$action@" .github/workflows; then
+if ! grep -R -E -q --include='*.yml' --include='*.yaml' \
+  "uses:[[:space:]]*$action(/[A-Za-z0-9_.-]+)*@" .github/workflows; then
   maintenance_die "$action is not referenced by an existing workflow."
 fi
 
@@ -37,7 +38,10 @@ from pathlib import Path
 action = os.environ["PLEXA_ACTION"]
 tag = os.environ["PLEXA_ACTION_TAG"]
 sha = os.environ["PLEXA_ACTION_SHA"]
-pattern = re.compile(rf"(?P<prefix>uses:\s*{re.escape(action)}@)[0-9a-f]{{40}}(?:\s*#.*)?$")
+pattern = re.compile(
+    rf"(?P<prefix>uses:\s*{re.escape(action)}(?:/[A-Za-z0-9_.-]+)*@)"
+    rf"[0-9a-f]{{40}}(?:\s*#.*)?$"
+)
 updates = 0
 
 for path in sorted([*Path(".github/workflows").glob("*.yml"), *Path(".github/workflows").glob("*.yaml")]):

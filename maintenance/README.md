@@ -27,6 +27,7 @@ database container. It does not use or remove development or production data.
 | Command | What it does | Side effects |
 | --- | --- | --- |
 | `maintenance/audit-ci.sh` | Enforces workflow security and pinning rules | Offline; read-only |
+| `maintenance/classify_ci_changes.py --base SHA --head SHA --json` | Shows which CI categories a commit range selects | Offline; read-only |
 | `maintenance/run-ci-local.sh --quick` | Checks CI policy, shell syntax, locks, portal lint, and portal build | Uses installed dependencies; read-only for tracked files |
 | `maintenance/run-ci-local.sh` | Recreates CI with clean installs, migrations, tests, and disposable PostgreSQL | Downloads packages/images and replaces `node_modules` |
 | `maintenance/update-action-pin.sh OWNER/REPO TAG` | Resolves a reviewed action tag to its commit and updates workflow pins | Uses GitHub and edits workflows |
@@ -67,6 +68,32 @@ If the script is interrupted, remove only a leftover container whose name
 starts with `plexa-maintenance-postgres-` after confirming it is the disposable
 CI database.
 
+## Path-Aware CI
+
+Pull requests and pushes to `main` always produce the same three required
+status checks, but only the relevant work runs behind them:
+
+| Changed files | CI work selected |
+| --- | --- |
+| Root and component prose, such as `README.md`, `CITATION.cff`, and `LICENSE` | Classification and aggregate checks only |
+| `docs/**` | Documentation build; CodeQL only for Python or JavaScript documentation tooling |
+| `plexa_portal/**` | Portal lint/build, documentation build, and JavaScript/TypeScript CodeQL |
+| `plexa_server/**` | Server tests, documentation build, and Python CodeQL |
+| `deploy/**` or root deployment configuration | Deployment validation |
+| Workflow, maintenance, or unrecognized files | Full CI, documentation, and both CodeQL languages |
+
+Some shared inputs select more than one category. For example, Python lockfiles
+run server, deployment, and documentation checks. The classifier fails closed:
+if it cannot resolve a Git diff, it selects every category rather than skipping
+work. Renames are treated as a deletion plus an addition so both the old and new
+locations select checks.
+
+The required checks are `CI / required`, `Documentation / build`, and
+`CodeQL / required`. Individual jobs may be skipped by design and must not be
+configured as required checks. Scheduled runs execute full CI every Monday at
+06:17 UTC and both CodeQL analyses at 06:47 UTC. A maintainer can also run
+either workflow manually from the Actions page to force every category.
+
 ## Routine Schedule
 
 ### For Every Dependency PR
@@ -78,7 +105,7 @@ CI database.
 4. Run the quick local check on the PR branch.
 5. Run the full check for major releases, migration changes, or coupled
    JavaScript toolchain updates.
-6. Require the `portal`, `server`, `deployment`, and documentation `build` checks to pass.
+6. Require `CI / required`, `Documentation / build`, and `CodeQL / required` to pass.
 7. Merge one lockfile-changing PR at a time, then let Dependabot rebase the
    remaining PRs before reviewing them again.
 
@@ -150,7 +177,8 @@ maintenance/update-action-pin.sh actions/checkout v7.0.1
 
 Confirm that the diff changes only the expected action, retains a full
 40-character commit SHA, and updates the human-readable tag comment. The helper
-handles annotated tags but only updates actions already present in the repo.
+handles annotated tags and sub-actions such as `github/codeql-action/init`, but
+only updates actions already present in the repo.
 
 ### uv
 
@@ -222,11 +250,13 @@ quarterly.
 2. Block branch deletion and force pushes.
 3. Require changes through pull requests and require resolved conversations.
 4. Require the branch to be up to date before merging.
-5. Add the `portal`, `server`, `deployment`, and documentation `build` checks
-   from recent successful runs as required status checks.
-6. With two or more maintainers, require one Code Owner approval, dismiss stale
+5. Add `CI / required`, `Documentation / build`, and `CodeQL / required` from
+   recent successful runs as required status checks.
+6. Do not require component jobs or individual CodeQL analysis jobs. They are
+   intentionally conditional and may be skipped for unrelated changes.
+7. With two or more maintainers, require one Code Owner approval, dismiss stale
    approvals, and require approval of the latest push.
-7. With one maintainer, add only a repository-administrator PR bypass so the
+8. With one maintainer, add only a repository-administrator PR bypass so the
    sole Code Owner can merge reviewed, green changes. Remove it after adding a
    second maintainer.
 
@@ -235,8 +265,42 @@ quarterly.
 1. Open **Settings > Security > Advanced Security**.
 2. Enable the dependency graph, Dependabot alerts, and Dependabot security updates.
 3. Enable secret scanning, push protection, and private vulnerability reporting.
-4. Enable default CodeQL analysis for Python and JavaScript/TypeScript.
-5. After CodeQL succeeds, require its code-scanning results in the branch ruleset.
+4. Use the advanced CodeQL workflow in [`.github/workflows/codeql.yml`](../.github/workflows/codeql.yml),
+   not GitHub's default CodeQL setup.
+5. Do not enable the ruleset option **Require code scanning results**. Documentation-only
+   changes intentionally skip language analysis, while `CodeQL / required`
+   verifies that every selected analysis succeeded.
+
+### Activating Path-Aware Checks
+
+Use this procedure when configuring the repository for the first time or
+changing an existing ruleset. Pause merges while required checks are being
+changed.
+
+1. Review the workflow files and prepare them for the default branch.
+2. If GitHub's default CodeQL setup is enabled, use **Switch to advanced** in
+   **Settings > Security > Advanced Security > Code scanning** before activating
+   the advanced workflow. Default and advanced setup should not analyze the same
+   languages concurrently.
+3. Place the reviewed workflow files on the default branch.
+4. Run the **CI**, **Documentation**, and **CodeQL** workflows manually against
+   the default branch so GitHub registers their current check names.
+5. Confirm the manual runs succeed. CodeQL should report successful Python and
+   JavaScript/TypeScript analyses in addition to its aggregate check.
+6. Configure the default branch ruleset to require `CI / required`,
+   `Documentation / build`, and `CodeQL / required`.
+7. Remove component jobs, individual language analyses, and superseded checks
+   from the required status-check list.
+8. Leave **Require code scanning results** disabled because language analyses
+   are conditional. The required CodeQL aggregate enforces the selected jobs.
+9. Verify that a documentation-only pull request and a source-code pull request
+   both receive all three aggregate checks before resuming normal merges.
+
+> [!IMPORTANT]
+> Replacing another CodeQL configuration creates a short transition between
+> disabling the previous analysis and completing the first advanced run. Keep
+> merges paused until the manual CodeQL run succeeds and its aggregate check is
+> required by the ruleset.
 
 ### Secrets and Environments
 
@@ -255,8 +319,8 @@ quarterly.
 4. Add a deployment branch rule that permits only the default branch.
 5. Do not add repository or production secrets to the documentation workflow;
    it requires only the job-scoped Pages and OIDC permissions in the workflow.
-6. Confirm <https://kjgb001.github.io/Plexa/> loads after merging the initial
-   documentation workflow.
+6. Confirm <https://kjgb001.github.io/Plexa/> loads after a successful
+   documentation deployment.
 
 Record completion in the institution's operational system. Git history cannot
 show whether out-of-repository settings remain enabled.

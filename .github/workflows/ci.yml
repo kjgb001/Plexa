@@ -4,16 +4,55 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      portal: ${{ steps.classify.outputs.portal }}
+      server: ${{ steps.classify.outputs.server }}
+      deployment: ${{ steps.classify.outputs.deployment }}
+      docs: ${{ steps.classify.outputs.docs }}
+      codeql_python: ${{ steps.classify.outputs.codeql_python }}
+      codeql_javascript: ${{ steps.classify.outputs.codeql_javascript }}
+      full: ${{ steps.classify.outputs.full }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify changes
+        id: classify
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "schedule" || "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            maintenance/classify_ci_changes.py --all --github-output "$GITHUB_OUTPUT"
+          else
+            maintenance/classify_ci_changes.py \
+              --base "$BASE_SHA" \
+              --head "$HEAD_SHA" \
+              --github-output "$GITHUB_OUTPUT"
+          fi
+
   portal:
+    needs: changes
+    if: needs.changes.outputs.portal == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
@@ -34,6 +73,8 @@ jobs:
       - run: npm run build
 
   server:
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
@@ -92,6 +133,8 @@ jobs:
         run: docker rm --force plexa-ci-postgres >/dev/null 2>&1 || true
 
   deployment:
+    needs: changes
+    if: needs.changes.outputs.deployment == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -104,3 +147,46 @@ jobs:
       - run: deploy/check-production-config.sh /tmp/plexa-local-production.env
       - run: deploy/create-production-env.sh --domain plexa.example.test --email ci@example.org --inference-url https://inference.example.test/v1 --model ci-model --retention-days 30 --temporary-dev-login --admin-user ci-admin --output /tmp/plexa-domain-production.env --force
       - run: deploy/check-production-config.sh /tmp/plexa-domain-production.env
+
+  required:
+    if: always()
+    needs: [changes, portal, server, deployment]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify required CI jobs
+        shell: bash
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          PORTAL_SELECTED: ${{ needs.changes.outputs.portal }}
+          PORTAL_RESULT: ${{ needs.portal.result }}
+          SERVER_SELECTED: ${{ needs.changes.outputs.server }}
+          SERVER_RESULT: ${{ needs.server.result }}
+          DEPLOYMENT_SELECTED: ${{ needs.changes.outputs.deployment }}
+          DEPLOYMENT_RESULT: ${{ needs.deployment.result }}
+        run: |
+          set -euo pipefail
+          failed=false
+          if [[ "$CHANGES_RESULT" != "success" ]]; then
+            echo "Change classification did not succeed: $CHANGES_RESULT" >&2
+            failed=true
+          fi
+          check_job() {
+            local name="$1"
+            local selected="$2"
+            local result="$3"
+            if [[ "$selected" == "true" && "$result" != "success" ]]; then
+              echo "$name was selected but did not succeed: $result" >&2
+              failed=true
+            elif [[ "$selected" != "true" && "$result" != "skipped" && "$result" != "success" ]]; then
+              echo "$name had an unexpected result: $result" >&2
+              failed=true
+            fi
+          }
+          check_job portal "$PORTAL_SELECTED" "$PORTAL_RESULT"
+          check_job server "$SERVER_SELECTED" "$SERVER_RESULT"
+          check_job deployment "$DEPLOYMENT_SELECTED" "$DEPLOYMENT_RESULT"
+          if [[ "$failed" == "true" ]]; then
+            exit 1
+          fi
+          echo "All selected CI jobs succeeded."
