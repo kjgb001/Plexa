@@ -1,6 +1,6 @@
 [project]
 name = "plexa"
-version = "0.0.0"
+version = "0.1.0"
 description = "Open-source platform for instructor-authored, AI-supported lessons in higher education."
 readme = "README.md"
 license = "MIT"

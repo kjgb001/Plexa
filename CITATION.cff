@@ -4,6 +4,8 @@ message: >-
   the metadata in this file.
 title: Plexa
 type: software
+version: 0.1.0
+date-released: 2026-08-02
 authors:
   - family-names: Guinn-Bailey
     given-names: Kellan
