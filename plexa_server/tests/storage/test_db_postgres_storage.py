@@ -17,9 +17,6 @@ from plexa_server.storage.storage_interface import (
 )
 from plexa_server.tests.fixtures import make_valid_lesson_payload
 
-pytestmark = pytest.mark.postgres_only
-
-
 def run(coro):
     return asyncio.run(coro)
 

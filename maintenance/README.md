@@ -61,7 +61,7 @@ drift so its result remains comparable to GitHub Actions.
 6. Pull PostgreSQL with bounded retries and an ECR Public fallback, then start
    the exact image digest pinned in CI.
 7. Exercise the migration downgrade and hardening-upgrade path with data checks.
-8. Run the server suite against filesystem and PostgreSQL storage.
+8. Run the PostgreSQL-backed server suite, including focused legacy-import tests.
 9. Remove the disposable database container on exit.
 
 If the script is interrupted, remove only a leftover container whose name

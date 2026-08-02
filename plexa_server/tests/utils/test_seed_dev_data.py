@@ -1,13 +1,7 @@
 import asyncio
-from pathlib import Path
 
 from plexa_server.core.sessions import SessionManager
 from plexa_server.inference.stub import StubInference
-from plexa_server.storage.filesystem import (
-    FileSystemArtifactStorage,
-    FileSystemCourseStorage,
-    FileSystemSessionStorage,
-)
 from plexa_server.utils.dev_seed_data import SEEDED_COURSE_SPECS, SEEDED_LESSON_SPECS
 from plexa_server.utils.seed_dev_data import seed_storages
 
@@ -24,10 +18,10 @@ def seeded_lesson_course_id(lesson_id: str) -> str:
     raise AssertionError(f"No seeded course owns {lesson_id}.")
 
 
-def test_seeded_lessons_have_distinct_goal_oriented_content(tmp_path: Path):
-    artifact_storage = FileSystemArtifactStorage(tmp_path)
-    course_storage = FileSystemCourseStorage(tmp_path)
-
+def test_seeded_lessons_have_distinct_goal_oriented_content(
+    artifact_storage,
+    course_storage,
+):
     run(seed_storages(artifact_storage, course_storage))
 
     lessons = {
@@ -105,10 +99,11 @@ def test_seeded_lessons_have_distinct_goal_oriented_content(tmp_path: Path):
     assert len(behavioral_focuses) == lesson_count
 
 
-def test_seeded_cs101_lessons_cover_user_reflection_states(tmp_path: Path):
-    artifact_storage = FileSystemArtifactStorage(tmp_path)
-    course_storage = FileSystemCourseStorage(tmp_path)
-    session_storage = FileSystemSessionStorage(tmp_path)
+def test_seeded_cs101_lessons_cover_user_reflection_states(
+    artifact_storage,
+    course_storage,
+    session_storage,
+):
     manager = SessionManager(storage=session_storage, inference_backend=StubInference())
 
     run(seed_storages(artifact_storage, course_storage))

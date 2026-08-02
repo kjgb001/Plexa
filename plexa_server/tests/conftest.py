@@ -1,6 +1,5 @@
 import asyncio
 import os
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -17,12 +16,6 @@ from plexa_server.db.models import Base
 from plexa_server.inference.stub import StubInference
 from plexa_server.models.course import Course
 from plexa_server.models.lesson import Lesson
-from plexa_server.storage.filesystem import (
-    FileSystemArtifactStorage,
-    FileSystemCourseStorage,
-    FileSystemSessionStorage,
-    FileSystemWorkspaceStateStorage,
-)
 from plexa_server.storage.postgres import (
     PostgresArtifactStorage,
     PostgresCourseStorage,
@@ -51,77 +44,15 @@ def auth_test_mode(monkeypatch):
     clear_request_authenticator_cache()
 
 
-def pytest_generate_tests(metafunc):
-    """Parametrize storage-backend-aware tests from the CLI option.
-
-    Args:
-        metafunc: Pytest metafunc used for dynamic parametrization.
-    """
-    if "storage_backend" not in metafunc.fixturenames:
-        return
-
-    if metafunc.definition.get_closest_marker("postgres_only") is not None:
-        metafunc.parametrize("storage_backend", ["postgres"], scope="function")
-        return
-
-    option = metafunc.config.getoption("--storage-backend")
-    if option is None:
-        option = os.getenv("PLEXA_TEST_STORAGE_BACKEND", "filesystem")
-    if option == "both":
-        params = ["filesystem", "postgres"]
-    else:
-        params = [option]
-
-    metafunc.parametrize("storage_backend", params, scope="function")
+@pytest.fixture
+def storage_backend() -> str:
+    """Return the sole supported application storage backend."""
+    return "postgres"
 
 
 @pytest.fixture
-def storage_backend(request) -> str:
-    """Return the requested storage backend for the current test.
-
-    Args:
-        request: Pytest fixture request object.
-
-    Returns:
-        str: Selected backend name.
-    """
-    if hasattr(request, "param"):
-        return request.param
-
-    option = request.config.getoption("--storage-backend")
-    if option is None:
-        option = os.getenv("PLEXA_TEST_STORAGE_BACKEND", "filesystem")
-    if option == "both":
-        return "filesystem"
-    return option
-
-
-@pytest.fixture
-def tmp_data_dir(tmp_path: Path) -> Path:
-    """Return a temporary filesystem data directory.
-
-    Args:
-        tmp_path: Pytest-provided temporary directory.
-
-    Returns:
-        Path: Temporary data directory path.
-    """
-    return tmp_path
-
-
-@pytest.fixture
-def postgres_test_config(storage_backend: str) -> DatabaseConfig:
-    """Return Postgres test DB settings or skip when unavailable.
-
-    Args:
-        storage_backend: Selected storage backend for the test.
-
-    Returns:
-        DatabaseConfig: Test database configuration.
-    """
-    if storage_backend != "postgres":
-        return DatabaseConfig()
-
+def postgres_test_config() -> DatabaseConfig:
+    """Return PostgreSQL test database settings or skip when unavailable."""
     async_url = os.getenv("PLEXA_TEST_DATABASE_URL")
     sync_url = os.getenv("PLEXA_TEST_DATABASE_SYNC_URL")
     if async_url is None and sync_url is None:
@@ -131,20 +62,15 @@ def postgres_test_config(storage_backend: str) -> DatabaseConfig:
 
 
 @pytest.fixture
-def postgres_session_factory(storage_backend: str, postgres_test_config: DatabaseConfig):
+def postgres_session_factory(postgres_test_config: DatabaseConfig):
     """Create and reset a Postgres test schema for one test run.
 
     Args:
-        storage_backend: Selected storage backend for the test.
         postgres_test_config: Postgres test database configuration.
 
     Returns:
         async_sessionmaker | None: Async SQLAlchemy session factory for Postgres tests.
     """
-    if storage_backend != "postgres":
-        yield None
-        return
-
     engine = create_async_engine(
         postgres_test_config.resolved_async_url(),
         echo=False,
@@ -168,33 +94,21 @@ def postgres_session_factory(storage_backend: str, postgres_test_config: Databas
 
 @pytest.fixture
 def storage_bundle(
-    storage_backend: str,
-    tmp_data_dir: Path,
     postgres_session_factory,
 ) -> dict[str, Any]:
-    """Build a coherent set of storages for the selected backend.
+    """Build a coherent set of PostgreSQL storages.
 
     Args:
-        storage_backend: Selected storage backend for the test.
-        tmp_data_dir: Temporary filesystem path for filesystem-backed tests.
         postgres_session_factory: Postgres session factory for Postgres-backed tests.
 
     Returns:
         dict[str, Any]: Mapping containing artifact, course, and session storages.
     """
-    if storage_backend == "postgres":
-        return {
-            "artifact": PostgresArtifactStorage(postgres_session_factory),
-            "course": PostgresCourseStorage(postgres_session_factory),
-            "session": PostgresSessionStorage(postgres_session_factory),
-            "workspace": PostgresWorkspaceStateStorage(postgres_session_factory),
-        }
-
     return {
-        "artifact": FileSystemArtifactStorage(tmp_data_dir),
-        "course": FileSystemCourseStorage(tmp_data_dir),
-        "session": FileSystemSessionStorage(tmp_data_dir),
-        "workspace": FileSystemWorkspaceStateStorage(tmp_data_dir),
+        "artifact": PostgresArtifactStorage(postgres_session_factory),
+        "course": PostgresCourseStorage(postgres_session_factory),
+        "session": PostgresSessionStorage(postgres_session_factory),
+        "workspace": PostgresWorkspaceStateStorage(postgres_session_factory),
     }
 
 
@@ -283,7 +197,6 @@ def setup_manager(session_storage, artifact_storage, course_storage):
 
 @pytest.fixture
 def app(
-    tmp_data_dir: Path,
     artifact_storage,
     session_storage,
     course_storage,
@@ -293,7 +206,6 @@ def app(
     """Build an application instance for the selected backend.
 
     Args:
-        tmp_data_dir: Temporary filesystem path used when relevant.
         artifact_storage: Selected artifact storage implementation.
         session_storage: Selected session storage implementation.
         course_storage: Selected course storage implementation.
@@ -306,7 +218,6 @@ def app(
     monkeypatch.setenv("PLEXA_LOG_ENCRYPTION_KEY", generate_encryption_key())
     return build_app(
         inference_backend=StubInference(),
-        data_dir=tmp_data_dir,
         artifact_storage=artifact_storage,
         session_storage=session_storage,
         course_storage=course_storage,

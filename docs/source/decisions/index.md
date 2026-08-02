@@ -15,6 +15,7 @@ record that names the decision it supersedes and update this index.
 | [ADR-0005](0005-inference-service-boundary.md) | Server-side OpenAI-compatible inference boundary | Accepted |
 | [ADR-0006](0006-reliable-message-streaming.md) | Canonical commits with idempotent streaming fallback | Accepted |
 | [ADR-0007](0007-single-worker-production.md) | Single-worker initial production topology | Accepted constraint |
+| [ADR-0008](0008-postgresql-only-runtime.md) | PostgreSQL-only runtime and filesystem deprecation | Accepted |
 
 ```{toctree}
 :hidden:
@@ -27,4 +28,5 @@ record that names the decision it supersedes and update this index.
 0005-inference-service-boundary
 0006-reliable-message-streaming
 0007-single-worker-production
+0008-postgresql-only-runtime
 ```

@@ -6,10 +6,16 @@ import json
 import os
 import sys
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from unittest.mock import MagicMock
 
 from plexa_server.api.app import build_app
 from plexa_server.inference.stub import StubInference
+from plexa_server.storage.storage_interface import (
+    ArtifactStorage,
+    CourseStorage,
+    SessionStorage,
+    WorkspaceStateStorage,
+)
 
 
 def main() -> None:
@@ -30,11 +36,13 @@ def main() -> None:
         }
     )
 
-    with TemporaryDirectory(prefix="plexa-openapi-") as data_dir:
-        schema = build_app(
-            inference_backend=StubInference(),
-            data_dir=Path(data_dir),
-        ).openapi()
+    schema = build_app(
+        inference_backend=StubInference(),
+        artifact_storage=MagicMock(spec=ArtifactStorage),
+        session_storage=MagicMock(spec=SessionStorage),
+        course_storage=MagicMock(spec=CourseStorage),
+        workspace_state_storage=MagicMock(spec=WorkspaceStateStorage),
+    ).openapi()
 
     output_path.write_text(
         json.dumps(schema, indent=2, sort_keys=True) + "\n",

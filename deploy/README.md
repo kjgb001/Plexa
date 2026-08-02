@@ -320,7 +320,7 @@ and logout settings change together.
 Run backend and portal checks from the repository root:
 
 ```bash
-uv run --frozen pytest -q plexa_server/tests --storage-backend=both
+uv run --frozen pytest -q plexa_server/tests
 npm --prefix plexa_portal run lint
 npm --prefix plexa_portal run build
 ```

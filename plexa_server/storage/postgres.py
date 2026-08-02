@@ -242,6 +242,39 @@ class PostgresStorageMixin:
 class PostgresArtifactStorage(PostgresStorageMixin, ArtifactStorage):
     """Postgres-backed storage for lessons and encrypted logs."""
 
+    async def restore_encrypted_log(
+        self,
+        metadata: EncryptedLogMetadata,
+        encrypted_blob: bytes | None,
+    ) -> None:
+        """Restore a validated legacy log without changing its metadata."""
+        async with self._session_factory() as session:
+            session.add(
+                EncryptedLogRecord(
+                    instance_id=metadata.instance_id,
+                    user_id=metadata.user_id,
+                    course_id=metadata.course_id,
+                    lesson_id=metadata.lesson_id,
+                    lesson_version=metadata.lesson_version,
+                    course_owner_id=metadata.course_owner_id,
+                    authorized_instructor_ids=metadata.authorized_instructor_ids,
+                    updated_at=metadata.updated_at,
+                    closed_at=metadata.closed_at,
+                    turned_in_at=metadata.turned_in_at,
+                    turn_count=metadata.turn_count,
+                    is_active=metadata.is_active,
+                    log_version=metadata.log_version,
+                    artifact_sha256=metadata.artifact_sha256,
+                    last_event_type=metadata.last_event_type,
+                    last_event_at=metadata.last_event_at,
+                    key_id=metadata.key_id,
+                    content_available=metadata.content_available,
+                    encrypted_blob=encrypted_blob,
+                    created_at=metadata.created_at,
+                )
+            )
+            await session.commit()
+
     async def save_lesson(
         self,
         lesson: Lesson,
@@ -1037,6 +1070,58 @@ class PostgresSessionStorage(PostgresStorageMixin, SessionStorage):
 
 class PostgresWorkspaceStateStorage(PostgresStorageMixin, WorkspaceStateStorage):
     """Postgres-backed storage for user course and lesson recency state."""
+
+    async def restore_course_state(self, state: UserCourseState) -> None:
+        """Restore a legacy course state while preserving its timestamp."""
+        async with self._session_factory() as session:
+            user = await self._get_or_create_user(session, state.user_id)
+            course_result = await session.execute(
+                select(CourseRecord).where(CourseRecord.course_id == state.course_id)
+            )
+            course = course_result.scalar_one_or_none()
+            if course is None:
+                raise ValueError(f"Course {state.course_id} does not exist.")
+            session.add(
+                UserCourseStateRecord(
+                    user=user,
+                    course=course,
+                    last_accessed_at=state.last_accessed_at,
+                )
+            )
+            await session.commit()
+
+    async def restore_lesson_state(self, state: UserLessonState) -> None:
+        """Restore a legacy lesson state while preserving its timestamp."""
+        async with self._session_factory() as session:
+            user = await self._get_or_create_user(session, state.user_id)
+            course_result = await session.execute(
+                select(CourseRecord).where(CourseRecord.course_id == state.course_id)
+            )
+            course = course_result.scalar_one_or_none()
+            if course is None:
+                raise ValueError(f"Course {state.course_id} does not exist.")
+            lesson_result = await session.execute(
+                select(LessonRecord).where(
+                    LessonRecord.owning_course_id == course.id,
+                    LessonRecord.lesson_id == state.lesson_id,
+                    LessonRecord.version == state.lesson_version,
+                )
+            )
+            lesson = lesson_result.scalar_one_or_none()
+            if lesson is None:
+                raise ValueError(
+                    f"Lesson {state.lesson_id}@{state.lesson_version} does not exist "
+                    f"in course {state.course_id}."
+                )
+            session.add(
+                UserLessonStateRecord(
+                    user=user,
+                    course=course,
+                    lesson=lesson,
+                    last_accessed_at=state.last_accessed_at,
+                )
+            )
+            await session.commit()
 
     async def touch_course(
         self,

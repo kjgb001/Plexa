@@ -32,9 +32,9 @@ Browser
 
 ## Data boundaries
 
-PostgreSQL is the production storage backend. Filesystem storage remains useful
-for tests and local tooling, and both implementations follow the same storage
-interfaces.
+PostgreSQL is the only runtime storage backend. The deprecated filesystem
+implementation remains during `0.1.x` only as a read-only migration source and
+focused compatibility-test target; it is scheduled for removal in `0.2.0`.
 
 Session transcripts are not student-facing server archives. Lessons with
 logging disabled persist no transcript content. When logging is enabled,

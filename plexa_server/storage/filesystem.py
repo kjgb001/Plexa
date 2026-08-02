@@ -1,5 +1,8 @@
+"""Deprecated filesystem storage retained only for 0.1.x data migration."""
+
 import json
 import base64
+import warnings
 from pathlib import Path
 from typing import Optional
 from typing import List
@@ -21,6 +24,25 @@ from plexa_server.storage.storage_interface import (
     SessionStorage,
     WorkspaceStateStorage,
 )
+
+
+_DEPRECATION_MESSAGE = (
+    "Filesystem storage is deprecated and retained only for migration in Plexa 0.1.x; "
+    "it will be removed in 0.2.0."
+)
+_deprecation_emitted = False
+
+
+def _prepare_directories(paths: tuple[Path, ...], read_only: bool) -> None:
+    """Create writable storage paths or validate a migration source."""
+    global _deprecation_emitted
+    if not _deprecation_emitted:
+        warnings.warn(_DEPRECATION_MESSAGE, DeprecationWarning, stacklevel=3)
+        _deprecation_emitted = True
+    if read_only:
+        return
+    for path in paths:
+        path.mkdir(parents=True, exist_ok=True)
 
 
 def _atomic_write(path: Path, data: str) -> None:
@@ -50,20 +72,21 @@ class FileSystemArtifactStorage(ArtifactStorage):
     This class does not decrypt logs and does not modify lesson/session contents.
     """
 
-    def __init__(self, base_path: Path):
+    def __init__(self, base_path: Path, *, read_only: bool = False):
         """Initialize lesson and log directories beneath the given base path.
 
         Args:
             base_path: Root directory under which artifact files are stored.
         """
-        self.base_path = base_path
-        self.lessons_path = base_path / "lessons"
-        self.logs_path = base_path / "logs"
-        self.log_access_audits_path = base_path / "log_access_audits"
+        self.base_path = Path(base_path)
+        self.lessons_path = self.base_path / "lessons"
+        self.logs_path = self.base_path / "logs"
+        self.log_access_audits_path = self.base_path / "log_access_audits"
 
-        self.lessons_path.mkdir(parents=True, exist_ok=True)
-        self.logs_path.mkdir(parents=True, exist_ok=True)
-        self.log_access_audits_path.mkdir(parents=True, exist_ok=True)
+        _prepare_directories(
+            (self.lessons_path, self.logs_path, self.log_access_audits_path),
+            read_only,
+        )
 
     def _lesson_path(self, lesson_id: str, version: str, course_id: str | None) -> Path:
         scope = "_legacy" if course_id is None else _safe_component(course_id)
@@ -337,7 +360,7 @@ class FileSystemSessionStorage(SessionStorage):
     Stores sessions and inference configs as JSON.
     """
 
-    def __init__(self, base_path: Path):
+    def __init__(self, base_path: Path, *, read_only: bool = False):
         """Create filesystem directories for session and config documents.
 
         Args:
@@ -348,8 +371,7 @@ class FileSystemSessionStorage(SessionStorage):
         self.sessions_path = self.base_path / "sessions"
         self.configs_path = self.base_path / "configs"
 
-        self.sessions_path.mkdir(parents=True, exist_ok=True)
-        self.configs_path.mkdir(parents=True, exist_ok=True)
+        _prepare_directories((self.sessions_path, self.configs_path), read_only)
 
     async def save_session(self, session: Session) -> None:
         """Serialize and store a session document by session id.
@@ -478,7 +500,7 @@ class FileSystemCourseStorage(CourseStorage):
     No business logic.
     """
 
-    def __init__(self, base_path: Path):
+    def __init__(self, base_path: Path, *, read_only: bool = False):
         """Create the course metadata directory beneath the base path.
 
         Args:
@@ -487,7 +509,7 @@ class FileSystemCourseStorage(CourseStorage):
         self.base_path = Path(base_path)
         self.courses_path = self.base_path / "configs" / "courses"
 
-        self.courses_path.mkdir(parents=True, exist_ok=True)
+        _prepare_directories((self.courses_path,), read_only)
 
     def _course_path(self, course_id: str) -> Path:
         """Return the JSON document path for a course id.
@@ -598,13 +620,12 @@ class FileSystemCourseStorage(CourseStorage):
 class FileSystemWorkspaceStateStorage(WorkspaceStateStorage):
     """Filesystem-backed storage for user course and lesson recency state."""
 
-    def __init__(self, base_path: Path):
+    def __init__(self, base_path: Path, *, read_only: bool = False):
         """Create workspace state directories beneath the base path."""
         self.base_path = Path(base_path)
         self.course_states_path = self.base_path / "configs" / "workspace" / "course_states"
         self.lesson_states_path = self.base_path / "configs" / "workspace" / "lesson_states"
-        self.course_states_path.mkdir(parents=True, exist_ok=True)
-        self.lesson_states_path.mkdir(parents=True, exist_ok=True)
+        _prepare_directories((self.course_states_path, self.lesson_states_path), read_only)
 
     def _course_state_path(self, user_id: str, course_id: str) -> Path:
         return self.course_states_path / _safe_component(user_id) / f"{_safe_component(course_id)}.json"
@@ -676,6 +697,22 @@ class FileSystemWorkspaceStateStorage(WorkspaceStateStorage):
             if course_id is not None and state.course_id != course_id:
                 continue
             states.append(state)
+        return states
+
+    async def list_all_course_states(self) -> list[UserCourseState]:
+        """Return every legacy course state for the migration importer."""
+        states: list[UserCourseState] = []
+        for file in self.course_states_path.glob("*/*.json"):
+            with file.open("r", encoding="utf-8") as f:
+                states.append(UserCourseState.model_validate(json.load(f)))
+        return states
+
+    async def list_all_lesson_states(self) -> list[UserLessonState]:
+        """Return every legacy lesson state for the migration importer."""
+        states: list[UserLessonState] = []
+        for file in self.lesson_states_path.glob("*/*.json"):
+            with file.open("r", encoding="utf-8") as f:
+                states.append(UserLessonState.model_validate(json.load(f)))
         return states
 
     async def health_check(self) -> bool:

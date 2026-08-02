@@ -13,7 +13,7 @@ session rules, and persists course and session state.
 - Streaming responses with an explicit non-streaming fallback path
 - Development-header and bearer-JWT authentication
 - PostgreSQL persistence, Alembic migrations, and encrypted retained logs
-- Filesystem storage for legacy import and backend-contract testing
+- A validated, one-way importer for legacy filesystem datasets
 - Health, readiness, retention, and structured request logging
 
 Student-facing lesson responses intentionally omit private execution details,
@@ -106,25 +106,55 @@ Seed the maintained example courses and lessons into the development database:
 uv run python -m plexa_server.utils.seed_dev_data --target dev
 ```
 
-Other explicit targets are available when needed:
+Seed the disposable test database explicitly when needed:
 
 ```bash
 uv run python -m plexa_server.utils.seed_dev_data --target test
-uv run python -m plexa_server.utils.seed_dev_data --target filesystem
 ```
 
-The older filesystem importer is a separate, one-way migration tool. Use it
-only when moving an existing filesystem dataset into PostgreSQL:
+### Legacy Filesystem Migration
+
+Filesystem storage is deprecated in `0.1.x` and will be removed in `0.2.0`.
+It is no longer selected by the application and cannot be used as a seed target.
+Use the one-way importer only to move an existing dataset into PostgreSQL.
+
+Back up the source directory and prepare a PostgreSQL target that is empty and
+migrated to the current Alembic head. Validate the complete operation first:
 
 ```bash
-uv run python -m plexa_server.bootstrap --init-dev --import-filesystem
+uv run python -m plexa_server.utils.import_filesystem_to_postgres \
+  --data-dir /path/to/legacy-data \
+  --target dev \
+  --dry-run
 ```
 
-or:
+Then run the import:
 
 ```bash
-uv run python -m plexa_server.utils.import_filesystem_to_postgres --target dev
+uv run python -m plexa_server.utils.import_filesystem_to_postgres \
+  --data-dir /path/to/legacy-data \
+  --target dev
 ```
+
+Add `--json` for a machine-readable report. The importer validates all source
+relationships and encrypted-log hashes before writing, then imports courses,
+lessons, sessions, frozen inference configs, encrypted logs and metadata,
+access audits, and workspace recency state. It verifies identities, content,
+timestamps, relationships, counts, and encrypted bytes afterward. Optimistic
+revision counters restart in PostgreSQL.
+
+> [!IMPORTANT]
+> Encrypted log bytes are copied without decryption or re-encryption. Retain the
+> encryption keys referenced by the imported `key_id` values.
+
+> [!CAUTION]
+> An unexpected database failure after writes begin can leave a partial import.
+> Reset the target database, migrate it back to head, and rerun the importer;
+> never merge into or force-import over a populated target.
+
+For a new, empty local database, the deprecated
+`bootstrap --init-dev --import-filesystem` alias remains available through
+`0.1.x`. Prefer the explicit dry-run workflow above.
 
 ## Database Migrations
 
@@ -148,27 +178,24 @@ downgrades, constraints, indexes, and deployment-time locking.
 
 ## Testing
 
-The test suite can run against filesystem storage, PostgreSQL, or both:
+The application suite runs against PostgreSQL:
 
 ```bash
 uv run --frozen pytest -q plexa_server/tests
-uv run --frozen pytest -q plexa_server/tests --storage-backend=postgres
-uv run --frozen pytest -q plexa_server/tests --storage-backend=both
 ```
 
-The selector is resolved from the command line, the environment, then
-`PLEXA_TEST_STORAGE_BACKEND`. PostgreSQL runs use
-`PLEXA_TEST_DATABASE_URL` and `PLEXA_TEST_DATABASE_SYNC_URL`.
+Tests use `PLEXA_TEST_DATABASE_URL` and `PLEXA_TEST_DATABASE_SYNC_URL`.
+Focused filesystem tests cover the deprecated reader and migration path without
+treating it as an application backend.
 
 Run a focused suite in the same way:
 
 ```bash
-uv run --frozen pytest -q plexa_server/tests/api --storage-backend=both
+uv run --frozen pytest -q plexa_server/tests/api
 ```
 
-The root [`conftest.py`](../conftest.py) registers the storage option for tests
-started from the repository root. CI also exercises a migration
-upgrade/downgrade/data-verification sequence before the full suite.
+CI also exercises a migration upgrade/downgrade/data-verification sequence
+before the full suite.
 
 ## Authentication
 
@@ -193,8 +220,10 @@ and OIDC callback requirements.
 
 ## Persistence and Privacy
 
-PostgreSQL is the primary runtime backend. Filesystem storage remains available
-for import compatibility and tests.
+PostgreSQL is the only supported runtime backend. App startup fails when its
+database configuration is missing instead of falling back to local files.
+Filesystem classes remain only for `0.1.x` import compatibility and focused
+migration tests; they are scheduled for removal in `0.2.0`.
 
 Important data boundaries:
 
@@ -244,8 +273,8 @@ plexa_server/
 ├── db/            # SQLAlchemy models, sessions, and database configuration
 ├── inference/     # Backend adapters, routing, and streaming
 ├── models/        # Pydantic domain models
-├── storage/       # PostgreSQL and filesystem implementations
-├── tests/         # Backend-aware server suite
+├── storage/       # PostgreSQL runtime and deprecated migration readers
+├── tests/         # PostgreSQL server suite and focused migration coverage
 ├── utils/         # Seeding, import, retention, and cryptography tools
 ├── bootstrap.py
 ├── runtime.py

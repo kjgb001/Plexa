@@ -113,10 +113,10 @@ For component-specific setup and configuration, see the
 
 ## Testing
 
-Run the server suite against both storage implementations:
+Run the PostgreSQL-backed server suite:
 
 ```bash
-uv run --frozen pytest -q plexa_server/tests --storage-backend=both
+uv run --frozen pytest -q plexa_server/tests
 ```
 
 Check the portal:

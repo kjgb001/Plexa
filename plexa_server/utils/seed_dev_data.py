@@ -1,12 +1,10 @@
 import argparse
 import asyncio
-from pathlib import Path
 
 from plexa_server.db.config import get_named_database_config, load_server_env_file
 from plexa_server.db.session import create_session_factory
 from plexa_server.models.course import Course
 from plexa_server.models.lesson import Lesson
-from plexa_server.storage.filesystem import FileSystemArtifactStorage, FileSystemCourseStorage
 from plexa_server.storage.postgres import PostgresArtifactStorage, PostgresCourseStorage
 from plexa_server.storage.storage_interface import ArtifactStorage, CourseStorage
 from plexa_server.utils.dev_seed_data import (
@@ -15,10 +13,6 @@ from plexa_server.utils.dev_seed_data import (
     make_seeded_lesson_payload,
     seeded_course_base_payload,
 )
-from plexa_server.utils.filesystem_data_dir import get_data_dir_path
-
-
-DATA_PATH = get_data_dir_path()
 
 
 def parse_args() -> argparse.Namespace:
@@ -26,7 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Seed Plexa development lesson and course data.")
     parser.add_argument(
         "--target",
-        choices=["filesystem", "dev", "test"],
+        choices=["dev", "test"],
         default="dev",
         help="Persistence target to seed. Defaults to the development database.",
     )
@@ -35,9 +29,6 @@ def parse_args() -> argparse.Namespace:
 
 def _build_storage(target: str) -> tuple[ArtifactStorage, CourseStorage]:
     """Build the artifact/course storages for the requested target."""
-    if target == "filesystem":
-        return FileSystemArtifactStorage(DATA_PATH), FileSystemCourseStorage(DATA_PATH)
-
     load_server_env_file()
     database_config = get_named_database_config(target)
     session_factory = create_session_factory(

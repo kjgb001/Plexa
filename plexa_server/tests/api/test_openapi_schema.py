@@ -1,9 +1,7 @@
 from fastapi import FastAPI
 
-from plexa_server.api.app import build_app
 from plexa_server.api.openapi_schema import configure_openapi_security
 from plexa_server.auth.config import AuthConfig
-from plexa_server.inference.stub import StubInference
 
 
 def _schema_for(config: AuthConfig) -> dict:
@@ -45,10 +43,7 @@ def test_openapi_describes_bearer_jwt_auth():
     assert schema["security"] == [{"BearerAuth": []}]
 
 
-def test_application_openapi_documents_every_operation(monkeypatch, tmp_path):
-    monkeypatch.setenv("PLEXA_AUTH_MODE", "dev-header")
-    app = build_app(inference_backend=StubInference(), data_dir=tmp_path)
-
+def test_application_openapi_documents_every_operation(app):
     schema = app.openapi()
     assert schema["security"] == [{"DevHeaderAuth": []}]
 

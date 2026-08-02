@@ -47,8 +47,3 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 include = ["plexa_server*"]
-
-[tool.pytest.ini_options]
-markers = [
-    "postgres_only: test requires the postgres storage backend",
-]

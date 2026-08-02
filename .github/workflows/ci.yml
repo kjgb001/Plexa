@@ -127,7 +127,7 @@ jobs:
       - run: uv run --frozen python plexa_server/tests/migrations/verify_hardening_upgrade.py seed
       - run: uv run --frozen alembic -c plexa_server/alembic.ini upgrade head
       - run: uv run --frozen python plexa_server/tests/migrations/verify_hardening_upgrade.py verify
-      - run: uv run --frozen pytest -q plexa_server/tests --storage-backend=both
+      - run: uv run --frozen pytest -q plexa_server/tests
       - name: Stop PostgreSQL
         if: always()
         run: docker rm --force plexa-ci-postgres >/dev/null 2>&1 || true

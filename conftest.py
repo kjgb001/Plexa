@@ -29,18 +29,3 @@ def _load_env_file() -> None:
 
 
 _load_env_file()
-
-
-def pytest_addoption(parser) -> None:
-    """Register the storage backend selector during pytest's initial CLI parse.
-
-    Args:
-        parser: Pytest parser used to register custom command-line options.
-    """
-    parser.addoption(
-        "--storage-backend",
-        action="store",
-        default=os.getenv("PLEXA_TEST_STORAGE_BACKEND", "filesystem"),
-        choices=["filesystem", "postgres", "both"],
-        help="Select the storage backend for backend-agnostic tests.",
-    )

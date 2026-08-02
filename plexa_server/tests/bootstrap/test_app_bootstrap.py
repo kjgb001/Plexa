@@ -18,7 +18,6 @@ def test_ensure_env_defaults_generates_file_with_missing_defaults(tmp_path, monk
     monkeypatch.delenv("PLEXA_DATABASE_SYNC_URL", raising=False)
     monkeypatch.delenv("PLEXA_TEST_DATABASE_URL", raising=False)
     monkeypatch.delenv("PLEXA_TEST_DATABASE_SYNC_URL", raising=False)
-    monkeypatch.delenv("PLEXA_TEST_STORAGE_BACKEND", raising=False)
     monkeypatch.delenv("PLEXA_AUTH_MODE", raising=False)
     monkeypatch.delenv("PLEXA_ADMIN_USER_IDS", raising=False)
     monkeypatch.delenv("PLEXA_CORS_ALLOWED_ORIGINS", raising=False)
@@ -30,7 +29,6 @@ def test_ensure_env_defaults_generates_file_with_missing_defaults(tmp_path, monk
 
     assert resolved["PLEXA_DATABASE_URL"].startswith("postgresql+asyncpg://")
     assert resolved["PLEXA_TEST_DATABASE_URL"].endswith("/plexa_test")
-    assert resolved["PLEXA_TEST_STORAGE_BACKEND"] == "postgres"
     assert resolved["PLEXA_ENV"] == "development"
     assert resolved["PLEXA_AUTH_MODE"] == "dev-header"
     assert '"ollama-local"' in resolved["PLEXA_INFERENCE_BACKENDS"]
@@ -140,7 +138,6 @@ def test_init_dev_database_bootstraps_env_then_db(tmp_path, monkeypatch):
         "PLEXA_DATABASE_SYNC_URL",
         "PLEXA_TEST_DATABASE_URL",
         "PLEXA_TEST_DATABASE_SYNC_URL",
-        "PLEXA_TEST_STORAGE_BACKEND",
         "PLEXA_AUTH_MODE",
         "PLEXA_ADMIN_USER_IDS",
         "PLEXA_CORS_ALLOWED_ORIGINS",
@@ -182,7 +179,6 @@ def test_init_test_database_bootstraps_env_then_db(tmp_path, monkeypatch):
         "PLEXA_DATABASE_SYNC_URL",
         "PLEXA_TEST_DATABASE_URL",
         "PLEXA_TEST_DATABASE_SYNC_URL",
-        "PLEXA_TEST_STORAGE_BACKEND",
         "PLEXA_AUTH_MODE",
         "PLEXA_ADMIN_USER_IDS",
         "PLEXA_CORS_ALLOWED_ORIGINS",

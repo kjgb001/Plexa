@@ -128,6 +128,6 @@ uv run --frozen python plexa_server/tests/migrations/verify_hardening_upgrade.py
 uv run --frozen alembic -c plexa_server/alembic.ini upgrade head
 uv run --frozen python plexa_server/tests/migrations/verify_hardening_upgrade.py verify
 
-maintenance_note "Running the server suite against both storage backends..."
-uv run --frozen pytest -q plexa_server/tests --storage-backend=both
+maintenance_note "Running the PostgreSQL-backed server suite..."
+uv run --frozen pytest -q plexa_server/tests
 maintenance_note "Full local CI passed."
