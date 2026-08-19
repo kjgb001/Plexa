@@ -115,7 +115,8 @@ If a Dependabot PR is stale after another dependency merge, comment:
 @dependabot rebase
 ```
 
-Do not enable unattended auto-merge for major updates.
+Dependabot updates always require manual review and merge. Do not enable
+unattended auto-merge for dependency updates.
 
 ### Monthly
 
@@ -137,10 +138,19 @@ Do not enable unattended auto-merge for major updates.
 
 ## Dependabot and Toolchain Updates
 
-Dependabot groups compatible minor and patch updates for ESLint, Vite, and the
-TypeScript documentation toolchain. Major versions of peer-coupled tools are
-gated in [`.github/dependabot.yml`](../.github/dependabot.yml) until the complete
-toolchain supports them.
+Dependabot checks npm, Python, and GitHub Actions dependencies weekly. Routine
+minor and patch releases are consolidated into at most two open version-update
+pull requests per ecosystem. Patch releases have a 7-day cooldown and minor
+releases have a 14-day cooldown so newly published versions can stabilize
+before Plexa adopts them.
+
+Npm updates are split into runtime and development groups. Python and GitHub
+Actions updates each use one routine group. Major updates remain separate, and
+major versions of peer-coupled JavaScript tools are gated in
+[`.github/dependabot.yml`](../.github/dependabot.yml) until the complete
+toolchain supports them. Security updates are not subject to the routine
+version-update limit or cooldown and must be reviewed promptly as separate pull
+requests.
 
 For a grouped JavaScript update:
 

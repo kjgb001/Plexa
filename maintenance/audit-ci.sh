@@ -214,9 +214,80 @@ if len(codeql_references) != 4 or len(set(codeql_references)) != 1:
     errors.append(".github/workflows/codeql.yml: CodeQL init/analyze actions must share one full SHA")
 
 dependabot = (root / ".github" / "dependabot.yml").read_text(encoding="utf-8")
-for ecosystem in ("github-actions", "npm", "uv"):
-    if f"package-ecosystem: {ecosystem}" not in dependabot:
+
+
+def dependabot_update_block(ecosystem: str) -> str | None:
+    match = re.search(
+        rf"(?ms)^  - package-ecosystem: {re.escape(ecosystem)}\n"
+        rf"(?P<body>.*?)(?=^  - package-ecosystem:|\Z)",
+        dependabot,
+    )
+    return match.group("body") if match is not None else None
+
+
+def dependabot_group_block(update_block: str, group: str) -> str | None:
+    match = re.search(
+        rf"(?ms)^      {re.escape(group)}:\n"
+        rf"(?P<body>.*?)(?=^      [A-Za-z0-9_-]+:|^    [A-Za-z0-9_-]+:|\Z)",
+        update_block,
+    )
+    return match.group("body") if match is not None else None
+
+
+expected_groups = {
+    "github-actions": {"actions-routine": None},
+    "npm": {
+        "npm-runtime": "production",
+        "npm-development": "development",
+    },
+    "uv": {"python-routine": None},
+}
+
+for ecosystem, groups in expected_groups.items():
+    update_block = dependabot_update_block(ecosystem)
+    if update_block is None:
         errors.append(f".github/dependabot.yml: missing {ecosystem} updates")
+        continue
+
+    for required in (
+        "    schedule:\n      interval: weekly",
+        "    cooldown:\n      semver-patch-days: 7\n      semver-minor-days: 14",
+        "    open-pull-requests-limit: 2",
+    ):
+        if required not in update_block:
+            errors.append(
+                f".github/dependabot.yml: {ecosystem} is missing routine update policy: "
+                f"{required.splitlines()[0].strip()}"
+            )
+
+    for group, dependency_type in groups.items():
+        group_block = dependabot_group_block(update_block, group)
+        if group_block is None:
+            errors.append(f".github/dependabot.yml: missing {ecosystem} group {group}")
+            continue
+        for required in (
+            "        applies-to: version-updates",
+            "        update-types:\n          - minor\n          - patch",
+        ):
+            if required not in group_block:
+                errors.append(
+                    f".github/dependabot.yml: {group} is missing policy: "
+                    f"{required.splitlines()[0].strip()}"
+                )
+        if dependency_type is None:
+            if '        patterns:\n          - "*"' not in group_block:
+                errors.append(f".github/dependabot.yml: {group} must match all dependencies")
+        elif f"        dependency-type: {dependency_type}" not in group_block:
+            errors.append(
+                f".github/dependabot.yml: {group} must select {dependency_type} dependencies"
+            )
+
+if "applies-to: security-updates" in dependabot:
+    errors.append(".github/dependabot.yml: security updates must remain ungrouped")
+
+for stale_group in ("eslint-toolchain", "vite-toolchain", "typescript-toolchain"):
+    if f"{stale_group}:" in dependabot:
+        errors.append(f".github/dependabot.yml: stale group remains: {stale_group}")
 
 for dependency in ("eslint", "@eslint/js", "vite", "@vitejs/plugin-react", "typescript"):
     gate_pattern = re.compile(
