@@ -142,7 +142,8 @@ Dependabot checks npm, Python, and GitHub Actions dependencies weekly. Routine
 minor and patch releases are consolidated into at most two open version-update
 pull requests per ecosystem. Patch releases have a 7-day cooldown and minor
 releases have a 14-day cooldown so newly published versions can stabilize
-before Plexa adopts them.
+before Plexa adopts them. GitHub Actions does not support separate SemVer
+cooldowns, so Actions updates use a uniform 7-day cooldown.
 
 Npm updates are split into runtime and development groups. Python and GitHub
 Actions updates each use one routine group. Major updates remain separate, and

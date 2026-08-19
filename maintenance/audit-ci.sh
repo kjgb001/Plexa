@@ -243,6 +243,12 @@ expected_groups = {
     "uv": {"python-routine": None},
 }
 
+expected_cooldowns = {
+    "github-actions": "    cooldown:\n      default-days: 7",
+    "npm": "    cooldown:\n      semver-patch-days: 7\n      semver-minor-days: 14",
+    "uv": "    cooldown:\n      semver-patch-days: 7\n      semver-minor-days: 14",
+}
+
 for ecosystem, groups in expected_groups.items():
     update_block = dependabot_update_block(ecosystem)
     if update_block is None:
@@ -251,7 +257,7 @@ for ecosystem, groups in expected_groups.items():
 
     for required in (
         "    schedule:\n      interval: weekly",
-        "    cooldown:\n      semver-patch-days: 7\n      semver-minor-days: 14",
+        expected_cooldowns[ecosystem],
         "    open-pull-requests-limit: 2",
     ):
         if required not in update_block:
@@ -259,6 +265,15 @@ for ecosystem, groups in expected_groups.items():
                 f".github/dependabot.yml: {ecosystem} is missing routine update policy: "
                 f"{required.splitlines()[0].strip()}"
             )
+
+    if ecosystem == "github-actions" and re.search(
+        r"^      semver-(?:major|minor|patch)-days:",
+        update_block,
+        re.MULTILINE,
+    ):
+        errors.append(
+            ".github/dependabot.yml: github-actions does not support SemVer cooldown fields"
+        )
 
     for group, dependency_type in groups.items():
         group_block = dependabot_group_block(update_block, group)
