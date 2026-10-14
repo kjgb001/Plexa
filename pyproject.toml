@@ -16,7 +16,7 @@ dependencies = [
     "fastapi",
     "httpx",
     "pydantic",
-    "sqlalchemy",
+    "sqlalchemy[asyncio]>=2.1.0",
     "uvicorn",
 ]
 
